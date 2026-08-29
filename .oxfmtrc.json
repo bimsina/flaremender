@@ -1,0 +1,12 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "singleQuote": true,
+  "semi": false,
+  "ignorePatterns": [
+    "**/routeTree.gen.ts",
+    "worker-configuration.d.ts",
+    "migrations/**",
+    ".wrangler/**",
+    "dist/**"
+  ]
+}
