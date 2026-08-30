@@ -7,6 +7,7 @@ import { getIntent, getScriptVersion, listIntents, listScriptVersions } from '#/
 import { getProject, listProjects } from '#/server/projects.ts'
 import { getRun, listRuns } from '#/server/runs.ts'
 import { fetchSession, fetchThemePreference } from '#/server/session.ts'
+import { getSuiteRun, listSuiteRuns } from '#/server/suites.ts'
 
 export const sessionQuery = () =>
   queryOptions({
@@ -83,6 +84,23 @@ export const runQuery = (runId: string) =>
   queryOptions({
     queryKey: ['run', runId] as const,
     queryFn: () => getRun({ data: { runId } }),
+  })
+
+export const suiteRunsQuery = (projectId: string) =>
+  queryOptions({
+    queryKey: ['suite-runs', projectId] as const,
+    queryFn: () => listSuiteRuns({ data: { projectId } }),
+  })
+
+/**
+ * One suite and its members. Polled by the progress strip while a suite is
+ * live; the caller supplies `refetchInterval`, because only it knows whether
+ * what it is showing has stopped moving.
+ */
+export const suiteRunQuery = (suiteRunId: string) =>
+  queryOptions({
+    queryKey: ['suite-run', suiteRunId] as const,
+    queryFn: () => getSuiteRun({ data: { suiteRunId } }),
   })
 
 export const adminStatsQuery = () =>

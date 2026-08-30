@@ -21,6 +21,23 @@ export type RunStatus = (typeof RUN_STATUSES)[number]
 export const RUN_TRIGGERS = ['manual', 'regenerate', 'schedule'] as const
 export type RunTrigger = (typeof RUN_TRIGGERS)[number]
 
+/**
+ * A suite's verdict, aggregated from its members. `'error'` outranks
+ * `'failed'`: a suite that could not finish saying anything about one of its
+ * intents is a worse state than one that ran everything and found a bug.
+ * `'healed'` is deliberately absent — a suite is not the thing that gets
+ * repaired, its members are.
+ */
+export const SUITE_RUN_STATUSES = ['queued', 'running', 'passed', 'failed', 'error'] as const
+export type SuiteRunStatus = (typeof SUITE_RUN_STATUSES)[number]
+
+/**
+ * A suite is only ever started by a person or by the clock. `'regenerate'` has
+ * no meaning here: regenerating is a single intent's business.
+ */
+export const SUITE_TRIGGERS = ['manual', 'schedule'] as const
+export type SuiteTrigger = (typeof SUITE_TRIGGERS)[number]
+
 /** A single execution inside a run; the healing loop adds attempts to one run. */
 export const ATTEMPT_OUTCOMES = ['passed', 'failed', 'error'] as const
 export type AttemptOutcome = (typeof ATTEMPT_OUTCOMES)[number]
@@ -213,6 +230,40 @@ export const scriptVersion = sqliteTable(
   ],
 )
 
+/**
+ * Prefix `srun_`. One "run all": every intent in a project that has a script,
+ * executed against one environment, one after another.
+ *
+ * The counts are denormalised on purpose. A suite is watched while it runs, and
+ * a poll that has to aggregate its member runs to say "3 of 7" gets slower
+ * exactly as the suite gets more interesting; the workflow updates them after
+ * each member instead, so progress is one row read.
+ */
+export const suiteRun = sqliteTable(
+  'suite_run',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => project.id, { onDelete: 'cascade' }),
+    environmentId: text('environment_id')
+      .notNull()
+      .references(() => environment.id, { onDelete: 'cascade' }),
+    status: text('status').$type<SuiteRunStatus>().default('queued').notNull(),
+    trigger: text('trigger').$type<SuiteTrigger>().default('manual').notNull(),
+    /** Members the suite set out to run; the three below sum to it once done. */
+    totalCount: integer('total_count').default(0).notNull(),
+    passedCount: integer('passed_count').default(0).notNull(),
+    failedCount: integer('failed_count').default(0).notNull(),
+    errorCount: integer('error_count').default(0).notNull(),
+    /** Null when the clock started it rather than a person. */
+    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+    startedAt: integer('started_at', { mode: 'timestamp_ms' }).default(now).notNull(),
+    finishedAt: integer('finished_at', { mode: 'timestamp_ms' }),
+  },
+  (table) => [index('suite_run_projectId_idx').on(table.projectId)],
+)
+
 /** Prefix `run_`. One workflow instance; the attempts inside it are rows below. */
 export const run = sqliteTable(
   'run',
@@ -231,6 +282,13 @@ export const run = sqliteTable(
     scriptVersionId: text('script_version_id')
       .notNull()
       .references(() => scriptVersion.id, { onDelete: 'cascade' }),
+    /**
+     * The suite this run was a member of, null for a run started on its own.
+     * `set null` rather than `cascade`: a run is a complete record of one
+     * execution and outlives the batch it happened to travel in — deleting a
+     * suite must not take its members' history with it.
+     */
+    suiteRunId: text('suite_run_id').references(() => suiteRun.id, { onDelete: 'set null' }),
     status: text('status').$type<RunStatus>().default('queued').notNull(),
     trigger: text('trigger').$type<RunTrigger>().default('manual').notNull(),
     /** Set only when an agent was involved (generation or healing). */
@@ -245,6 +303,7 @@ export const run = sqliteTable(
     index('run_intentId_idx').on(table.intentId),
     index('run_projectId_idx').on(table.projectId),
     index('run_environmentId_idx').on(table.environmentId),
+    index('run_suiteRunId_idx').on(table.suiteRunId),
   ],
 )
 
@@ -343,6 +402,7 @@ export const projectRelations = relations(project, ({ one, many }) => ({
   environments: many(environment),
   intents: many(intent),
   runs: many(run),
+  suiteRuns: many(suiteRun),
 }))
 
 export const environmentRelations = relations(environment, ({ one, many }) => ({
@@ -350,6 +410,7 @@ export const environmentRelations = relations(environment, ({ one, many }) => ({
   creator: one(user, { fields: [environment.createdBy], references: [user.id] }),
   variables: many(environmentVariable),
   runs: many(run),
+  suiteRuns: many(suiteRun),
 }))
 
 export const environmentVariableRelations = relations(environmentVariable, ({ one }) => ({
@@ -381,8 +442,19 @@ export const scriptVersionRelations = relations(scriptVersion, ({ one, many }) =
   runs: many(run),
 }))
 
+export const suiteRunRelations = relations(suiteRun, ({ one, many }) => ({
+  project: one(project, { fields: [suiteRun.projectId], references: [project.id] }),
+  environment: one(environment, {
+    fields: [suiteRun.environmentId],
+    references: [environment.id],
+  }),
+  creator: one(user, { fields: [suiteRun.createdBy], references: [user.id] }),
+  runs: many(run),
+}))
+
 export const runRelations = relations(run, ({ one, many }) => ({
   intent: one(intent, { fields: [run.intentId], references: [intent.id] }),
+  suiteRun: one(suiteRun, { fields: [run.suiteRunId], references: [suiteRun.id] }),
   environment: one(environment, { fields: [run.environmentId], references: [environment.id] }),
   project: one(project, { fields: [run.projectId], references: [project.id] }),
   scriptVersion: one(scriptVersion, {

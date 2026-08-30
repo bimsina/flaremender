@@ -11,6 +11,7 @@ import {
   Select,
   Tabs,
   Text,
+  Tooltip,
   useKumoToastManager,
 } from '@cloudflare/kumo'
 import {
@@ -31,10 +32,12 @@ import { InlineEmpty, ListRow, ListToolbar, Section } from '#/components/list.ts
 import { PageBody, PageHeader } from '#/components/page.tsx'
 import { RelativeTime } from '#/components/relative-time.tsx'
 import { IntentStatusBadge } from '#/components/status-badge.tsx'
+import { SuiteProgress } from '#/components/suite-progress.tsx'
 import type { IntentStatus } from '#/db/schema/app.ts'
-import { environmentsQuery, intentsQuery, projectQuery } from '#/lib/queries.ts'
+import { environmentsQuery, intentsQuery, projectQuery, suiteRunsQuery } from '#/lib/queries.ts'
 import { createIntent, deleteIntent, runIntent } from '#/server/intents.ts'
 import { deleteProject, updateProject } from '#/server/projects.ts'
+import { runSuite } from '#/server/suites.ts'
 
 const TABS = ['intents', 'environments', 'settings'] as const
 type Tab = (typeof TABS)[number]
@@ -62,6 +65,10 @@ export const Route = createFileRoute('/_app/projects/$projectId/')({
         ...environmentsQuery(params.projectId),
         revalidateIfStale: true,
       }),
+      context.queryClient.ensureQueryData({
+        ...suiteRunsQuery(params.projectId),
+        revalidateIfStale: true,
+      }),
     ])
   },
   component: ProjectDetail,
@@ -75,8 +82,78 @@ function ProjectDetail() {
 
   const { data: project } = useSuspenseQuery(projectQuery(projectId))
   const { data: intents } = useSuspenseQuery(intentsQuery(projectId))
+  const { data: environments } = useSuspenseQuery(environmentsQuery(projectId))
+  const { data: suiteRuns } = useSuspenseQuery(suiteRunsQuery(projectId))
+
+  const queryClient = useQueryClient()
+  const toast = useKumoToastManager()
 
   const [addingIntent, setAddingIntent] = useState(false)
+  const [environmentId, setEnvironmentId] = useState<string | null>(null)
+  /** Explicitly watched suite — set the moment one is queued from this page. */
+  const [watchingSuite, setWatchingSuite] = useState<string | null>(null)
+
+  const runnableCount = intents.filter((row) => row.currentVersion > 0).length
+
+  const defaultEnvironment = environments.find((row) => row.isDefault) ?? environments[0] ?? null
+  const targetEnvironmentId = environmentId ?? defaultEnvironment?.id ?? null
+
+  // A reload in the middle of a suite must find its way back to the progress
+  // strip, so an unfinished suite in the history seeds the watch as well.
+  const inFlightSuite = suiteRuns.find((row) => row.status === 'queued' || row.status === 'running')
+  const liveSuiteRunId = watchingSuite ?? inFlightSuite?.id ?? null
+
+  const suite = useMutation({
+    mutationFn: () =>
+      runSuite({
+        data: {
+          projectId,
+          ...(targetEnvironmentId ? { environmentId: targetEnvironmentId } : {}),
+        },
+      }),
+    onSuccess: async (result) => {
+      setWatchingSuite(result.suiteRunId)
+      // Nothing has run yet — this only queued the workflow. The progress strip
+      // takes it from here.
+      await queryClient.invalidateQueries()
+      if (tab !== 'intents') void navigate({ search: { tab: 'intents' }, replace: true })
+      toast.add({
+        variant: 'info',
+        title: 'Suite queued',
+        description: `${runnableCount} intent${runnableCount === 1 ? '' : 's'} will run one after another.`,
+      })
+    },
+    onError: (error: Error) => {
+      toast.add({
+        variant: 'error',
+        title: 'Could not start the suite',
+        description: error.message,
+      })
+    },
+  })
+
+  const environmentItems = useMemo(
+    () =>
+      environments.map((row) => ({
+        label: row.isDefault ? `${row.name} (default)` : row.name,
+        value: row.id,
+      })),
+    [environments],
+  )
+
+  const runAllDisabled = runnableCount === 0 || targetEnvironmentId === null
+
+  const runAllButton = (
+    <Button
+      variant="secondary"
+      icon={<PlayIcon size={16} />}
+      loading={suite.isPending}
+      disabled={runAllDisabled}
+      onClick={() => suite.mutate()}
+    >
+      Run all
+    </Button>
+  )
 
   return (
     <>
@@ -106,13 +183,42 @@ function ProjectDetail() {
         }
         tabActions={
           tab === 'intents' ? (
-            <Button
-              variant="primary"
-              icon={<PlusIcon size={16} />}
-              onClick={() => setAddingIntent(true)}
-            >
-              New intent
-            </Button>
+            <>
+              {/* Only worth the width once there is a choice to make. */}
+              {environments.length > 1 ? (
+                <Select
+                  aria-label="Environment"
+                  className="w-52"
+                  placeholder="No environment"
+                  items={environmentItems}
+                  value={targetEnvironmentId}
+                  onValueChange={(value: string | null) => setEnvironmentId(value)}
+                />
+              ) : null}
+              {runAllDisabled ? (
+                // A disabled button emits no pointer events, so the span is what
+                // the tooltip actually hangs off.
+                <Tooltip
+                  content={
+                    runnableCount === 0
+                      ? 'Save a script on at least one intent first.'
+                      : 'Add an environment before running anything.'
+                  }
+                  render={<span className="inline-flex" />}
+                >
+                  {runAllButton}
+                </Tooltip>
+              ) : (
+                runAllButton
+              )}
+              <Button
+                variant="primary"
+                icon={<PlusIcon size={16} />}
+                onClick={() => setAddingIntent(true)}
+              >
+                New intent
+              </Button>
+            </>
           ) : null
         }
       />
@@ -122,6 +228,7 @@ function ProjectDetail() {
           <IntentsTab
             projectId={projectId}
             intents={intents}
+            liveSuiteRunId={liveSuiteRunId}
             onCreate={() => setAddingIntent(true)}
           />
         ) : null}
@@ -161,36 +268,19 @@ type StatusFilter = keyof typeof STATUS_FILTERS
 function IntentsTab({
   projectId,
   intents,
+  liveSuiteRunId,
   onCreate,
 }: {
   projectId: string
   intents: Array<IntentRow>
+  /** The suite whose progress belongs above this list, if one is in flight. */
+  liveSuiteRunId: string | null
   onCreate: () => void
 }) {
   const queryClient = useQueryClient()
-  const toast = useKumoToastManager()
 
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<StatusFilter>('all')
-
-  const runnable = intents.filter((row) => row.currentVersion > 0)
-
-  const runAll = useMutation({
-    mutationFn: async () => {
-      // Queued, not awaited: each run is a Workflow instance that outlives this
-      // request, and the intent pages pick the verdicts up as they land.
-      for (const row of runnable) await runIntent({ data: { intentId: row.id } })
-      return { total: runnable.length }
-    },
-    onSuccess: async ({ total }) => {
-      await queryClient.invalidateQueries()
-      toast.add({
-        variant: 'info',
-        title: `${total} run${total === 1 ? '' : 's'} queued`,
-        description: 'Results appear in each intent as they finish.',
-      })
-    },
-  })
 
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase()
@@ -218,6 +308,10 @@ function IntentsTab({
 
   return (
     <div className="grid gap-4">
+      {liveSuiteRunId ? (
+        <SuiteProgress key={liveSuiteRunId} suiteRunId={liveSuiteRunId} projectId={projectId} />
+      ) : null}
+
       <ListToolbar
         value={search}
         onValueChange={setSearch}
@@ -233,15 +327,6 @@ function IntentsTab({
           value={status}
           onValueChange={(value: StatusFilter | null) => setStatus(value ?? 'all')}
         />
-        <Button
-          variant="secondary"
-          icon={<PlayIcon size={16} />}
-          loading={runAll.isPending}
-          disabled={runnable.length === 0}
-          onClick={() => runAll.mutate()}
-        >
-          Run all
-        </Button>
       </ListToolbar>
 
       {visible.length === 0 ? (

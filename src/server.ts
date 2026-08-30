@@ -17,6 +17,7 @@ import { createAuth } from '#/lib/auth.ts'
 
 export { RunChannel } from '#/engine/run-channel.ts'
 export { RunWorkflow } from '#/engine/run-workflow.ts'
+export { SuiteWorkflow } from '#/engine/suite-workflow.ts'
 
 const LIVE_PATH = /^\/api\/runs\/([^/]+)\/live\/?$/
 

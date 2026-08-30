@@ -16,6 +16,7 @@ import {
   project,
   run,
   scriptVersion,
+  suiteRun,
 } from '#/db/schema/app.ts'
 import { AuthError } from './auth.ts'
 
@@ -89,6 +90,18 @@ export async function loadRun(db: Db, organizationId: string, runId: string) {
     .limit(1)
 
   if (!row) throw new AuthError('Run not found.', 404)
+  return row
+}
+
+export async function loadSuiteRun(db: Db, organizationId: string, suiteRunId: string) {
+  const [row] = await db
+    .select({ suiteRun, project })
+    .from(suiteRun)
+    .innerJoin(project, eq(project.id, suiteRun.projectId))
+    .where(and(eq(suiteRun.id, suiteRunId), eq(project.organizationId, organizationId)))
+    .limit(1)
+
+  if (!row) throw new AuthError('Suite run not found.', 404)
   return row
 }
 

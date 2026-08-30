@@ -39,6 +39,9 @@ export const listRuns = createServerFn({ method: 'GET' })
         id: run.id,
         status: run.status,
         trigger: run.trigger,
+        // Null for a run started on its own; the UI labels the rest as part of
+        // a "Run all" rather than leaving them looking spontaneous.
+        suiteRunId: run.suiteRunId,
         startedAt: run.startedAt,
         finishedAt: run.finishedAt,
         environmentId: run.environmentId,
