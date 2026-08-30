@@ -1,4 +1,7 @@
 /** Tiny hand-rolled validators — the app has no schema library as a dependency. */
+import { parseCron } from '#/lib/cron.ts'
+
+/** Thrown by every validator here; server functions surface the message as-is. */
 export class ValidationError extends Error {
   constructor(message: string) {
     super(message)
@@ -62,23 +65,26 @@ export function oneOf<T extends readonly [string, ...Array<string>]>(
 }
 
 /**
- * Loose five-field cron check — shape only. Cloudflare parses the expression
- * for real when the trigger is registered; rejecting valid-but-exotic syntax
- * here would be worse than letting it through.
+ * A five-field UTC cron expression, checked by the parser that will actually
+ * run it.
+ *
+ * Deliberately not a looser check than the matcher: an expression this accepts
+ * but `matchesCron` cannot read would be a schedule that silently never fires,
+ * which is the worst possible outcome for a scheduling feature. The grammar is
+ * documented on `src/lib/cron.ts`.
  */
 export function cron(data: unknown, key: string): string | null {
   const value = optionalStr(data, key, 200)
   if (value === null) return null
 
-  const fields = value.split(/\s+/)
-  if (fields.length !== 5) {
-    throw new ValidationError(`"${key}" needs five fields: minute hour day month weekday.`)
-  }
-  if (!fields.every((field) => /^[\d*/,\-?LW#]+$/.test(field))) {
-    throw new ValidationError(`"${key}" contains characters that aren't valid in a cron field.`)
+  const parsed = parseCron(value)
+  if (!parsed) {
+    throw new ValidationError(
+      `"${key}" is not a schedule we can run. Five fields — minute hour day month weekday — using numbers, "*", lists, ranges and steps.`,
+    )
   }
 
-  return fields.join(' ')
+  return parsed.expression
 }
 
 export function url(data: unknown, key: string): string {

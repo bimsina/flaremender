@@ -15,6 +15,7 @@ import {
   useKumoToastManager,
 } from '@cloudflare/kumo'
 import {
+  ClockIcon,
   DotsThreeIcon,
   PlayIcon,
   PlusIcon,
@@ -34,6 +35,7 @@ import { RelativeTime } from '#/components/relative-time.tsx'
 import { IntentStatusBadge } from '#/components/status-badge.tsx'
 import { SuiteProgress } from '#/components/suite-progress.tsx'
 import type { IntentStatus } from '#/db/schema/app.ts'
+import { describeCron } from '#/lib/cron.ts'
 import { environmentsQuery, intentsQuery, projectQuery, suiteRunsQuery } from '#/lib/queries.ts'
 import { createIntent, deleteIntent, runIntent } from '#/server/intents.ts'
 import { deleteProject, updateProject } from '#/server/projects.ts'
@@ -250,6 +252,8 @@ type IntentRow = {
   title: string
   description: string
   status: IntentStatus
+  /** Five-field UTC cron, null when this intent only runs on request. */
+  schedule: string | null
   currentVersion: number
   updatedAt: Date
   lastRunAt: Date | null
@@ -357,15 +361,18 @@ function IntentsTab({
                   </Text>
                 }
                 meta={
-                  <Text as="span" variant="secondary" size="xs">
-                    {row.lastRunAt ? (
-                      <>
-                        Ran <RelativeTime value={row.lastRunAt} />
-                      </>
-                    ) : (
-                      'Never run'
-                    )}
-                  </Text>
+                  <>
+                    {row.schedule ? <ScheduleHint schedule={row.schedule} /> : null}
+                    <Text as="span" variant="secondary" size="xs">
+                      {row.lastRunAt ? (
+                        <>
+                          Ran <RelativeTime value={row.lastRunAt} />
+                        </>
+                      ) : (
+                        'Never run'
+                      )}
+                    </Text>
+                  </>
                 }
                 actions={
                   <IntentActions
@@ -380,6 +387,22 @@ function IntentsTab({
         </ul>
       )}
     </div>
+  )
+}
+
+/**
+ * That an intent runs on a clock is worth one glance, not a column: the listing
+ * is about what the intents *are*, and the schedule itself is a detail-page
+ * concern. The tooltip carries the description so the icon does not have to.
+ */
+function ScheduleHint({ schedule }: { schedule: string }) {
+  return (
+    <Tooltip
+      content={`${describeCron(schedule)}, UTC`}
+      render={<span className="inline-flex text-kumo-subtle" />}
+    >
+      <ClockIcon size={16} aria-label="Scheduled" />
+    </Tooltip>
   )
 }
 

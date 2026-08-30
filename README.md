@@ -83,6 +83,9 @@ src/engine/
   runner/artifacts.ts  R2 writes under runs/{orgId}/{projectId}/{runId}/
   runner/scrub.ts      secret redaction
   run-workflow.ts      load → execute → persist
+  suite-workflow.ts    a project's intents, run one after another
+  schedule-dispatch.ts the minute tick: which intents are due
+  retention.ts         the nightly sweep: what history to drop
 ```
 
 A script runs inside a **Dynamic Worker**, an isolate built from two modules:
@@ -123,6 +126,38 @@ a step. `secret()` reads an environment variable; its value — raw,
 URL-encoded or base64 — is replaced with `***` in every log, label and error
 message before anything is stored. Screenshots and traces can still _show_ a
 secret: that is a visual leak no string replacement can fix.
+
+### Schedules and retention
+
+Two cron triggers reach `scheduled` in `src/server.ts`, told apart by the
+expression that fired them:
+
+- **`* * * * *`** — every intent whose own five-field cron matches this UTC
+  minute is due. Due intents are grouped per project and handed to one
+  `SuiteWorkflow` against the project's default environment, with trigger
+  `schedule` and no `createdBy`. A project whose suite is still running is
+  skipped rather than stacked, and the suite's id is derived from the project
+  and the minute (`srun_sch_<project>_<yyyymmddhhmm>`) so a replayed tick
+  creates nothing.
+- **`30 3 * * *`** — keeps the newest N runs per intent (N from
+  `instanceSettings.retentionRunsPerIntent`, default 50), deleting older runs,
+  their attempts and their R2 prefixes. At most 500 objects per night; the rest
+  waits for the next one.
+
+Schedules are read in UTC. The grammar — `*`, numbers, lists, ranges and steps,
+and the POSIX rule that a restricted day-of-month and day-of-week are ORed — is
+documented on `src/lib/cron.ts`, which is the single parser behind the editor,
+the badge and the dispatcher.
+
+Cron triggers do not fire on their own under `pnpm dev`. Fire one by hand:
+
+```bash
+# a schedule tick for a specific UTC minute
+curl "http://localhost:3000/cdn-cgi/handler/scheduled?cron=*%20*%20*%20*%20*&time=$(node -e 'console.log(Math.floor(Date.now()/60000)*60000)')"
+
+# the nightly retention sweep
+curl "http://localhost:3000/cdn-cgi/handler/scheduled?cron=30%203%20*%20*%20*"
+```
 
 ## Theming
 

@@ -186,7 +186,10 @@ export const intent = sqliteTable(
      * at it.
      */
     currentVersionId: text('current_version_id'),
-    /** Five-field cron, null when unscheduled. Column only until cron lands. */
+    /**
+     * Five-field UTC cron, null when unscheduled. Parsed by `src/lib/cron.ts`,
+     * which is also what the every-minute tick matches against.
+     */
     schedule: text('schedule'),
     lastRunId: text('last_run_id'),
     createdBy: text('created_by')
@@ -385,6 +388,13 @@ export const instanceSettings = sqliteTable('instance_settings', {
   id: text('id').primaryKey().default('default'),
   /** Null means Workers AI, which needs no credentials. */
   defaultModelId: text('default_model_id'),
+  /**
+   * How many runs the nightly sweep keeps per intent. Null means the engine's
+   * own default (`DEFAULT_RETENTION_RUNS`), so an instance that has never been
+   * configured is not silently pinned to whatever the number was on the day it
+   * was installed.
+   */
+  retentionRunsPerIntent: integer('retention_runs_per_intent'),
   setupCompletedAt: integer('setup_completed_at', { mode: 'timestamp_ms' }),
   updatedBy: text('updated_by').references(() => user.id, { onDelete: 'set null' }),
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' })

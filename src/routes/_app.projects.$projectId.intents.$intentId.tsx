@@ -20,6 +20,7 @@ import {
   ArrowCounterClockwiseIcon,
   CaretDownIcon,
   ClockCounterClockwiseIcon,
+  ClockIcon,
   DotsThreeIcon,
   FileTextIcon,
   FloppyDiskIcon,
@@ -46,6 +47,7 @@ import { StepList } from '#/components/step-list.tsx'
 import { SummaryStrip } from '#/components/summary-strip.tsx'
 import type { ArtifactKeys } from '#/db/schema/app.ts'
 import type { RunStatus, ScriptAuthor } from '#/db/schema/app.ts'
+import { describeCron, isValidCron } from '#/lib/cron.ts'
 import {
   environmentsQuery,
   intentQuery,
@@ -175,6 +177,7 @@ function IntentDetail() {
         description={
           <span className="flex flex-wrap items-center gap-2">
             <IntentStatusBadge status={intent.status} />
+            {intent.schedule ? <ScheduleBadge schedule={intent.schedule} /> : null}
             <Text as="span" variant="secondary" size="xs">
               {currentVersion ? `Version ${currentVersion.version}` : 'No script saved yet'}
             </Text>
@@ -261,6 +264,7 @@ function IntentDetail() {
             key={currentVersion?.id ?? 'unsaved'}
             intentId={intentId}
             description={intent.description}
+            schedule={intent.schedule}
             currentVersion={currentVersion}
             liveRunId={liveRunId}
             onEditDescription={() => setEditingDescription(true)}
@@ -294,12 +298,14 @@ function IntentDetail() {
 function ScriptTab({
   intentId,
   description,
+  schedule,
   currentVersion,
   liveRunId,
   onEditDescription,
 }: {
   intentId: string
   description: string
+  schedule: string | null
   currentVersion: { id: string; version: number; code: string; author: ScriptAuthor } | null
   liveRunId: string | null
   onEditDescription: () => void
@@ -348,6 +354,8 @@ function ScriptTab({
           </pre>
         </LayerCard>
       </Section>
+
+      <ScheduleSection key={schedule ?? 'unscheduled'} intentId={intentId} schedule={schedule} />
 
       <Section
         title="Playwright script"
@@ -415,6 +423,135 @@ function ScriptTab({
         </Section>
       ) : null}
     </div>
+  )
+}
+
+/* ---------------------------------------------------------------- Schedule */
+
+/**
+ * The schedules worth naming, plus the two entries that are not schedules.
+ *
+ * Presets exist because the useful cases are few and cron is a bad thing to
+ * make someone remember; `custom` exists because the ones we did not think of
+ * are exactly as valid, and the matcher does not care which route produced the
+ * expression.
+ */
+const SCHEDULE_PRESETS = [
+  { label: 'Not scheduled', value: 'none' },
+  { label: 'Every 15 minutes', value: '*/15 * * * *' },
+  { label: 'Hourly', value: '0 * * * *' },
+  { label: 'Daily at 06:00 UTC', value: '0 6 * * *' },
+  { label: 'Weekly on Monday at 06:00 UTC', value: '0 6 * * 1' },
+  { label: 'Custom cron…', value: 'custom' },
+]
+
+const PRESET_EXPRESSIONS = new Set(
+  SCHEDULE_PRESETS.map((preset) => preset.value).filter(
+    (value) => value !== 'none' && value !== 'custom',
+  ),
+)
+
+/** Which row of the Select an existing schedule already sits on. */
+function presetFor(schedule: string | null): string {
+  if (!schedule) return 'none'
+  return PRESET_EXPRESSIONS.has(schedule) ? schedule : 'custom'
+}
+
+/**
+ * Everything about a schedule that fits next to a status badge. The raw
+ * expression is the `title`, because a description is a summary and someone
+ * debugging a schedule wants the thing itself.
+ */
+function ScheduleBadge({ schedule }: { schedule: string }) {
+  return (
+    <span title={`${schedule} (UTC)`}>
+      <Badge variant="blue" icon={ClockIcon}>
+        Scheduled · {describeCron(schedule)} UTC
+      </Badge>
+    </span>
+  )
+}
+
+function ScheduleSection({ intentId, schedule }: { intentId: string; schedule: string | null }) {
+  const queryClient = useQueryClient()
+  const toast = useKumoToastManager()
+
+  const [choice, setChoice] = useState(() => presetFor(schedule))
+  const [custom, setCustom] = useState(() => (presetFor(schedule) === 'custom' ? schedule! : ''))
+
+  const next = choice === 'none' ? null : choice === 'custom' ? custom.trim() : choice
+  // An empty custom box is "not finished typing", not "clear the schedule" —
+  // the Select's own first row means that, and says so.
+  const valid = next === null ? true : isValidCron(next)
+  const dirty = next !== (schedule ?? null)
+
+  const save = useMutation({
+    mutationFn: () => updateIntent({ data: { intentId, schedule: next } }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries()
+      toast.add({
+        variant: 'success',
+        title: next === null ? 'Schedule cleared' : 'Schedule saved',
+        ...(next === null ? {} : { description: `${describeCron(next)}, UTC.` }),
+      })
+    },
+  })
+
+  return (
+    <Section
+      title="Schedule"
+      description="Cron, read in UTC. Everything due in this project on the same minute runs as one suite."
+    >
+      <LayerCard className="px-5 py-4">
+        <div className="grid gap-3">
+          {save.error ? (
+            <Banner
+              variant="error"
+              icon={<WarningCircleIcon weight="fill" />}
+              title="Could not save the schedule"
+              description={save.error.message}
+            />
+          ) : null}
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              aria-label="Schedule"
+              className="w-72"
+              items={SCHEDULE_PRESETS}
+              value={choice}
+              onValueChange={(value: string | null) => setChoice(value ?? 'none')}
+            />
+            {choice === 'custom' ? (
+              <Input
+                aria-label="Cron expression"
+                className="w-56 font-mono"
+                placeholder="*/30 * * * *"
+                spellCheck={false}
+                value={custom}
+                onChange={(event) => setCustom(event.target.value)}
+              />
+            ) : null}
+            <Button
+              variant={dirty ? 'primary' : 'secondary'}
+              icon={<ClockIcon size={16} />}
+              loading={save.isPending}
+              disabled={!dirty || !valid}
+              onClick={() => save.mutate()}
+            >
+              Save schedule
+            </Button>
+          </div>
+
+          <Text variant="secondary" size="xs">
+            {next === null
+              ? 'This intent runs only when someone presses Run.'
+              : valid
+                ? `${describeCron(next)}, UTC. Scheduled runs appear in the history with a schedule trigger.`
+                : 'Five fields — minute hour day month weekday — using numbers, *, lists, ranges and steps.'}
+          </Text>
+        </div>
+      </LayerCard>
+    </Section>
   )
 }
 
@@ -538,9 +675,22 @@ function RunsTab({ runs }: { runs: Array<RunRowData> }) {
                           <RelativeTime value={row.startedAt} />
                         </Table.Cell>
                         <Table.Cell>
-                          <Text as="span" variant="mono-secondary">
-                            {shortRunId(row.id)}
-                          </Text>
+                          <span className="flex items-center gap-1.5">
+                            <Text as="span" variant="mono-secondary">
+                              {shortRunId(row.id)}
+                            </Text>
+                            {/* Who started it, but only when it was not a
+                                person — "manual" is the unremarkable case and
+                                does not need saying on every row. */}
+                            {row.trigger === 'schedule' ? (
+                              <span
+                                className="flex items-center text-kumo-subtle"
+                                title="Started by the schedule"
+                              >
+                                <ClockIcon size={13} aria-label="Started by the schedule" />
+                              </span>
+                            ) : null}
+                          </span>
                         </Table.Cell>
                         <Table.Cell>{row.environmentName}</Table.Cell>
                         <Table.Cell>

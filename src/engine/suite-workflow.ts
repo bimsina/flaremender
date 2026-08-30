@@ -1,5 +1,5 @@
 /**
- * A whole project, executed once.
+ * A whole project — or the part of it the clock asked for — executed once.
  *
  * A suite is not a new kind of execution — it is the ordinary one, repeated.
  * Each member gets a real `run` row, its own artifacts, its own attempt and its
@@ -52,6 +52,17 @@ export interface SuiteWorkflowParams {
   suiteRunId: string
   /** Taken from the session at enqueue time; never from anything a row says. */
   organizationId: string
+  /**
+   * Restricts the suite to these intents, in place of "everything runnable in
+   * the project". Only the scheduler passes it: a cron tick runs the intents
+   * whose expression matched *this* minute, which is nearly never all of them.
+   * Absent — a person pressing "Run all" — keeps the original meaning.
+   *
+   * A filter, not a membership: an id in here whose intent has no saved script,
+   * or has since been deleted, is dropped by the same query that drops every
+   * other unrunnable intent.
+   */
+  intentIds?: Array<string>
 }
 
 interface SuiteMember {
@@ -123,7 +134,7 @@ export class SuiteWorkflow extends WorkflowEntrypoint<Cloudflare.Env, SuiteWorkf
     event: Readonly<WorkflowEvent<SuiteWorkflowParams>>,
     step: WorkflowStep,
   ): Promise<{ suiteRunId: string; status: SuiteRunStatus }> {
-    const { suiteRunId, organizationId } = event.payload
+    const { suiteRunId, organizationId, intentIds } = event.payload
 
     /**
      * The session the members share. Hoisted so the failure path can hand it
@@ -133,7 +144,7 @@ export class SuiteWorkflow extends WorkflowEntrypoint<Cloudflare.Env, SuiteWorkf
     let sessionId: string | null = null
 
     try {
-      const suite = await step.do('load', () => this.load(suiteRunId, organizationId))
+      const suite = await step.do('load', () => this.load(suiteRunId, organizationId, intentIds))
 
       for (const [index, member] of suite.members.entries()) {
         sessionId = await this.runMember(step, {
@@ -166,7 +177,11 @@ export class SuiteWorkflow extends WorkflowEntrypoint<Cloudflare.Env, SuiteWorkf
    * shown against `totalCount` have to mean something for the whole of it.
    * Order is by creation, which is the only ordering a person can predict.
    */
-  private async load(suiteRunId: string, organizationId: string): Promise<LoadedSuite> {
+  private async load(
+    suiteRunId: string,
+    organizationId: string,
+    intentIds?: Array<string>,
+  ): Promise<LoadedSuite> {
     const db = createDb(this.env.DB)
 
     const [row] = await db
@@ -183,7 +198,15 @@ export class SuiteWorkflow extends WorkflowEntrypoint<Cloudflare.Env, SuiteWorkf
     const members = await db
       .select({ intentId: intent.id, scriptVersionId: intent.currentVersionId })
       .from(intent)
-      .where(and(eq(intent.projectId, row.suiteRun.projectId), isNotNull(intent.currentVersionId)))
+      .where(
+        and(
+          eq(intent.projectId, row.suiteRun.projectId),
+          isNotNull(intent.currentVersionId),
+          // An empty array would compile to `false` and produce a suite with no
+          // members, which is not what "no filter" means.
+          intentIds && intentIds.length > 0 ? inArray(intent.id, intentIds) : undefined,
+        ),
+      )
       .orderBy(asc(intent.createdAt))
 
     if (members.length === 0) {

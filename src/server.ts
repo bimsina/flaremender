@@ -13,6 +13,8 @@ import { drizzle } from 'drizzle-orm/d1'
 import handler from '@tanstack/react-start/server-entry'
 
 import { project, run } from '#/db/schema/app.ts'
+import { sweepRetention } from '#/engine/retention.ts'
+import { dispatchSchedules } from '#/engine/schedule-dispatch.ts'
 import { createAuth } from '#/lib/auth.ts'
 
 export { RunChannel } from '#/engine/run-channel.ts'
@@ -20,6 +22,14 @@ export { RunWorkflow } from '#/engine/run-workflow.ts'
 export { SuiteWorkflow } from '#/engine/suite-workflow.ts'
 
 const LIVE_PATH = /^\/api\/runs\/([^/]+)\/live\/?$/
+
+/**
+ * The nightly branch of `triggers.crons`. Every other cron this Worker is given
+ * is the minute tick, which is also what an unnamed trigger falls through to —
+ * `wrangler`'s local scheduled endpoint sends no `cron` at all, and dispatching
+ * schedules is the useful thing to do with an anonymous tick.
+ */
+const RETENTION_CRON = '30 3 * * *'
 
 /** Deliberately indistinguishable from "that run does not exist". */
 function notFound(): Response {
@@ -70,5 +80,24 @@ export default {
     // Start reads its bindings from `cloudflare:workers`, and its second
     // parameter is request options rather than `env`, so nothing is forwarded.
     return handler.fetch(request)
+  },
+
+  /**
+   * The clock.
+   *
+   * Two triggers, one handler, and no logic of its own beyond telling them
+   * apart: the minute tick asks `schedule-dispatch` which intents are due, and
+   * the nightly one asks `retention` to trim what has accumulated. Both are
+   * awaited outright — a scheduled handler may take as long as the work does,
+   * and `waitUntil` would only make it possible for the invocation to end
+   * halfway through a sweep.
+   */
+  async scheduled(controller, env) {
+    if (controller.cron === RETENTION_CRON) {
+      await sweepRetention(env)
+      return
+    }
+
+    await dispatchSchedules(env, controller.scheduledTime)
   },
 } satisfies ExportedHandler<Cloudflare.Env>

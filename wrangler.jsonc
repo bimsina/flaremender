@@ -37,6 +37,11 @@
       "class_name": "SuiteWorkflow",
     },
   ],
+  // The minute tick dispatches due intent schedules; 03:30 UTC sweeps history.
+  // Both land on `scheduled` in src/server.ts, which tells them apart by
+  // `controller.cron` — keep the nightly expression in step with
+  // `RETENTION_CRON` there.
+  "triggers": { "crons": ["* * * * *", "30 3 * * *"] },
   "durable_objects": {
     "bindings": [{ "name": "RUN_CHANNEL", "class_name": "RunChannel" }],
   },
