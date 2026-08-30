@@ -29,8 +29,9 @@ import type {
 import {
   type BrowserSession,
   BrowserLaunchError,
-  closeBrowser,
   openBrowser,
+  releaseSession,
+  teardownBrowser,
 } from '#/engine/runner/browser.ts'
 import { createScrubber } from '#/engine/runner/scrub.ts'
 import { createInstrumentation } from './instrument.ts'
@@ -207,10 +208,15 @@ export default class Harness extends WorkerEntrypoint<HarnessEnv> {
       session = await openBrowser(this.env.BROWSER, {
         baseUrl: this.env.BASE_URL,
         actionTimeoutMs: request.actionTimeoutMs,
+        sessionId: request.sessionId,
+        keepSessionAlive: request.keepSessionAlive,
       })
 
       if (request.trace) {
         try {
+          // Tracing is a property of the context, not of the browser, and every
+          // run gets its own context — so a reused session still produces one
+          // self-contained trace per member.
           await session.context.tracing.start({ screenshots: true, snapshots: true })
           tracing = true
         } catch (error) {
@@ -295,7 +301,16 @@ export default class Harness extends WorkerEntrypoint<HarnessEnv> {
         }
       }
 
-      await closeBrowser(session?.browser)
+      // The context always goes — it is the isolation boundary, and the next
+      // member of a suite must not inherit this one's cookies. The session
+      // survives only when someone else is going to reuse it.
+      if (session) {
+        await teardownBrowser(session.browser, {
+          keepSessionAlive: request.keepSessionAlive === true,
+          connected: session.connected,
+          context: session.context,
+        })
+      }
 
       // The isolate is about to be torn down with the RPC response; anything
       // still in flight to the channel would go with it.
@@ -310,6 +325,29 @@ export default class Harness extends WorkerEntrypoint<HarnessEnv> {
       durationMs: Date.now() - startedAt,
     }
 
-    return { result, errorKind, screenshot, trace }
+    return {
+      result,
+      errorKind,
+      screenshot,
+      trace,
+      sessionId: session?.sessionId ?? null,
+      sessionReused: session?.reused ?? false,
+    }
+  }
+
+  /**
+   * Ends a shared Browser Rendering session.
+   *
+   * A suite's members all leave their session running, so something has to end
+   * it once they are done — and that something cannot be the host Worker, which
+   * has no Playwright and no CDP. It is this: a throwaway isolate whose only
+   * job is to connect and say goodbye.
+   *
+   * Best effort by construction. A session that cannot be reached is already as
+   * closed as it needs to be, and one that refuses to close still expires on
+   * its own keep-alive.
+   */
+  async release(sessionId: string): Promise<{ released: boolean; message?: string }> {
+    return releaseSession(this.env.BROWSER, sessionId)
   }
 }

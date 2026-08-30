@@ -43,7 +43,7 @@ import {
 } from '#/db/schema/app.ts'
 import type { RunEvent, RunOutcome, RunResult } from '#/engine/contract.ts'
 import { artifactPrefix, writeArtifacts } from '#/engine/runner/artifacts.ts'
-import { executeInDynamicWorker } from '#/engine/runner/loader.ts'
+import { executeInDynamicWorker, releaseBrowserSession } from '#/engine/runner/loader.ts'
 import { createScrubber } from '#/engine/runner/scrub.ts'
 import { decryptSecret } from '#/server/crypto.ts'
 
@@ -61,6 +61,28 @@ export interface LoadedRun {
 export interface ExecutedRun {
   result: RunResult
   artifactKeys: ArtifactKeys
+  /**
+   * The Browser Rendering session this run used, when it was told to keep one
+   * alive. Null for a standalone run, which takes a session and ends it.
+   */
+  sessionId: string | null
+}
+
+/**
+ * How a run should treat the browser session — the whole of what a suite adds
+ * to executing one of its members.
+ *
+ * Browser Rendering allows very few concurrent sessions and rate-limits new
+ * ones sharply, so a suite hands each member the session the last one used and
+ * asks it not to hang up. Isolation is not lost by that: the harness opens a
+ * fresh incognito context per run, which is where cookies, storage and cache
+ * actually live.
+ */
+export interface SessionReuse {
+  /** Session to join, or null to take a new one. */
+  sessionId: string | null
+  /** Leave it running afterwards, because another member is coming. */
+  keepAlive: boolean
 }
 
 /** One attempt per run until the healing loop appends more. */
@@ -162,6 +184,7 @@ export async function executeRun(
   env: Cloudflare.Env,
   runId: string,
   loaded: LoadedRun,
+  reuse?: SessionReuse | null,
 ): Promise<ExecutedRun> {
   const db = createDb(env.DB)
 
@@ -193,6 +216,9 @@ export async function executeRun(
   let result: RunResult
   let screenshot: ArrayBuffer | null = null
   let trace: ArrayBuffer | null = null
+  // Reported back even when the script blew up, so a suite always knows which
+  // session to hand the next member — or to close.
+  let sessionId: string | null = reuse?.keepAlive ? (reuse.sessionId ?? null) : null
 
   const startedAt = Date.now()
 
@@ -209,7 +235,22 @@ export async function executeRun(
       // boundary. It has to be fetched inside the step that uses it. Each
       // member of a suite therefore streams to its own run's channel.
       channel: env.RUN_CHANNEL.getByName(runId),
+      sessionId: reuse?.sessionId ?? null,
+      keepSessionAlive: reuse?.keepAlive ?? false,
     })
+
+    // Recorded before the browser check: even a run that could not start may
+    // have taken a session, and a suite that forgets it leaks one.
+    if (reuse?.keepAlive) {
+      sessionId = response.sessionId
+      // The one fact that says whether suite session reuse is working. Cheap,
+      // and the first thing anyone debugging a `429` will want.
+      console.log(
+        `[run-steps] ${runId} used browser session ${response.sessionId ?? 'none'} (${
+          response.sessionReused ? 'reused' : 'new'
+        })`,
+      )
+    }
 
     if (response.errorKind === 'browser') {
       throw new BrowserUnavailableError(
@@ -260,7 +301,38 @@ export async function executeRun(
 
   for (const failure of failures) scrubbed.logs.push(`[engine] artifact upload failed — ${failure}`)
 
-  return { result: scrubbed, artifactKeys: keys }
+  return { result: scrubbed, artifactKeys: keys, sessionId }
+}
+
+/**
+ * Hands a shared browser session back.
+ *
+ * Best effort on purpose: the session expires on its own keep-alive, so a
+ * failure here costs latency on the next suite rather than correctness. It is
+ * still worth doing promptly — an idle session holds one of the account's very
+ * few concurrent slots, which is the whole problem session reuse exists to
+ * solve.
+ */
+export async function releaseRunSession(
+  env: Cloudflare.Env,
+  sessionId: string,
+): Promise<{ released: boolean }> {
+  try {
+    const result = await releaseBrowserSession({
+      loader: env.LOADER,
+      browser: env.BROWSER,
+      sessionId,
+    })
+
+    if (!result.released) {
+      console.warn(`[run-steps] session ${sessionId} was already gone: ${result.message}`)
+    }
+
+    return { released: result.released }
+  } catch (error) {
+    console.error(`[run-steps] could not release session ${sessionId}:`, error)
+    return { released: false }
+  }
 }
 
 /** The attempt row, the run's verdict and the intent's badge, in one batch. */

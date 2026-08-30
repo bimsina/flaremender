@@ -37,7 +37,15 @@ export const DEFAULT_SCRIPT_TIMEOUT_MS = 300_000
 /** The subset of the harness entrypoint the host calls. */
 interface HarnessStub {
   execute(request: HarnessRequest): Promise<HarnessResponse>
+  release(sessionId: string): Promise<{ released: boolean; message?: string }>
 }
+
+/**
+ * Stands in for the saved script when the isolate is loaded for something other
+ * than running one. The module slot is not optional — the harness imports it
+ * statically — but `release` never reaches for it.
+ */
+const NO_SCRIPT = 'export default async function () {}\n'
 
 /** A stub for one run's `RunChannel`, as `RUN_CHANNEL.getByName()` returns it. */
 type RunChannelStub = ReturnType<Cloudflare.Env['RUN_CHANNEL']['getByName']>
@@ -58,6 +66,13 @@ export interface ExecuteOptions {
   timeoutMs?: number
   actionTimeoutMs?: number
   trace?: boolean
+  /**
+   * A Browser Rendering session to join rather than take. Set by a suite from
+   * its second member on; the response says which session actually ran.
+   */
+  sessionId?: string | null
+  /** Leave the session running when the script finishes. A suite's business. */
+  keepSessionAlive?: boolean
 }
 
 /**
@@ -95,5 +110,44 @@ export async function executeInDynamicWorker(options: ExecuteOptions): Promise<H
     timeoutMs: options.timeoutMs ?? DEFAULT_SCRIPT_TIMEOUT_MS,
     actionTimeoutMs: options.actionTimeoutMs ?? 30_000,
     trace: options.trace ?? true,
+    sessionId: options.sessionId ?? null,
+    keepSessionAlive: options.keepSessionAlive ?? false,
   })
+}
+
+/**
+ * Ends a Browser Rendering session the host cannot reach itself.
+ *
+ * Closing a session means speaking CDP to it, and CDP lives in Playwright,
+ * which lives in the harness bundle — the host Worker has neither. So the
+ * cheapest thing that can do it is a fresh isolate carrying no script, no
+ * credentials and no channel: the browser binding is the only capability it
+ * gets, and the only thing it does with it is hang up.
+ */
+export async function releaseBrowserSession(options: {
+  loader: WorkerLoader
+  browser: Cloudflare.Env['BROWSER']
+  sessionId: string
+}): Promise<{ released: boolean; message?: string }> {
+  const worker = options.loader.load({
+    compatibilityDate: HARNESS_COMPATIBILITY_DATE,
+    compatibilityFlags: ['nodejs_compat'],
+    mainModule: HARNESS_MODULE,
+    modules: {
+      [HARNESS_MODULE]: HARNESS_SOURCE,
+      [SCRIPT_MODULE]: NO_SCRIPT,
+    },
+    env: {
+      BROWSER: options.browser,
+      CREDS: {},
+      BASE_URL: '',
+      RUN_ID: '',
+      CHANNEL: null,
+    },
+    globalOutbound: null,
+  })
+
+  const harness = worker.getEntrypoint() as unknown as HarnessStub
+
+  return harness.release(options.sessionId)
 }

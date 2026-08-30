@@ -51,6 +51,17 @@ export interface HarnessResponse {
   screenshot: ArrayBuffer | null
   /** Playwright trace zip, when tracing started successfully. */
   trace: ArrayBuffer | null
+  /**
+   * The Browser Rendering session the script actually ran in.
+   *
+   * Not necessarily the one that was asked for: a session can be reclaimed
+   * between two members of a suite, and the harness silently takes a fresh one
+   * rather than failing the run. The caller threads whatever comes back into
+   * the next member, so this is how a suite finds out its session changed.
+   */
+  sessionId: string | null
+  /** Whether the requested session was still there. Diagnostic only. */
+  sessionReused: boolean
 }
 
 /**
@@ -65,6 +76,17 @@ export interface HarnessRequest {
   actionTimeoutMs: number
   /** Whether to record a Playwright trace. */
   trace: boolean
+  /**
+   * A Browser Rendering session to join instead of taking a new one. Set by a
+   * suite from the second member on; a dead id degrades to a fresh session
+   * rather than to a failed run.
+   */
+  sessionId?: string | null
+  /**
+   * Whether the session must outlive this script. Set for every member of a
+   * suite: the session is shared, and ending it is the suite's job alone.
+   */
+  keepSessionAlive?: boolean
 }
 
 /**

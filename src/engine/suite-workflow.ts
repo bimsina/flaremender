@@ -11,6 +11,14 @@
  *   time collecting `429`s; sequential is not a simplification, it is the shape
  *   the platform wants. It also means a suite's wall time is the sum of its
  *   members, which is why the counts below are updated as it goes.
+ * - **One browser session for the whole suite.** Sequential was not enough on
+ *   its own: taking a *new* session per member hit the same rate limit from the
+ *   third intent on. The first member acquires a session, every member after it
+ *   connects to that one, and the suite ends it in `finish`. Isolation is not
+ *   the session's job — each member opens a fresh incognito context, so no
+ *   cookie, cache entry or open page survives from one intent to the next.
+ *   A session that dies mid-suite is not fatal: the harness quietly takes a new
+ *   one and reports which it used, and the suite carries on with that.
  * - **Isolation.** A member that fails, errors, or cannot be executed at all
  *   does not end the suite. Its failure is recorded on its own run row and the
  *   next member starts. A suite stops early only if the suite itself breaks.
@@ -37,6 +45,7 @@ import {
   loadRun,
   persistRun,
   persistRunError,
+  releaseRunSession,
 } from '#/engine/run-steps.ts'
 
 export interface SuiteWorkflowParams {
@@ -116,25 +125,33 @@ export class SuiteWorkflow extends WorkflowEntrypoint<Cloudflare.Env, SuiteWorkf
   ): Promise<{ suiteRunId: string; status: SuiteRunStatus }> {
     const { suiteRunId, organizationId } = event.payload
 
+    /**
+     * The session the members share. Hoisted so the failure path can hand it
+     * back too, and only ever assigned from a step's return value — so a
+     * resumed instance recomputes exactly the session the first pass used.
+     */
+    let sessionId: string | null = null
+
     try {
       const suite = await step.do('load', () => this.load(suiteRunId, organizationId))
 
       for (const [index, member] of suite.members.entries()) {
-        await this.runMember(step, {
+        sessionId = await this.runMember(step, {
           suiteRunId,
           organizationId,
           index,
           member,
           suite,
+          sessionId,
         })
       }
 
-      return await step.do('finish', () => this.finish(suiteRunId))
+      return await step.do('finish', () => this.finish(suiteRunId, sessionId))
     } catch (error) {
       // The suite itself broke — not a member. Without this it, and any member
       // it had already created, would sit at 'running' for ever.
       await step.do('finish-error', PERSIST_ERROR_STEP_CONFIG, () =>
-        this.finishError(suiteRunId, error),
+        this.finishError(suiteRunId, sessionId, error),
       )
 
       throw error
@@ -201,6 +218,12 @@ export class SuiteWorkflow extends WorkflowEntrypoint<Cloudflare.Env, SuiteWorkf
    * turned into a verdict on that member's own run and swallowed, because a
    * suite whose fourth intent cannot start still owes an answer about its
    * fifth.
+   *
+   * Returns the session the next member should join. That is whatever the
+   * harness reports having used, which is not always what it was given — and
+   * `null` after a member that never got as far as reporting, so the next one
+   * starts clean rather than chasing a session that may be the reason this one
+   * failed.
    */
   private async runMember(
     step: WorkflowStep,
@@ -210,11 +233,14 @@ export class SuiteWorkflow extends WorkflowEntrypoint<Cloudflare.Env, SuiteWorkf
       index: number
       member: SuiteMember
       suite: LoadedSuite
+      sessionId: string | null
     },
-  ): Promise<void> {
+  ): Promise<string | null> {
     const { suiteRunId, organizationId, index, member, suite } = context
     const runId = memberRunId(suiteRunId, index)
     const label = `run-${index}`
+
+    let sessionId = context.sessionId
 
     try {
       await step.do(`${label}-create`, () => this.createMemberRun(runId, suiteRunId, member, suite))
@@ -222,11 +248,20 @@ export class SuiteWorkflow extends WorkflowEntrypoint<Cloudflare.Env, SuiteWorkf
       const loaded = await step.do(`${label}-load`, () => loadRun(this.env, runId, organizationId))
 
       const executed = await step.do(`${label}-execute`, EXECUTE_STEP_CONFIG, () =>
-        executeRun(this.env, runId, loaded),
+        // `keepAlive` for every member without exception: the suite owns the
+        // session's lifetime, so no member may end one the next one needs.
+        executeRun(this.env, runId, loaded, { sessionId, keepAlive: true }),
       )
+
+      sessionId = executed.sessionId
 
       await step.do(`${label}-persist`, () => persistRun(this.env, runId, loaded, executed))
     } catch (error) {
+      // Only a browser that would not come up escapes `executeRun`, so the
+      // session is exactly what is in doubt here. Dropping it costs one
+      // acquisition; keeping a dead one would cost every member after this.
+      sessionId = null
+
       await step.do(`${label}-persist-error`, PERSIST_ERROR_STEP_CONFIG, () =>
         persistRunError(this.env, runId, error),
       )
@@ -235,6 +270,8 @@ export class SuiteWorkflow extends WorkflowEntrypoint<Cloudflare.Env, SuiteWorkf
     // Outside the `catch` so the strip moves whether the member passed or blew
     // up, and after it so the counts it reads include this member's verdict.
     await step.do(`${label}-tally`, () => this.tally(suiteRunId))
+
+    return sessionId
   }
 
   /** The member's run row, indistinguishable from a hand-started one but for `suiteRunId`. */
@@ -290,11 +327,18 @@ export class SuiteWorkflow extends WorkflowEntrypoint<Cloudflare.Env, SuiteWorkf
    * to have passed, so a member whose row vanished mid-suite reads as `error`
    * rather than quietly rounding up to green.
    */
-  private async finish(suiteRunId: string): Promise<{
+  private async finish(
+    suiteRunId: string,
+    sessionId: string | null,
+  ): Promise<{
     suiteRunId: string
     status: SuiteRunStatus
   }> {
     const db = createDb(this.env.DB)
+
+    // Before the verdict, not after: the session is a shared, scarce resource
+    // and this step is the only place that is certain no member still wants it.
+    if (sessionId) await releaseRunSession(this.env, sessionId)
 
     const [row] = await db
       .select({ totalCount: suiteRun.totalCount })
@@ -332,8 +376,16 @@ export class SuiteWorkflow extends WorkflowEntrypoint<Cloudflare.Env, SuiteWorkf
    * The safety net, guarded the same way `persistRunError` is: it may only
    * claim a suite, or a member, that has not already reached a verdict.
    */
-  private async finishError(suiteRunId: string, error: unknown): Promise<void> {
+  private async finishError(
+    suiteRunId: string,
+    sessionId: string | null,
+    error: unknown,
+  ): Promise<void> {
     const db = createDb(this.env.DB)
+
+    // The suite is over however it ended, and a session nobody will reuse holds
+    // one of the account's few concurrent slots until its keep-alive lapses.
+    if (sessionId) await releaseRunSession(this.env, sessionId)
 
     // Members that never got their own answer, first — a run left at 'running'
     // is indistinguishable in the UI from one still going, and nothing is
