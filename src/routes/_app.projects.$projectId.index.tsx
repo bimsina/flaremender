@@ -1,6 +1,6 @@
 import {
-  Badge,
   Banner,
+  Breadcrumbs,
   Button,
   Dialog,
   DropdownMenu,
@@ -8,14 +8,13 @@ import {
   Input,
   InputArea,
   LayerCard,
-  Table,
+  Select,
+  Tabs,
   Text,
   useKumoToastManager,
 } from '@cloudflare/kumo'
 import {
-  CaretRightIcon,
   DotsThreeIcon,
-  PencilSimpleIcon,
   PlayIcon,
   PlusIcon,
   TestTubeIcon,
@@ -25,16 +24,30 @@ import {
 } from '@phosphor-icons/react'
 import { useMutation, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 
+import { EnvironmentsPanel } from '#/components/environments-panel.tsx'
+import { InlineEmpty, ListRow, ListToolbar, Section } from '#/components/list.tsx'
 import { PageBody, PageHeader } from '#/components/page.tsx'
-import { TestCaseStatusBadge } from '#/components/status-badge.tsx'
 import { RelativeTime } from '#/components/relative-time.tsx'
-import { intentsQuery, projectQuery } from '#/lib/queries.ts'
-import { createIntent, runIntent } from '#/server/intents.ts'
+import { IntentStatusBadge } from '#/components/status-badge.tsx'
+import type { IntentStatus } from '#/db/schema/app.ts'
+import { environmentsQuery, intentsQuery, projectQuery } from '#/lib/queries.ts'
+import { createIntent, deleteIntent, runIntent } from '#/server/intents.ts'
 import { deleteProject, updateProject } from '#/server/projects.ts'
 
+const TABS = ['intents', 'environments', 'settings'] as const
+type Tab = (typeof TABS)[number]
+
+function isTab(value: unknown): value is Tab {
+  return typeof value === 'string' && (TABS as ReadonlyArray<string>).includes(value)
+}
+
 export const Route = createFileRoute('/_app/projects/$projectId/')({
+  // The tab lives in the URL so a bookmark, a menu item and the back button all
+  // land on the same view. Optional, so a plain link to the project still works.
+  validateSearch: (search: Record<string, unknown>): { tab?: Tab } =>
+    isTab(search.tab) ? { tab: search.tab } : {},
   loader: async ({ context, params }) => {
     await Promise.all([
       context.queryClient.ensureQueryData({
@@ -45,6 +58,10 @@ export const Route = createFileRoute('/_app/projects/$projectId/')({
         ...intentsQuery(params.projectId),
         revalidateIfStale: true,
       }),
+      context.queryClient.ensureQueryData({
+        ...environmentsQuery(params.projectId),
+        revalidateIfStale: true,
+      }),
     ])
   },
   component: ProjectDetail,
@@ -52,23 +69,116 @@ export const Route = createFileRoute('/_app/projects/$projectId/')({
 
 function ProjectDetail() {
   const { projectId } = Route.useParams()
+  const search = Route.useSearch()
+  const tab = search.tab ?? 'intents'
+  const navigate = useNavigate({ from: Route.fullPath })
+
   const { data: project } = useSuspenseQuery(projectQuery(projectId))
   const { data: intents } = useSuspenseQuery(intentsQuery(projectId))
 
+  const [addingIntent, setAddingIntent] = useState(false)
+
+  return (
+    <>
+      <PageHeader
+        breadcrumbs={
+          <Breadcrumbs size="sm">
+            <Breadcrumbs.Link href="/projects">Projects</Breadcrumbs.Link>
+            <Breadcrumbs.Separator />
+            <Breadcrumbs.Current>{project.name}</Breadcrumbs.Current>
+          </Breadcrumbs>
+        }
+        title={project.name}
+        description={project.description ?? project.defaultEnvironment?.baseUrl ?? undefined}
+        tabs={
+          <Tabs
+            variant="underline"
+            tabs={[
+              { value: 'intents', label: 'Intents' },
+              { value: 'environments', label: 'Environments' },
+              { value: 'settings', label: 'Settings' },
+            ]}
+            value={tab}
+            onValueChange={(value) => {
+              if (isTab(value)) void navigate({ search: { tab: value }, replace: true })
+            }}
+          />
+        }
+        tabActions={
+          tab === 'intents' ? (
+            <Button
+              variant="primary"
+              icon={<PlusIcon size={16} />}
+              onClick={() => setAddingIntent(true)}
+            >
+              New intent
+            </Button>
+          ) : null
+        }
+      />
+
+      <PageBody className="grid gap-6">
+        {tab === 'intents' ? (
+          <IntentsTab
+            projectId={projectId}
+            intents={intents}
+            onCreate={() => setAddingIntent(true)}
+          />
+        ) : null}
+        {tab === 'environments' ? <EnvironmentsPanel projectId={projectId} /> : null}
+        {tab === 'settings' ? <SettingsTab project={project} /> : null}
+      </PageBody>
+
+      <CreateIntentDialog
+        projectId={projectId}
+        open={addingIntent}
+        onOpenChange={setAddingIntent}
+      />
+    </>
+  )
+}
+
+type IntentRow = {
+  id: string
+  title: string
+  description: string
+  status: IntentStatus
+  currentVersion: number
+  updatedAt: Date
+  lastRunAt: Date | null
+}
+
+const STATUS_FILTERS = {
+  all: 'Any status',
+  draft: 'Draft',
+  ready: 'Ready to run',
+  passing: 'Passing',
+  failing: 'Failing',
+} as const
+
+type StatusFilter = keyof typeof STATUS_FILTERS
+
+function IntentsTab({
+  projectId,
+  intents,
+  onCreate,
+}: {
+  projectId: string
+  intents: Array<IntentRow>
+  onCreate: () => void
+}) {
   const queryClient = useQueryClient()
   const toast = useKumoToastManager()
 
-  const [addingIntent, setAddingIntent] = useState(false)
-  const [editing, setEditing] = useState(false)
-  const [deleting, setDeleting] = useState(false)
+  const [search, setSearch] = useState('')
+  const [status, setStatus] = useState<StatusFilter>('all')
 
-  // Only intents with a saved script have anything to execute.
   const runnable = intents.filter((row) => row.currentVersion > 0)
 
   const runAll = useMutation({
     mutationFn: async () => {
       // Queued, not awaited: each run is a Workflow instance that outlives this
-      // request. M6 replaces the refetch below with live progress.
+      // request, and the intent pages pick the verdicts up as they land.
       for (const row of runnable) await runIntent({ data: { intentId: row.id } })
       return { total: runnable.length }
     },
@@ -82,201 +192,392 @@ function ProjectDetail() {
     },
   })
 
-  return (
-    <>
-      <PageHeader
-        breadcrumbs={
-          <div className="flex items-center gap-1">
-            <Link to="/projects" className="text-kumo-link underline underline-offset-2">
-              <Text as="span" size="xs">
-                Projects
-              </Text>
-            </Link>
-            <CaretRightIcon size={12} className="text-kumo-subtle" />
-            <Text as="span" variant="secondary" size="xs">
-              {project.name}
-            </Text>
-          </div>
+  const visible = useMemo(() => {
+    const needle = search.trim().toLowerCase()
+    return intents.filter((row) => {
+      if (status !== 'all' && row.status !== status) return false
+      if (!needle) return true
+      return `${row.title} ${row.description}`.toLowerCase().includes(needle)
+    })
+  }, [intents, search, status])
+
+  if (intents.length === 0) {
+    return (
+      <Empty
+        icon={<TestTubeIcon size={48} className="text-kumo-inactive" />}
+        title="No intents found"
+        description="Describe what a user should be able to do, then write the script that proves it."
+        contents={
+          <Button variant="primary" icon={<PlusIcon size={16} />} onClick={onCreate}>
+            Describe an intent
+          </Button>
         }
-        title={project.name}
-        description={project.description ?? project.defaultEnvironment?.baseUrl ?? '—'}
-        actions={
-          <>
-            <Button
-              variant="secondary"
-              icon={<PlayIcon size={16} />}
-              loading={runAll.isPending}
-              disabled={runnable.length === 0}
-              onClick={() => runAll.mutate()}
-            >
-              Run all
-            </Button>
-            <Button
-              variant="primary"
-              icon={<PlusIcon size={16} />}
-              onClick={() => setAddingIntent(true)}
-            >
-              New intent
-            </Button>
-            <DropdownMenu>
-              <DropdownMenu.Trigger
-                render={
-                  <Button variant="secondary" shape="square" aria-label="Project actions">
-                    <DotsThreeIcon size={16} weight="bold" />
-                  </Button>
+      />
+    )
+  }
+
+  return (
+    <div className="grid gap-4">
+      <ListToolbar
+        value={search}
+        onValueChange={setSearch}
+        placeholder="Search intents"
+        onRefresh={() => {
+          void queryClient.invalidateQueries({ queryKey: intentsQuery(projectId).queryKey })
+        }}
+      >
+        <Select
+          aria-label="Filter by status"
+          className="w-40"
+          items={STATUS_FILTERS}
+          value={status}
+          onValueChange={(value: StatusFilter | null) => setStatus(value ?? 'all')}
+        />
+        <Button
+          variant="secondary"
+          icon={<PlayIcon size={16} />}
+          loading={runAll.isPending}
+          disabled={runnable.length === 0}
+          onClick={() => runAll.mutate()}
+        >
+          Run all
+        </Button>
+      </ListToolbar>
+
+      {visible.length === 0 ? (
+        <LayerCard className="px-5 py-4">
+          <InlineEmpty message="No intents match this search." />
+        </LayerCard>
+      ) : (
+        <ul className="grid gap-3">
+          {visible.map((row) => (
+            <li key={row.id}>
+              <ListRow
+                icon={<TestTubeIcon size={18} />}
+                title={
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <Link
+                      to="/projects/$projectId/intents/$intentId"
+                      params={{ projectId, intentId: row.id }}
+                      className="truncate font-medium text-kumo-default hover:text-kumo-link"
+                    >
+                      {row.title}
+                    </Link>
+                    <IntentStatusBadge status={row.status} />
+                  </div>
+                }
+                subtitle={
+                  <Text variant="secondary" size="xs" truncate>
+                    {row.description.split('\n')[0]}
+                  </Text>
+                }
+                meta={
+                  <Text as="span" variant="secondary" size="xs">
+                    {row.lastRunAt ? (
+                      <>
+                        Ran <RelativeTime value={row.lastRunAt} />
+                      </>
+                    ) : (
+                      'Never run'
+                    )}
+                  </Text>
+                }
+                actions={
+                  <IntentActions
+                    projectId={projectId}
+                    intent={row}
+                    runnable={row.currentVersion > 0}
+                  />
                 }
               />
-              <DropdownMenu.Content>
-                <DropdownMenu.Item icon={PencilSimpleIcon} onClick={() => setEditing(true)}>
-                  Edit project
-                </DropdownMenu.Item>
-                <DropdownMenu.Separator />
-                <DropdownMenu.Item
-                  icon={TrashIcon}
-                  variant="danger"
-                  onClick={() => setDeleting(true)}
-                >
-                  Delete project
-                </DropdownMenu.Item>
-              </DropdownMenu.Content>
-            </DropdownMenu>
-          </>
-        }
-      />
-
-      <PageBody className="grid gap-6">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="neutral">{intents.length} intents</Badge>
-          {/* M7: this becomes the Environments section, listing every environment. */}
-          <Text variant="mono-secondary">{project.defaultEnvironment?.baseUrl ?? '—'}</Text>
-        </div>
-
-        {intents.length === 0 ? (
-          <Empty
-            icon={<TestTubeIcon size={48} className="text-kumo-inactive" />}
-            title="No intents yet"
-            description="Describe what a user should be able to do, then write the script that proves it."
-            contents={
-              <Button
-                variant="primary"
-                icon={<PlusIcon size={16} />}
-                onClick={() => setAddingIntent(true)}
-              >
-                Describe an intent
-              </Button>
-            }
-          />
-        ) : (
-          <LayerCard className="p-0">
-            <div className="overflow-x-auto">
-              <Table>
-                <Table.Header>
-                  <Table.Row>
-                    <Table.Head>Intent</Table.Head>
-                    <Table.Head>Status</Table.Head>
-                    <Table.Head>Version</Table.Head>
-                    <Table.Head>Updated</Table.Head>
-                    <Table.Head className="w-0" />
-                  </Table.Row>
-                </Table.Header>
-                <Table.Body>
-                  {intents.map((row) => (
-                    <Table.Row key={row.id}>
-                      <Table.Cell>
-                        <div className="grid gap-0.5">
-                          <Link
-                            to="/projects/$projectId/intents/$intentId"
-                            params={{ projectId, intentId: row.id }}
-                            className="text-kumo-link underline underline-offset-2"
-                          >
-                            {row.title}
-                          </Link>
-                          <Text variant="secondary" size="xs" truncate>
-                            {row.description.split('\n')[0]}
-                          </Text>
-                        </div>
-                      </Table.Cell>
-                      <Table.Cell>
-                        <TestCaseStatusBadge status={row.status} />
-                      </Table.Cell>
-                      <Table.Cell>
-                        <Text as="span" variant="mono-secondary">
-                          {row.currentVersion === 0 ? '—' : `v${row.currentVersion}`}
-                        </Text>
-                      </Table.Cell>
-                      <Table.Cell>
-                        <RelativeTime value={row.updatedAt} />
-                      </Table.Cell>
-                      <Table.Cell>
-                        <RowActions
-                          projectId={projectId}
-                          intentId={row.id}
-                          runnable={row.currentVersion > 0}
-                        />
-                      </Table.Cell>
-                    </Table.Row>
-                  ))}
-                </Table.Body>
-              </Table>
-            </div>
-          </LayerCard>
-        )}
-      </PageBody>
-
-      <CreateIntentDialog
-        projectId={projectId}
-        open={addingIntent}
-        onOpenChange={setAddingIntent}
-      />
-      <EditProjectDialog project={project} open={editing} onOpenChange={setEditing} />
-      <DeleteProjectDialog project={project} open={deleting} onOpenChange={setDeleting} />
-    </>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }
 
-function RowActions({
+function IntentActions({
   projectId,
-  intentId,
+  intent,
   runnable,
 }: {
   projectId: string
-  intentId: string
+  intent: IntentRow
   runnable: boolean
 }) {
   const queryClient = useQueryClient()
   const toast = useKumoToastManager()
+  const [deleting, setDeleting] = useState(false)
 
   const run = useMutation({
-    mutationFn: () => runIntent({ data: { intentId } }),
+    mutationFn: () => runIntent({ data: { intentId: intent.id } }),
     onSuccess: async (result) => {
       await queryClient.invalidateQueries()
       toast.add({ variant: 'info', title: 'Run queued', description: result.runId })
     },
+    onError: (error: Error) => {
+      toast.add({ variant: 'error', title: 'Could not queue the run', description: error.message })
+    },
+  })
+
+  const remove = useMutation({
+    mutationFn: () => deleteIntent({ data: { intentId: intent.id } }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries()
+      setDeleting(false)
+      toast.add({ variant: 'success', title: 'Intent deleted', description: intent.title })
+    },
   })
 
   return (
-    <div className="flex justify-end">
+    <>
       <DropdownMenu>
         <DropdownMenu.Trigger
           render={
-            <Button variant="ghost" shape="square" size="sm" aria-label="Intent actions">
+            <Button
+              variant="ghost"
+              shape="square"
+              size="sm"
+              aria-label={`Actions for ${intent.title}`}
+            >
               <DotsThreeIcon size={16} weight="bold" />
             </Button>
           }
         />
         <DropdownMenu.Content>
           <DropdownMenu.LinkItem
-            href={`/projects/${projectId}/intents/${intentId}`}
+            href={`/projects/${projectId}/intents/${intent.id}`}
             icon={TestTubeIcon}
           >
             Open
           </DropdownMenu.LinkItem>
-          <DropdownMenu.Item icon={PlayIcon} disabled={!runnable} onClick={() => run.mutate()}>
+          <DropdownMenu.Item
+            icon={PlayIcon}
+            disabled={!runnable || run.isPending}
+            onClick={() => run.mutate()}
+          >
             Run
+          </DropdownMenu.Item>
+          <DropdownMenu.Separator />
+          <DropdownMenu.Item icon={TrashIcon} variant="danger" onClick={() => setDeleting(true)}>
+            Delete
           </DropdownMenu.Item>
         </DropdownMenu.Content>
       </DropdownMenu>
+
+      <Dialog.Root open={deleting} onOpenChange={setDeleting}>
+        <Dialog className="px-6 py-5">
+          <div className="grid gap-5">
+            <div className="grid gap-1.5">
+              <Dialog.Title>
+                <Text as="span" variant="heading">
+                  Delete this intent?
+                </Text>
+              </Dialog.Title>
+              <Dialog.Description>
+                <Text as="span" variant="secondary">
+                  {intent.title}, its script history and its runs will be removed. This cannot be
+                  undone.
+                </Text>
+              </Dialog.Description>
+            </div>
+
+            {remove.error ? (
+              <Banner
+                variant="error"
+                icon={<WarningCircleIcon weight="fill" />}
+                title="Could not delete"
+                description={remove.error.message}
+              />
+            ) : null}
+
+            <div className="flex justify-end gap-2">
+              <Dialog.Close
+                render={(props) => (
+                  <Button {...props} variant="secondary">
+                    Cancel
+                  </Button>
+                )}
+              />
+              <Button
+                variant="destructive"
+                loading={remove.isPending}
+                onClick={() => remove.mutate()}
+              >
+                Delete intent
+              </Button>
+            </div>
+          </div>
+        </Dialog>
+      </Dialog.Root>
+    </>
+  )
+}
+
+type ProjectRow = {
+  id: string
+  name: string
+  slug: string
+  description: string | null
+  defaultEnvironment: { id: string; name: string; baseUrl: string } | null
+}
+
+function SettingsTab({ project }: { project: ProjectRow }) {
+  return (
+    <div className="grid max-w-3xl gap-8">
+      <Section title="Project details" description="How this project is named and described.">
+        <ProjectDetailsCard project={project} />
+      </Section>
+
+      <Section
+        title="Danger zone"
+        description="Destructive and permanent. There is no undo and no export."
+      >
+        <DeleteProjectCard project={project} />
+      </Section>
     </div>
+  )
+}
+
+function ProjectDetailsCard({ project }: { project: ProjectRow }) {
+  const queryClient = useQueryClient()
+  const toast = useKumoToastManager()
+
+  const [name, setName] = useState(project.name)
+  const [description, setDescription] = useState(project.description ?? '')
+
+  const dirty = name !== project.name || description !== (project.description ?? '')
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      updateProject({
+        data: {
+          projectId: project.id,
+          name: name.trim(),
+          description: description.trim() || null,
+        },
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries()
+      toast.add({ variant: 'success', title: 'Project updated' })
+    },
+  })
+
+  return (
+    <LayerCard className="px-5 py-4">
+      <form
+        className="grid gap-4"
+        onSubmit={(event) => {
+          event.preventDefault()
+          mutation.mutate()
+        }}
+      >
+        {mutation.error ? (
+          <Banner
+            variant="error"
+            icon={<WarningCircleIcon weight="fill" />}
+            title="Could not save"
+            description={mutation.error.message}
+          />
+        ) : null}
+
+        <Input
+          label="Name"
+          required
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+        />
+        <InputArea
+          label="Description"
+          description="Optional. What this suite covers."
+          autoResize
+          minRows={3}
+          maxRows={8}
+          value={description}
+          onChange={(event) => setDescription(event.target.value)}
+        />
+
+        <div className="flex items-center justify-between gap-3">
+          <Text variant="secondary" size="xs">
+            Base URLs live on environments, not here.
+          </Text>
+          <Button
+            type="submit"
+            variant="primary"
+            loading={mutation.isPending}
+            disabled={!name.trim() || !dirty}
+          >
+            Save changes
+          </Button>
+        </div>
+      </form>
+    </LayerCard>
+  )
+}
+
+function DeleteProjectCard({ project }: { project: ProjectRow }) {
+  const queryClient = useQueryClient()
+  const navigate = useNavigate()
+  const toast = useKumoToastManager()
+  const [confirmName, setConfirmName] = useState('')
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      deleteProject({ data: { projectId: project.id, confirmName: confirmName.trim() } }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries()
+      toast.add({ variant: 'success', title: 'Project deleted', description: project.name })
+      await navigate({ to: '/projects' })
+    },
+  })
+
+  return (
+    <LayerCard className="px-5 py-4 ring ring-kumo-danger/30">
+      <form
+        className="grid gap-4"
+        onSubmit={(event) => {
+          event.preventDefault()
+          mutation.mutate()
+        }}
+      >
+        <div className="grid gap-1.5">
+          <Text as="h3" bold>
+            Delete this project
+          </Text>
+          <Text variant="secondary" size="xs">
+            Every environment, intent, script version and run under {project.name} goes with it.
+          </Text>
+        </div>
+
+        {mutation.error ? (
+          <Banner
+            variant="error"
+            icon={<WarningCircleIcon weight="fill" />}
+            title="Could not delete"
+            description={mutation.error.message}
+          />
+        ) : null}
+
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <Input
+            className="min-w-64"
+            label={`Type "${project.name}" to confirm`}
+            value={confirmName}
+            onChange={(event) => setConfirmName(event.target.value)}
+          />
+          <Button
+            type="submit"
+            variant="destructive"
+            loading={mutation.isPending}
+            disabled={confirmName.trim() !== project.name}
+          >
+            Delete project
+          </Button>
+        </div>
+      </form>
+    </LayerCard>
   )
 }
 
@@ -414,216 +715,6 @@ function CreateIntentForm({
           disabled={!title.trim() || description.trim().length < 10}
         >
           Create intent
-        </Button>
-      </div>
-    </form>
-  )
-}
-
-type ProjectRow = {
-  id: string
-  name: string
-  description: string | null
-}
-
-function EditProjectDialog({
-  project,
-  open,
-  onOpenChange,
-}: {
-  project: ProjectRow
-  open: boolean
-  onOpenChange: (open: boolean) => void
-}) {
-  return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog className="px-6 py-5">
-        <EditProjectForm project={project} onOpenChange={onOpenChange} />
-      </Dialog>
-    </Dialog.Root>
-  )
-}
-
-function EditProjectForm({
-  project,
-  onOpenChange,
-}: {
-  project: ProjectRow
-  onOpenChange: (open: boolean) => void
-}) {
-  const queryClient = useQueryClient()
-  const toast = useKumoToastManager()
-
-  const [name, setName] = useState(project.name)
-  const [description, setDescription] = useState(project.description ?? '')
-
-  const mutation = useMutation({
-    mutationFn: () =>
-      updateProject({
-        data: {
-          projectId: project.id,
-          name: name.trim(),
-          description: description.trim() || null,
-        },
-      }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries()
-      toast.add({ variant: 'success', title: 'Project updated' })
-      onOpenChange(false)
-    },
-  })
-
-  return (
-    <form
-      className="grid gap-5"
-      onSubmit={(event) => {
-        event.preventDefault()
-        mutation.mutate()
-      }}
-    >
-      <Dialog.Title>
-        <Text as="span" variant="heading">
-          Edit project
-        </Text>
-      </Dialog.Title>
-
-      {mutation.error ? (
-        <Banner
-          variant="error"
-          icon={<WarningCircleIcon weight="fill" />}
-          title="Could not save"
-          description={mutation.error.message}
-        />
-      ) : null}
-
-      <div className="grid gap-4">
-        <Input
-          label="Name"
-          required
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-        />
-        {/* M7: base URLs are edited in the Environments section, not here. */}
-        <InputArea
-          label="Description"
-          autoResize
-          minRows={3}
-          maxRows={8}
-          value={description}
-          onChange={(event) => setDescription(event.target.value)}
-        />
-      </div>
-
-      <div className="flex justify-end gap-2">
-        <Dialog.Close
-          render={(props) => (
-            <Button {...props} variant="secondary">
-              Cancel
-            </Button>
-          )}
-        />
-        <Button type="submit" variant="primary" loading={mutation.isPending}>
-          Save changes
-        </Button>
-      </div>
-    </form>
-  )
-}
-
-function DeleteProjectDialog({
-  project,
-  open,
-  onOpenChange,
-}: {
-  project: ProjectRow
-  open: boolean
-  onOpenChange: (open: boolean) => void
-}) {
-  return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog className="px-6 py-5">
-        <DeleteProjectForm project={project} onOpenChange={onOpenChange} />
-      </Dialog>
-    </Dialog.Root>
-  )
-}
-
-function DeleteProjectForm({
-  project,
-  onOpenChange,
-}: {
-  project: ProjectRow
-  onOpenChange: (open: boolean) => void
-}) {
-  const queryClient = useQueryClient()
-  const navigate = useNavigate()
-  const toast = useKumoToastManager()
-  const [confirmName, setConfirmName] = useState('')
-
-  const mutation = useMutation({
-    mutationFn: () =>
-      deleteProject({ data: { projectId: project.id, confirmName: confirmName.trim() } }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries()
-      toast.add({ variant: 'success', title: 'Project deleted', description: project.name })
-      onOpenChange(false)
-      await navigate({ to: '/projects' })
-    },
-  })
-
-  return (
-    <form
-      className="grid gap-5"
-      onSubmit={(event) => {
-        event.preventDefault()
-        mutation.mutate()
-      }}
-    >
-      <div className="grid gap-1.5">
-        <Dialog.Title>
-          <Text as="span" variant="heading">
-            Delete this project?
-          </Text>
-        </Dialog.Title>
-        <Dialog.Description>
-          <Text as="span" variant="secondary">
-            Every environment, intent and run under {project.name} goes with it. This cannot be
-            undone.
-          </Text>
-        </Dialog.Description>
-      </div>
-
-      {mutation.error ? (
-        <Banner
-          variant="error"
-          icon={<WarningCircleIcon weight="fill" />}
-          title="Could not delete"
-          description={mutation.error.message}
-        />
-      ) : null}
-
-      <Input
-        label={`Type "${project.name}" to confirm`}
-        required
-        value={confirmName}
-        onChange={(event) => setConfirmName(event.target.value)}
-      />
-
-      <div className="flex justify-end gap-2">
-        <Dialog.Close
-          render={(props) => (
-            <Button {...props} variant="secondary">
-              Cancel
-            </Button>
-          )}
-        />
-        <Button
-          type="submit"
-          variant="destructive"
-          loading={mutation.isPending}
-          disabled={confirmName.trim() !== project.name}
-        >
-          Delete project
         </Button>
       </div>
     </form>

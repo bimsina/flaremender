@@ -279,11 +279,15 @@ export class RunWorkflow extends WorkflowEntrypoint<Cloudflare.Env, RunWorkflowP
     const db = createDb(this.env.DB)
     const status = OUTCOME_TO_RUN_STATUS[executed.result.outcome]
 
+    // Every line of an error is indented, not just its first: the UI reads this
+    // column back into steps, and a Playwright error runs to a dozen lines whose
+    // second onwards would otherwise be indistinguishable from console output.
     const transcript = [
-      ...executed.result.steps.map(
-        (step) =>
-          `${step.ok ? '✓' : '✘'} ${step.label} (${step.durationMs}ms)${step.error ? `\n    ${step.error}` : ''}`,
-      ),
+      ...executed.result.steps.map((step) => {
+        const head = `${step.ok ? '✓' : '✘'} ${step.label} (${step.durationMs}ms)`
+        if (!step.error) return head
+        return [head, ...step.error.split('\n').map((line) => `    ${line}`)].join('\n')
+      }),
       ...(executed.result.logs.length > 0 ? ['', ...executed.result.logs] : []),
     ].join('\n')
 

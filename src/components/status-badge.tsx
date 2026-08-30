@@ -1,6 +1,6 @@
 import { Badge } from '@cloudflare/kumo'
 
-import type { IntentStatus, RunStatus } from '#/db/schema/app.ts'
+import type { IntentStatus, RunStatus, ScriptAuthor } from '#/db/schema/app.ts'
 
 type BadgeVariant = React.ComponentProps<typeof Badge>['variant']
 
@@ -21,8 +21,12 @@ const RUN: Record<RunStatus, { label: string; variant: BadgeVariant }> = {
   error: { label: 'Errored', variant: 'warning' },
 }
 
-// M4: renamed to `IntentStatusBadge` when the routes are rewritten.
-export function TestCaseStatusBadge({ status }: { status: IntentStatus }) {
+const AUTHOR: Record<ScriptAuthor, { label: string; variant: BadgeVariant }> = {
+  user: { label: 'You', variant: 'neutral' },
+  agent: { label: 'Agent', variant: 'blue' },
+}
+
+export function IntentStatusBadge({ status }: { status: IntentStatus }) {
   const meta = INTENT[status] ?? INTENT.draft
   return (
     <Badge variant={meta.variant} appearance="dot">
@@ -33,6 +37,16 @@ export function TestCaseStatusBadge({ status }: { status: IntentStatus }) {
 
 export function RunStatusBadge({ status }: { status: RunStatus }) {
   const meta = RUN[status] ?? RUN.queued
+  return (
+    <Badge variant={meta.variant} appearance="dot">
+      {meta.label}
+    </Badge>
+  )
+}
+
+/** Who wrote a script version. Phase 2 starts producing `'agent'` rows. */
+export function ScriptAuthorBadge({ author }: { author: ScriptAuthor }) {
+  const meta = AUTHOR[author] ?? AUTHOR.user
   return (
     <Badge variant={meta.variant} appearance="dot">
       {meta.label}

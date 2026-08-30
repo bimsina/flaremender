@@ -3,7 +3,7 @@ import { queryOptions } from '@tanstack/react-query'
 import { getAdminStats, listAllMemberships, listAllOrganizations } from '#/server/admin.ts'
 import { getOrgOverview } from '#/server/dashboard.ts'
 import { listEnvironments } from '#/server/environments.ts'
-import { getIntent, listIntents, listScriptVersions } from '#/server/intents.ts'
+import { getIntent, getScriptVersion, listIntents, listScriptVersions } from '#/server/intents.ts'
 import { getProject, listProjects } from '#/server/projects.ts'
 import { getRun, listRuns } from '#/server/runs.ts'
 import { fetchSession, fetchThemePreference } from '#/server/session.ts'
@@ -62,6 +62,15 @@ export const scriptVersionsQuery = (intentId: string) =>
   queryOptions({
     queryKey: ['script-versions', intentId] as const,
     queryFn: () => listScriptVersions({ data: { intentId } }),
+  })
+
+/** One version's code, fetched only when the history panel opens it. */
+export const scriptVersionQuery = (versionId: string) =>
+  queryOptions({
+    queryKey: ['script-version', versionId] as const,
+    queryFn: () => getScriptVersion({ data: { versionId } }),
+    // Versions are immutable, so a fetched one never needs refreshing.
+    staleTime: Infinity,
   })
 
 export const runsQuery = (intentId: string) =>

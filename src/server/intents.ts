@@ -103,9 +103,14 @@ export const listIntents = createServerFn({ method: 'GET' })
         createdAt: intent.createdAt,
         updatedAt: intent.updatedAt,
         currentVersion: scriptVersion.version,
+        // The listing shows "last run 3 minutes ago", which is the run's clock
+        // and not the intent's — an edit must not read as an execution.
+        lastRunAt: run.startedAt,
+        lastRunStatus: run.status,
       })
       .from(intent)
       .leftJoin(scriptVersion, eq(scriptVersion.id, intent.currentVersionId))
+      .leftJoin(run, eq(run.id, intent.lastRunId))
       .where(eq(intent.projectId, data.projectId))
       .orderBy(desc(intent.updatedAt))
 

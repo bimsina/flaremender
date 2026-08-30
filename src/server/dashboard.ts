@@ -10,7 +10,7 @@ export const getOrgOverview = createServerFn({ method: 'GET' })
     const [totals] = await context.db
       .select({
         projects: sql<number>`count(distinct ${project.id})`,
-        tests: sql<number>`count(${intent.id})`,
+        intents: sql<number>`count(${intent.id})`,
         passing: sql<number>`sum(case when ${intent.status} = 'passing' then 1 else 0 end)`,
         failing: sql<number>`sum(case when ${intent.status} = 'failing' then 1 else 0 end)`,
         pending: sql<number>`sum(case when ${intent.status} in ('draft','ready') then 1 else 0 end)`,
@@ -59,7 +59,7 @@ export const getOrgOverview = createServerFn({ method: 'GET' })
 
     return {
       projects: Number(totals?.projects ?? 0),
-      tests: Number(totals?.tests ?? 0),
+      intents: Number(totals?.intents ?? 0),
       passing: Number(totals?.passing ?? 0),
       failing: Number(totals?.failing ?? 0),
       pending: Number(totals?.pending ?? 0),

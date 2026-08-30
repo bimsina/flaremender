@@ -41,7 +41,7 @@ export const listProjects = createServerFn({ method: 'GET' })
         baseUrl: environment.baseUrl,
         createdAt: project.createdAt,
         updatedAt: project.updatedAt,
-        testCount: count(intent.id),
+        intentCount: count(intent.id),
         failingCount: sql<number>`sum(case when ${intent.status} = 'failing' then 1 else 0 end)`,
         passingCount: sql<number>`sum(case when ${intent.status} = 'passing' then 1 else 0 end)`,
       })

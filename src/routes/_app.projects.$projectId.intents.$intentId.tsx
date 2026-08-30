@@ -1,38 +1,61 @@
 import {
   Badge,
   Banner,
+  Breadcrumbs,
   Button,
-  Collapsible,
   Dialog,
   DropdownMenu,
   Empty,
   Input,
   InputArea,
   LayerCard,
+  Loader,
+  Select,
+  Table,
+  Tabs,
   Text,
   useKumoToastManager,
 } from '@cloudflare/kumo'
 import {
-  CaretRightIcon,
+  ArrowCounterClockwiseIcon,
+  CaretDownIcon,
   ClockCounterClockwiseIcon,
   DotsThreeIcon,
+  FileTextIcon,
   FloppyDiskIcon,
+  ImageIcon,
+  PencilSimpleIcon,
   PlayIcon,
-  TerminalWindowIcon,
   TrashIcon,
   WarningCircleIcon,
+  WaveformIcon,
   XIcon,
 } from '@phosphor-icons/react'
-import { useMutation, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
-import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { Fragment, useMemo, useState } from 'react'
 
+import { Duration } from '#/components/duration.tsx'
+import { InlineEmpty, ListRow, Section } from '#/components/list.tsx'
+import { MonoPanel } from '#/components/mono-panel.tsx'
 import { PageBody, PageHeader } from '#/components/page.tsx'
 import { RelativeTime } from '#/components/relative-time.tsx'
 import { RunLivePanel } from '#/components/run-live-panel.tsx'
-import { RunStatusBadge, TestCaseStatusBadge } from '#/components/status-badge.tsx'
-import { formatDuration } from '#/lib/format.ts'
-import { intentQuery, runsQuery, scriptVersionsQuery } from '#/lib/queries.ts'
+import { IntentStatusBadge, RunStatusBadge, ScriptAuthorBadge } from '#/components/status-badge.tsx'
+import { StepList } from '#/components/step-list.tsx'
+import { SummaryStrip } from '#/components/summary-strip.tsx'
+import type { ArtifactKeys } from '#/db/schema/app.ts'
+import type { RunStatus, ScriptAuthor } from '#/db/schema/app.ts'
+import {
+  environmentsQuery,
+  intentQuery,
+  runQuery,
+  runsQuery,
+  scriptVersionQuery,
+  scriptVersionsQuery,
+} from '#/lib/queries.ts'
+import { DEFAULT_SCRIPT_TEMPLATE } from '#/lib/script-template.ts'
+import { parseTranscript } from '#/lib/transcript.ts'
 import {
   deleteIntent,
   restoreScriptVersion,
@@ -41,7 +64,18 @@ import {
   updateIntent,
 } from '#/server/intents.ts'
 
+const TABS = ['script', 'runs', 'history'] as const
+type Tab = (typeof TABS)[number]
+
+function isTab(value: unknown): value is Tab {
+  return typeof value === 'string' && (TABS as ReadonlyArray<string>).includes(value)
+}
+
+const TERMINAL: ReadonlySet<RunStatus> = new Set(['passed', 'healed', 'failed', 'error'])
+
 export const Route = createFileRoute('/_app/projects/$projectId/intents/$intentId')({
+  validateSearch: (search: Record<string, unknown>): { tab?: Tab } =>
+    isTab(search.tab) ? { tab: search.tab } : {},
   loader: async ({ context, params }) => {
     await Promise.all([
       context.queryClient.ensureQueryData({
@@ -56,272 +90,195 @@ export const Route = createFileRoute('/_app/projects/$projectId/intents/$intentI
         ...scriptVersionsQuery(params.intentId),
         revalidateIfStale: true,
       }),
+      context.queryClient.ensureQueryData({
+        ...environmentsQuery(params.projectId),
+        revalidateIfStale: true,
+      }),
     ])
   },
   component: IntentDetail,
 })
 
-const STARTER_SCRIPT = `import { expect, test } from '@playwright/test'
-
-test('walks the happy path', async ({ page }) => {
-  await page.goto('/')
-  await expect(page.getByRole('heading')).toBeVisible()
-})
-`
-
 function IntentDetail() {
   const { projectId, intentId } = Route.useParams()
+  const search = Route.useSearch()
+  const tab = search.tab ?? 'script'
+  const navigate = useNavigate({ from: Route.fullPath })
+
   const { data } = useSuspenseQuery(intentQuery(intentId))
   const { data: runs } = useSuspenseQuery(runsQuery(intentId))
   const { data: versions } = useSuspenseQuery(scriptVersionsQuery(intentId))
+  const { data: environments } = useSuspenseQuery(environmentsQuery(projectId))
 
   const queryClient = useQueryClient()
   const toast = useKumoToastManager()
 
-  const [editing, setEditing] = useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const [code, setCode] = useState(data.currentVersion?.code ?? STARTER_SCRIPT)
-  /** The run this page is currently watching. Set the moment one is queued. */
-  const [liveRunId, setLiveRunId] = useState<string | null>(null)
-
   const { intent, currentVersion, project } = data
-  const lastRun = runs[0]
-  const hasScript = currentVersion !== null
-  const dirty = code !== (currentVersion?.code ?? STARTER_SCRIPT)
 
-  const save = useMutation({
-    mutationFn: () => saveScript({ data: { intentId, code } }),
-    onSuccess: async (result) => {
-      await queryClient.invalidateQueries()
-      toast.add({ variant: 'success', title: `Saved as v${result.version}` })
-    },
-  })
+  const [editingDescription, setEditingDescription] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  /** Explicitly watched run — set the moment one is queued from this page. */
+  const [watching, setWatching] = useState<string | null>(null)
+  const [environmentId, setEnvironmentId] = useState<string | null>(null)
 
-  // M7: an environment selector goes here; today the run targets the project's
-  // default environment, which is what `runIntent` falls back to.
-  //
-  // The verdict does not arrive with the response — a run is a Workflow, and
-  // this only queues it. The live panel takes over from here and refreshes the
-  // history itself once the run reports a verdict.
+  const defaultEnvironment = environments.find((row) => row.isDefault) ?? environments[0] ?? null
+  const targetEnvironmentId = environmentId ?? defaultEnvironment?.id ?? null
+
+  // A reload in the middle of a run must find its way back to the live panel,
+  // so an unfinished run in the history seeds the watch as well.
+  const inFlight = runs.find((row) => !TERMINAL.has(row.status))
+  const liveRunId = watching ?? inFlight?.id ?? null
+
   const run = useMutation({
-    mutationFn: () => runIntent({ data: { intentId } }),
+    mutationFn: () =>
+      runIntent({
+        data: {
+          intentId,
+          ...(targetEnvironmentId ? { environmentId: targetEnvironmentId } : {}),
+        },
+      }),
     onSuccess: async (result) => {
-      setLiveRunId(result.runId)
+      setWatching(result.runId)
+      // The verdict does not arrive with the response — a run is a Workflow and
+      // this only queues it. The live panel takes it from here.
       await queryClient.invalidateQueries()
+      if (tab !== 'script') void navigate({ search: { tab: 'script' }, replace: true })
       toast.add({ variant: 'info', title: 'Run queued', description: result.runId })
     },
+    onError: (error: Error) => {
+      toast.add({ variant: 'error', title: 'Could not queue the run', description: error.message })
+    },
   })
 
-  const busy = save.isPending || run.isPending
-  const error = save.error ?? run.error
+  const environmentItems = useMemo(
+    () =>
+      environments.map((row) => ({
+        label: row.isDefault ? `${row.name} (default)` : row.name,
+        value: row.id,
+      })),
+    [environments],
+  )
 
   return (
     <>
       <PageHeader
         breadcrumbs={
-          <div className="flex items-center gap-1">
-            <Link to="/projects" className="text-kumo-link underline underline-offset-2">
-              <Text as="span" size="xs">
-                Projects
-              </Text>
-            </Link>
-            <CaretRightIcon size={12} className="text-kumo-subtle" />
-            <Link
-              to="/projects/$projectId"
-              params={{ projectId }}
-              className="text-kumo-link underline underline-offset-2"
-            >
-              <Text as="span" size="xs">
-                {project.name}
-              </Text>
-            </Link>
-            <CaretRightIcon size={12} className="text-kumo-subtle" />
-            <Text as="span" variant="secondary" size="xs">
-              Intent
-            </Text>
-          </div>
+          <Breadcrumbs size="sm">
+            <Breadcrumbs.Link href="/projects">Projects</Breadcrumbs.Link>
+            <Breadcrumbs.Separator />
+            <Breadcrumbs.Link href={`/projects/${projectId}`}>{project.name}</Breadcrumbs.Link>
+            <Breadcrumbs.Separator />
+            <Breadcrumbs.Current>{intent.title}</Breadcrumbs.Current>
+          </Breadcrumbs>
         }
         title={intent.title}
-        description={currentVersion ? `Version ${currentVersion.version}` : 'No script saved yet'}
+        description={
+          <span className="flex flex-wrap items-center gap-2">
+            <IntentStatusBadge status={intent.status} />
+            <Text as="span" variant="secondary" size="xs">
+              {currentVersion ? `Version ${currentVersion.version}` : 'No script saved yet'}
+            </Text>
+          </span>
+        }
         actions={
+          <DropdownMenu>
+            <DropdownMenu.Trigger
+              render={
+                <Button variant="secondary" shape="square" aria-label="Intent actions">
+                  <DotsThreeIcon size={16} weight="bold" />
+                </Button>
+              }
+            />
+            <DropdownMenu.Content>
+              <DropdownMenu.Item
+                icon={PencilSimpleIcon}
+                onClick={() => setEditingDescription(true)}
+              >
+                Edit intent
+              </DropdownMenu.Item>
+              <DropdownMenu.Separator />
+              <DropdownMenu.Item
+                icon={TrashIcon}
+                variant="danger"
+                onClick={() => setDeleting(true)}
+              >
+                Delete intent
+              </DropdownMenu.Item>
+            </DropdownMenu.Content>
+          </DropdownMenu>
+        }
+        tabs={
+          <Tabs
+            variant="underline"
+            tabs={[
+              { value: 'script', label: 'Script' },
+              { value: 'runs', label: `Runs${runs.length > 0 ? ` (${runs.length})` : ''}` },
+              { value: 'history', label: 'History' },
+            ]}
+            value={tab}
+            onValueChange={(value) => {
+              if (isTab(value)) void navigate({ search: { tab: value }, replace: true })
+            }}
+          />
+        }
+        tabActions={
           <>
+            <Select
+              aria-label="Environment"
+              className="w-52"
+              placeholder="No environment"
+              items={environmentItems}
+              value={targetEnvironmentId}
+              onValueChange={(value: string | null) => setEnvironmentId(value)}
+            />
             <Button
-              variant={dirty ? 'primary' : 'secondary'}
-              icon={<FloppyDiskIcon size={16} />}
-              loading={save.isPending}
-              disabled={busy || !dirty}
-              onClick={() => save.mutate()}
-            >
-              Save script
-            </Button>
-            <Button
-              variant={dirty ? 'secondary' : 'primary'}
+              variant="primary"
               icon={<PlayIcon size={16} />}
               loading={run.isPending}
-              disabled={busy || !hasScript}
+              disabled={currentVersion === null || targetEnvironmentId === null}
               onClick={() => run.mutate()}
             >
               Run
             </Button>
-            <DropdownMenu>
-              <DropdownMenu.Trigger
-                render={
-                  <Button variant="secondary" shape="square" aria-label="Intent actions">
-                    <DotsThreeIcon size={16} weight="bold" />
-                  </Button>
-                }
-              />
-              <DropdownMenu.Content>
-                <DropdownMenu.Item icon={TerminalWindowIcon} onClick={() => setEditing(true)}>
-                  Edit description
-                </DropdownMenu.Item>
-                <DropdownMenu.Separator />
-                <DropdownMenu.Item
-                  icon={TrashIcon}
-                  variant="danger"
-                  onClick={() => setDeleting(true)}
-                >
-                  Delete intent
-                </DropdownMenu.Item>
-              </DropdownMenu.Content>
-            </DropdownMenu>
           </>
         }
       />
 
       <PageBody className="grid gap-6">
-        <div className="flex flex-wrap items-center gap-2">
-          <TestCaseStatusBadge status={intent.status} />
-          {lastRun ? (
-            <Text variant="secondary" size="xs">
-              Last run <RelativeTime value={lastRun.startedAt} /> · {lastRun.environmentName} ·{' '}
-              {formatDuration(lastRun.durationMs)}
-            </Text>
-          ) : (
-            <Text variant="secondary" size="xs">
-              Never run
-            </Text>
-          )}
-        </div>
-
-        {error ? (
+        {environments.length === 0 ? (
           <Banner
-            variant="error"
+            variant="alert"
             icon={<WarningCircleIcon weight="fill" />}
-            title="Something went wrong"
-            description={error.message}
+            title="This project has no environment"
+            description="Add one under the project's Environments tab before running anything."
           />
         ) : null}
 
-        {liveRunId ? <RunLivePanel key={liveRunId} runId={liveRunId} intentId={intentId} /> : null}
-
-        {intent.status === 'failing' && lastRun?.lastErrorMessage ? (
-          <Banner
-            variant="error"
-            icon={<WarningCircleIcon weight="fill" />}
-            title="The last run failed"
-            description={lastRun.lastErrorMessage.split('\n')[0]}
+        {tab === 'script' ? (
+          <ScriptTab
+            // A restore replaces the saved code, and the editor has to follow it
+            // rather than sit there claiming unsaved changes it did not make.
+            key={currentVersion?.id ?? 'unsaved'}
+            intentId={intentId}
+            description={intent.description}
+            currentVersion={currentVersion}
+            liveRunId={liveRunId}
+            onEditDescription={() => setEditingDescription(true)}
           />
         ) : null}
 
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="grid gap-6">
-            <section className="grid gap-3">
-              <div className="flex items-end justify-between gap-4">
-                <div className="grid gap-1.5">
-                  <Text as="h2" variant="heading">
-                    Intent
-                  </Text>
-                  <Text variant="secondary">Plain English, and the permanent source of truth.</Text>
-                </div>
-                <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
-                  Edit
-                </Button>
-              </div>
-              <LayerCard className="px-5 py-4">
-                <pre className="font-mono text-[0.9em] whitespace-pre-wrap text-kumo-default">
-                  {intent.description}
-                </pre>
-              </LayerCard>
-            </section>
+        {tab === 'runs' ? <RunsTab runs={runs} /> : null}
 
-            <section className="grid gap-3">
-              <div className="grid gap-1.5">
-                <Text as="h2" variant="heading">
-                  Playwright script
-                </Text>
-                <Text variant="secondary">
-                  Every save is a new version in history. M7 replaces this box with a real editor.
-                </Text>
-              </div>
-              <InputArea
-                aria-label="Playwright script"
-                className="font-mono"
-                minRows={18}
-                maxRows={40}
-                value={code}
-                onChange={(event) => setCode(event.target.value)}
-              />
-            </section>
-          </div>
-
-          <div className="grid content-start gap-6">
-            <section className="grid content-start gap-3">
-              <div className="grid gap-1.5">
-                <Text as="h2" variant="heading">
-                  Version history
-                </Text>
-                <Text variant="secondary">Newest first.</Text>
-              </div>
-
-              {versions.length === 0 ? (
-                <Empty
-                  size="sm"
-                  icon={<ClockCounterClockwiseIcon size={32} className="text-kumo-inactive" />}
-                  title="No versions yet"
-                  description="Save the script to start its history."
-                />
-              ) : (
-                <ol className="grid gap-2">
-                  {versions.map((version) => (
-                    <li key={version.id}>
-                      <VersionRow version={version} isCurrent={version.id === currentVersion?.id} />
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </section>
-
-            <section className="grid content-start gap-3">
-              <div className="grid gap-1.5">
-                <Text as="h2" variant="heading">
-                  Run history
-                </Text>
-                <Text variant="secondary">Every run, newest first.</Text>
-              </div>
-
-              {runs.length === 0 ? (
-                <Empty
-                  size="sm"
-                  icon={<PlayIcon size={32} className="text-kumo-inactive" />}
-                  title="No runs yet"
-                  description="Save the script, then run it."
-                />
-              ) : (
-                <ol className="grid gap-2">
-                  {runs.map((runRow) => (
-                    <li key={runRow.id}>
-                      <RunRow run={runRow} />
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </section>
-          </div>
-        </div>
+        {tab === 'history' ? (
+          <HistoryTab versions={versions} currentVersionId={currentVersion?.id ?? null} />
+        ) : null}
       </PageBody>
 
-      <EditIntentDialog intent={intent} open={editing} onOpenChange={setEditing} />
+      <EditIntentDialog
+        intent={intent}
+        open={editingDescription}
+        onOpenChange={setEditingDescription}
+      />
       <DeleteIntentDialog
         intent={intent}
         projectId={projectId}
@@ -332,17 +289,564 @@ function IntentDetail() {
   )
 }
 
+/* -------------------------------------------------------------- Script tab */
+
+function ScriptTab({
+  intentId,
+  description,
+  currentVersion,
+  liveRunId,
+  onEditDescription,
+}: {
+  intentId: string
+  description: string
+  currentVersion: { id: string; version: number; code: string; author: ScriptAuthor } | null
+  liveRunId: string | null
+  onEditDescription: () => void
+}) {
+  const queryClient = useQueryClient()
+  const toast = useKumoToastManager()
+
+  // A brand-new intent starts from the template rather than an empty box: the
+  // shape of a script is not obvious, and an empty editor teaches nothing.
+  const saved = currentVersion?.code ?? DEFAULT_SCRIPT_TEMPLATE
+  const [code, setCode] = useState(saved)
+  const [note, setNote] = useState('')
+
+  const dirty = code !== saved
+  const untouched = currentVersion === null && !dirty
+
+  const save = useMutation({
+    mutationFn: () =>
+      saveScript({ data: { intentId, code, ...(note.trim() ? { note: note.trim() } : {}) } }),
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries()
+      setNote('')
+      toast.add({ variant: 'success', title: `Saved as v${result.version}` })
+    },
+  })
+
+  return (
+    <div className="grid gap-6">
+      <Section
+        title="Intent"
+        description="Plain English, and the permanent source of truth."
+        actions={
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<PencilSimpleIcon size={14} />}
+            onClick={onEditDescription}
+          >
+            Edit
+          </Button>
+        }
+      >
+        <LayerCard className="px-5 py-4">
+          <pre className="font-mono text-[0.9em] whitespace-pre-wrap text-kumo-default">
+            {description}
+          </pre>
+        </LayerCard>
+      </Section>
+
+      <Section
+        title="Playwright script"
+        description="Every save is a new, immutable version. Restoring an old one saves it forward."
+      >
+        <LayerCard className="px-5 py-4">
+          <div className="grid gap-3">
+            {save.error ? (
+              <Banner
+                variant="error"
+                icon={<WarningCircleIcon weight="fill" />}
+                title="Could not save"
+                description={save.error.message}
+              />
+            ) : null}
+
+            <InputArea
+              aria-label="Playwright script"
+              className="font-mono text-[0.9em]"
+              spellCheck={false}
+              minRows={22}
+              maxRows={48}
+              value={code}
+              onChange={(event) => setCode(event.target.value)}
+            />
+
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <Text variant="secondary" size="xs">
+                {untouched
+                  ? 'Seeded from the default template — save it to make this intent runnable.'
+                  : dirty
+                    ? 'Unsaved changes. Runs always use the last saved version.'
+                    : currentVersion
+                      ? `Saved as v${currentVersion.version}.`
+                      : 'Not saved yet.'}
+              </Text>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Input
+                  size="sm"
+                  className="w-56"
+                  aria-label="Version note"
+                  placeholder="Note (optional)"
+                  value={note}
+                  onChange={(event) => setNote(event.target.value)}
+                />
+                <Button
+                  variant={dirty ? 'primary' : 'secondary'}
+                  icon={<FloppyDiskIcon size={16} />}
+                  loading={save.isPending}
+                  disabled={!dirty && currentVersion !== null}
+                  onClick={() => save.mutate()}
+                >
+                  Save version
+                </Button>
+              </div>
+            </div>
+          </div>
+        </LayerCard>
+      </Section>
+
+      {liveRunId ? (
+        <Section title="Live run" description="Steps appear as the browser makes them.">
+          <RunLivePanel key={liveRunId} runId={liveRunId} intentId={intentId} />
+        </Section>
+      ) : null}
+    </div>
+  )
+}
+
+/* ---------------------------------------------------------------- Runs tab */
+
+type RunRowData = {
+  id: string
+  status: RunStatus
+  trigger: 'manual' | 'regenerate' | 'schedule'
+  environmentName: string
+  version: number
+  durationMs: number | null
+  startedAt: Date
+  lastErrorMessage: string | null
+}
+
+/** A run id is 24 characters of entropy; the tail is what people compare. */
+function shortRunId(runId: string): string {
+  return runId.slice(-8)
+}
+
+const STATUS_SUMMARY = [
+  { key: 'passed', label: 'Passed', match: (status: RunStatus) => status === 'passed' },
+  { key: 'healed', label: 'Healed', match: (status: RunStatus) => status === 'healed' },
+  { key: 'failed', label: 'Failed', match: (status: RunStatus) => status === 'failed' },
+  { key: 'error', label: 'Error', match: (status: RunStatus) => status === 'error' },
+  {
+    key: 'active',
+    label: 'Running',
+    match: (status: RunStatus) => status === 'running' || status === 'queued',
+  },
+] as const
+
+const SUMMARY_DOT: Record<string, string> = {
+  passed: 'bg-kumo-success',
+  healed: 'bg-kumo-info',
+  failed: 'bg-kumo-danger',
+  error: 'bg-kumo-warning',
+  active: 'bg-kumo-interact',
+}
+
+function RunsTab({ runs }: { runs: Array<RunRowData> }) {
+  const [expanded, setExpanded] = useState<string | null>(null)
+
+  const summary = useMemo(
+    () =>
+      STATUS_SUMMARY.map((entry) => {
+        const count = runs.filter((row) => entry.match(row.status)).length
+        return {
+          key: entry.key,
+          dim: count === 0,
+          label: (
+            <>
+              <span className={`size-2 rounded-full ${SUMMARY_DOT[entry.key]}`} />
+              {entry.label}
+            </>
+          ),
+          value: (
+            <Text as="span" variant="heading">
+              {count}
+            </Text>
+          ),
+        }
+      }),
+    [runs],
+  )
+
+  if (runs.length === 0) {
+    return (
+      <Empty
+        icon={<PlayIcon size={48} className="text-kumo-inactive" />}
+        title="No runs found"
+        description="Save a script, pick an environment, then press Run — every execution lands here."
+      />
+    )
+  }
+
+  return (
+    <Section title="Runs" description="Newest first. Open one for its steps and artifacts.">
+      <div className="grid gap-4">
+        <SummaryStrip items={summary} />
+
+        <LayerCard className="p-0">
+          <div className="overflow-x-auto">
+            <Table>
+              <Table.Header>
+                <Table.Row>
+                  <Table.Head className="w-0" />
+                  <Table.Head>Status</Table.Head>
+                  <Table.Head>Started</Table.Head>
+                  <Table.Head>Run</Table.Head>
+                  <Table.Head>Environment</Table.Head>
+                  <Table.Head>Version</Table.Head>
+                  <Table.Head className="text-right">Duration</Table.Head>
+                </Table.Row>
+              </Table.Header>
+              <Table.Body>
+                {runs.map((row) => {
+                  const open = expanded === row.id
+                  return (
+                    <Fragment key={row.id}>
+                      <Table.Row>
+                        <Table.Cell>
+                          <Button
+                            variant="ghost"
+                            shape="square"
+                            size="sm"
+                            aria-label={open ? 'Hide run detail' : 'Show run detail'}
+                            onClick={() => setExpanded(open ? null : row.id)}
+                          >
+                            <CaretDownIcon
+                              size={14}
+                              className={open ? 'rotate-180' : '-rotate-90'}
+                            />
+                          </Button>
+                        </Table.Cell>
+                        <Table.Cell>
+                          <RunStatusBadge status={row.status} />
+                        </Table.Cell>
+                        <Table.Cell>
+                          <RelativeTime value={row.startedAt} />
+                        </Table.Cell>
+                        <Table.Cell>
+                          <Text as="span" variant="mono-secondary">
+                            {shortRunId(row.id)}
+                          </Text>
+                        </Table.Cell>
+                        <Table.Cell>{row.environmentName}</Table.Cell>
+                        <Table.Cell>
+                          <Text as="span" variant="mono-secondary">
+                            v{row.version}
+                          </Text>
+                        </Table.Cell>
+                        <Table.Cell className="text-right">
+                          <Duration ms={row.durationMs} />
+                        </Table.Cell>
+                      </Table.Row>
+                      {open ? (
+                        <Table.Row>
+                          <Table.Cell colSpan={7} className="bg-kumo-recessed">
+                            <RunDetail runId={row.id} />
+                          </Table.Cell>
+                        </Table.Row>
+                      ) : null}
+                    </Fragment>
+                  )
+                })}
+              </Table.Body>
+            </Table>
+          </div>
+        </LayerCard>
+      </div>
+    </Section>
+  )
+}
+
+const ARTIFACT_LABELS: Record<keyof ArtifactKeys, { label: string; icon: React.ReactNode }> = {
+  screenshot: { label: 'Screenshot', icon: <ImageIcon size={14} /> },
+  trace: { label: 'Trace', icon: <WaveformIcon size={14} /> },
+  logs: { label: 'Logs', icon: <FileTextIcon size={14} /> },
+  video: { label: 'Video', icon: <WaveformIcon size={14} /> },
+}
+
+/** `/api/artifacts/*` re-checks the caller before it streams a byte. */
+function artifactHref(key: string): string {
+  return `/api/artifacts/${key.split('/').map(encodeURIComponent).join('/')}`
+}
+
+function RunDetail({ runId }: { runId: string }) {
+  const { data, isPending, error } = useQuery(runQuery(runId))
+
+  if (isPending) {
+    return (
+      <div className="flex items-center gap-2 py-2">
+        <Loader size="sm" />
+        <Text as="span" variant="secondary" size="xs">
+          Loading the attempt…
+        </Text>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <Banner
+        variant="error"
+        icon={<WarningCircleIcon weight="fill" />}
+        title="Could not load this run"
+        description={error.message}
+      />
+    )
+  }
+
+  if (data.attempts.length === 0) {
+    return <InlineEmpty message="This run has not recorded an attempt yet." />
+  }
+
+  return (
+    <div className="grid gap-6 py-2">
+      {data.attempts.map((attempt) => (
+        <AttemptDetail
+          key={attempt.id}
+          attempt={attempt}
+          environmentName={data.environment.name}
+          showAttemptNumber={data.attempts.length > 1}
+        />
+      ))}
+    </div>
+  )
+}
+
+type AttemptData = {
+  id: string
+  attemptNumber: number
+  outcome: 'passed' | 'failed' | 'error'
+  diagnosis: string | null
+  artifactKeys: ArtifactKeys | null
+  logs: string | null
+  errorMessage: string | null
+  durationMs: number | null
+  scriptUsed: string
+}
+
+const OUTCOME_BADGE = {
+  passed: { label: 'Passed', variant: 'success' },
+  failed: { label: 'Failed', variant: 'error' },
+  error: { label: 'Errored', variant: 'warning' },
+} as const
+
+function AttemptDetail({
+  attempt,
+  environmentName,
+  showAttemptNumber,
+}: {
+  attempt: AttemptData
+  environmentName: string
+  /** Only worth a row of its own once the healing loop retries within a run. */
+  showAttemptNumber: boolean
+}) {
+  const [showScript, setShowScript] = useState(false)
+  const transcript = useMemo(() => parseTranscript(attempt.logs), [attempt.logs])
+
+  const artifacts = Object.entries(attempt.artifactKeys ?? {}).filter(
+    (entry): entry is [keyof ArtifactKeys, string] => typeof entry[1] === 'string',
+  )
+
+  const outcome = OUTCOME_BADGE[attempt.outcome] ?? OUTCOME_BADGE.error
+  const completed = transcript.steps.filter((step) => step.ok).length
+
+  // Transcripts written before errors were fully indented leave the tail of the
+  // error stranded among the logs, where it is already shown in full above.
+  // Repeating it twice under two different headings is worse than dropping it.
+  const output = useMemo(() => {
+    if (transcript.logs.length === 0) return null
+    const joined = transcript.logs.join('\n')
+    const message = attempt.errorMessage
+    if (!message) return joined
+    const remaining = transcript.logs.filter((line) => !message.includes(line))
+    return remaining.length === 0 ? null : remaining.join('\n')
+  }, [transcript.logs, attempt.errorMessage])
+
+  return (
+    <div className="grid gap-4">
+      <SummaryStrip
+        items={[
+          ...(showAttemptNumber
+            ? [
+                {
+                  key: 'attempt',
+                  label: 'Attempt',
+                  value: (
+                    <Text as="span" variant="heading">
+                      {attempt.attemptNumber}
+                    </Text>
+                  ),
+                },
+              ]
+            : []),
+          {
+            key: 'status',
+            label: 'Status',
+            value: (
+              <Badge variant={outcome.variant} appearance="dot">
+                {outcome.label}
+              </Badge>
+            ),
+          },
+          {
+            key: 'steps',
+            label: 'Steps completed',
+            value: (
+              <Text as="span" variant="heading">
+                {completed}
+                <span className="text-kumo-subtle">/{transcript.steps.length}</span>
+              </Text>
+            ),
+          },
+          {
+            key: 'duration',
+            label: 'Duration',
+            value: <Duration ms={attempt.durationMs} />,
+          },
+          {
+            key: 'environment',
+            label: 'Environment',
+            value: <Text as="span">{environmentName}</Text>,
+          },
+          ...(attempt.diagnosis
+            ? [
+                {
+                  key: 'diagnosis',
+                  label: 'Diagnosis',
+                  value: <Badge variant="neutral">{attempt.diagnosis}</Badge>,
+                },
+              ]
+            : []),
+        ]}
+      />
+
+      <div className="grid gap-2">
+        <Text as="h3" variant="heading">
+          Step history
+        </Text>
+        {transcript.steps.length === 0 ? (
+          <InlineEmpty message="No step transcript was recorded for this attempt." />
+        ) : (
+          <StepList steps={transcript.steps} showOffset />
+        )}
+      </div>
+
+      {attempt.errorMessage ? (
+        <MonoPanel label="Error message" text={attempt.errorMessage} tone="danger" />
+      ) : null}
+
+      {output === null ? null : <MonoPanel label="Output" text={output} />}
+
+      <div className="flex flex-wrap items-center gap-2">
+        {artifacts.length === 0 ? (
+          <Text as="span" variant="secondary" size="xs">
+            No artifacts.
+          </Text>
+        ) : (
+          artifacts.map(([kind, key]) => (
+            <a key={kind} href={artifactHref(key)} target="_blank" rel="noreferrer">
+              <Button variant="secondary" size="sm" icon={ARTIFACT_LABELS[kind].icon}>
+                {ARTIFACT_LABELS[kind].label}
+              </Button>
+            </a>
+          ))
+        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={<CaretDownIcon size={14} className={showScript ? 'rotate-180' : '-rotate-90'} />}
+          onClick={() => setShowScript((previous) => !previous)}
+        >
+          {showScript ? 'Hide the script that ran' : 'Show the script that ran'}
+        </Button>
+      </div>
+
+      {showScript ? <MonoPanel label="Script that ran" text={attempt.scriptUsed} /> : null}
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------- History tab */
+
 type VersionRowData = {
   id: string
   version: number
-  author: 'user' | 'agent'
+  author: ScriptAuthor
   note: string | null
   createdByName: string
   createdAt: Date
   codeLength: number
 }
 
-function VersionRow({ version, isCurrent }: { version: VersionRowData; isCurrent: boolean }) {
+function HistoryTab({
+  versions,
+  currentVersionId,
+}: {
+  versions: Array<VersionRowData>
+  currentVersionId: string | null
+}) {
+  const [viewing, setViewing] = useState<VersionRowData | null>(null)
+
+  if (versions.length === 0) {
+    return (
+      <Empty
+        icon={<ClockCounterClockwiseIcon size={48} className="text-kumo-inactive" />}
+        title="No script versions found"
+        description="Every save on the Script tab appends a version here, and nothing here is ever rewritten."
+      />
+    )
+  }
+
+  return (
+    <>
+      <Section title="Script history" description="Immutable, newest first.">
+        <ol className="grid gap-3">
+          {versions.map((version) => (
+            <li key={version.id}>
+              <VersionRow
+                version={version}
+                isCurrent={version.id === currentVersionId}
+                onView={() => setViewing(version)}
+              />
+            </li>
+          ))}
+        </ol>
+      </Section>
+
+      <VersionDialog
+        version={viewing}
+        open={viewing !== null}
+        onOpenChange={(open) => {
+          if (!open) setViewing(null)
+        }}
+      />
+    </>
+  )
+}
+
+function VersionRow({
+  version,
+  isCurrent,
+  onView,
+}: {
+  version: VersionRowData
+  isCurrent: boolean
+  onView: () => void
+}) {
   const queryClient = useQueryClient()
   const toast = useKumoToastManager()
 
@@ -355,99 +859,103 @@ function VersionRow({ version, isCurrent }: { version: VersionRowData; isCurrent
   })
 
   return (
-    <LayerCard className="px-4 py-3">
-      <div className="grid gap-2">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2">
-            <Text as="span" variant="mono-secondary">
-              v{version.version}
-            </Text>
-            <Badge variant={version.author === 'agent' ? 'blue' : 'neutral'} appearance="dot">
-              {version.author}
-            </Badge>
-            {isCurrent ? <Badge variant="success">current</Badge> : null}
-          </div>
-          <Text as="span" variant="secondary" size="xs">
-            {version.codeLength} chars
+    <ListRow
+      icon={<ClockCounterClockwiseIcon size={18} />}
+      title={
+        <div className="flex flex-wrap items-center gap-2">
+          <Text as="span" bold>
+            v{version.version}
           </Text>
+          <ScriptAuthorBadge author={version.author} />
+          {isCurrent ? <Badge variant="success">Current</Badge> : null}
         </div>
-
-        <Text variant="secondary" size="xs">
+      }
+      subtitle={
+        <Text variant="secondary" size="xs" truncate>
           {version.note ?? 'No note'} · {version.createdByName} ·{' '}
-          <RelativeTime value={version.createdAt} />
+          <RelativeTime value={version.createdAt} /> · {version.codeLength} chars
         </Text>
-
-        {isCurrent ? null : (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="justify-self-start"
-            loading={restore.isPending}
-            onClick={() => restore.mutate()}
-          >
-            Restore
+      }
+      actions={
+        <>
+          <Button variant="secondary" size="sm" onClick={onView}>
+            View
           </Button>
-        )}
-      </div>
-    </LayerCard>
+          {isCurrent ? null : (
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<ArrowCounterClockwiseIcon size={14} />}
+              loading={restore.isPending}
+              onClick={() => restore.mutate()}
+            >
+              Restore
+            </Button>
+          )}
+        </>
+      }
+    />
   )
 }
 
-type RunRowData = {
-  id: string
-  status: 'queued' | 'running' | 'passed' | 'healed' | 'failed' | 'error'
-  trigger: 'manual' | 'regenerate' | 'schedule'
-  environmentName: string
-  version: number
-  durationMs: number | null
-  startedAt: Date
-  lastErrorMessage: string | null
+function VersionDialog({
+  version,
+  open,
+  onOpenChange,
+}: {
+  version: VersionRowData | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog size="lg" className="px-6 py-5">
+        <div className="grid gap-4">
+          <div className="flex items-start justify-between gap-4">
+            <Dialog.Title>
+              <Text as="span" variant="heading">
+                {version ? `Version ${version.version}` : 'Version'}
+              </Text>
+            </Dialog.Title>
+            <Dialog.Close
+              aria-label="Close"
+              render={(props) => (
+                <Button {...props} variant="ghost" shape="square" size="sm" aria-label="Close">
+                  <XIcon size={16} />
+                </Button>
+              )}
+            />
+          </div>
+          {version ? <VersionCode versionId={version.id} /> : null}
+        </div>
+      </Dialog>
+    </Dialog.Root>
+  )
 }
 
-function RunRow({ run }: { run: RunRowData }) {
-  const [open, setOpen] = useState(false)
+function VersionCode({ versionId }: { versionId: string }) {
+  const { data, isPending, error } = useQuery(scriptVersionQuery(versionId))
+
+  if (isPending) return <Loader size="sm" />
+  if (error) {
+    return (
+      <Banner
+        variant="error"
+        icon={<WarningCircleIcon weight="fill" />}
+        title="Could not load this version"
+        description={error.message}
+      />
+    )
+  }
 
   return (
-    <LayerCard className="px-4 py-3">
-      <Collapsible.Root open={open} onOpenChange={setOpen}>
-        <div className="grid gap-2">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-2">
-              <RunStatusBadge status={run.status} />
-              <Text as="span" variant="mono-secondary">
-                v{run.version}
-              </Text>
-            </div>
-            <Text as="span" variant="secondary" size="xs">
-              {formatDuration(run.durationMs)}
-            </Text>
-          </div>
-
-          <div className="flex items-center justify-between gap-3">
-            <Text as="span" variant="secondary" size="xs">
-              <RelativeTime value={run.startedAt} /> · {run.environmentName}
-            </Text>
-            {run.trigger === 'schedule' ? (
-              <Badge variant="blue" appearance="dot">
-                scheduled
-              </Badge>
-            ) : null}
-          </div>
-
-          {/* M7: this drills into `getRun` for per-attempt logs and artifacts. */}
-          <Collapsible.DefaultTrigger className="text-xs">
-            {open ? 'Hide error' : 'Show error'}
-          </Collapsible.DefaultTrigger>
-          <Collapsible.DefaultPanel>
-            <pre className="max-h-72 overflow-auto rounded-md bg-kumo-recessed p-3 font-mono text-xs whitespace-pre-wrap text-kumo-default">
-              {run.lastErrorMessage ?? 'No error recorded.'}
-            </pre>
-          </Collapsible.DefaultPanel>
-        </div>
-      </Collapsible.Root>
-    </LayerCard>
+    <pre className="max-h-[60vh] overflow-auto rounded-md bg-kumo-recessed p-3 font-mono text-xs whitespace-pre-wrap text-kumo-default">
+      {data.code}
+    </pre>
   )
 }
+
+/* ------------------------------------------------------------------ Dialogs */
 
 function EditIntentDialog({
   intent,
@@ -461,7 +969,11 @@ function EditIntentDialog({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog size="lg" className="px-6 py-5">
-        <EditIntentForm intent={intent} onOpenChange={onOpenChange} />
+        <EditIntentForm
+          key={open ? 'open' : 'closed'}
+          intent={intent}
+          onOpenChange={onOpenChange}
+        />
       </Dialog>
     </Dialog.Root>
   )

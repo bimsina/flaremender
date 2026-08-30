@@ -20,7 +20,12 @@ function Dashboard() {
   const { data } = useSuspenseQuery(overviewQuery())
 
   const activeOrg = session.organizations.find((org) => org.id === session.activeOrganizationId)
-  const passRate = data.tests > 0 ? Math.round((data.passing / data.tests) * 100) : null
+
+  // Healed runs went green, so they count towards the rate — but they are named
+  // separately underneath it, because a suite that only passes after repairs is
+  // not the same suite as one that passes outright.
+  const green = data.passedRuns + data.healedRuns
+  const passRate = data.runs > 0 ? Math.round((green / data.runs) * 100) : null
 
   return (
     <>
@@ -42,12 +47,28 @@ function Dashboard() {
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatTile label="Projects" value={data.projects} />
           <StatTile
-            label="Test cases"
-            value={data.tests}
-            hint={passRate === null ? 'No tests yet' : `${passRate}% passing`}
+            label="Intents"
+            value={data.intents}
+            hint={`${data.passing} passing · ${data.failing} failing`}
           />
-          <StatTile label="Failing" value={data.failing} hint="Need a repair pass" />
-          <StatTile label="Total runs" value={data.runs} hint={`${data.pending} not yet run`} />
+          <StatTile
+            label="Pass rate"
+            value={passRate === null ? '—' : `${passRate}%`}
+            hint={
+              data.runs === 0
+                ? 'Nothing has run yet'
+                : `${data.passedRuns} passed · ${data.healedRuns} healed`
+            }
+          />
+          <StatTile
+            label="Runs"
+            value={data.runs}
+            hint={
+              data.pending === 0
+                ? `${data.failedRuns} failed`
+                : `${data.failedRuns} failed · ${data.pending} never run`
+            }
+          />
         </section>
 
         <section className="grid gap-3">
@@ -70,7 +91,7 @@ function Dashboard() {
               size="sm"
               icon={<FolderIcon size={32} className="text-kumo-inactive" />}
               title="Nothing has run yet"
-              description="Create a project, describe a test case, then generate and run it."
+              description="Create a project, describe an intent, write its script, then run it."
               contents={
                 <Link to="/projects">
                   <Button variant="primary" icon={<PlusIcon size={16} />}>

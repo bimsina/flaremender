@@ -98,6 +98,9 @@ export const getRun = createServerFn({ method: 'GET' })
         outcome: attempt.outcome,
         diagnosis: attempt.diagnosis,
         scriptVersionId: attempt.scriptVersionId,
+        // The exact text that ran, not the version's current code: restoring or
+        // re-saving must not rewrite what an old attempt is shown to have done.
+        scriptUsed: attempt.scriptUsed,
         healApplied: attempt.healApplied,
         artifactKeys: attempt.artifactKeys,
         logs: attempt.logs,
