@@ -33,6 +33,7 @@ import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from '@tansta
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Fragment, useMemo, useState } from 'react'
 
+import { CodeEditor } from '#/components/code-editor.tsx'
 import { Duration } from '#/components/duration.tsx'
 import { ListRow, Section } from '#/components/list.tsx'
 import { PageBody, PageHeader } from '#/components/page.tsx'
@@ -366,14 +367,12 @@ function ScriptTab({
               />
             ) : null}
 
-            <InputArea
-              aria-label="Playwright script"
-              className="font-mono text-[0.9em]"
-              spellCheck={false}
-              minRows={22}
-              maxRows={48}
+            <CodeEditor
+              ariaLabel="Playwright script"
               value={code}
-              onChange={(event) => setCode(event.target.value)}
+              onChange={setCode}
+              minHeight="26rem"
+              maxHeight="60vh"
             />
 
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -835,11 +834,7 @@ function VersionCode({ versionId }: { versionId: string }) {
     )
   }
 
-  return (
-    <pre className="max-h-[60vh] overflow-auto rounded-md bg-kumo-recessed p-3 font-mono text-xs whitespace-pre-wrap text-kumo-default">
-      {data.code}
-    </pre>
-  )
+  return <CodeEditor value={data.code} readOnly wrap showLineNumbers={false} maxHeight="60vh" />
 }
 
 /* ------------------------------------------------------------------ Dialogs */

@@ -2,6 +2,8 @@ import { Button, Text, cn } from '@cloudflare/kumo'
 import { CheckIcon, CopyIcon } from '@phosphor-icons/react'
 import { useEffect, useState } from 'react'
 
+import { CodeEditor } from './code-editor.tsx'
+
 /**
  * A labelled block of machine output with a copy button — the shape the
  * Workflows dashboard uses for an instance's input and output payloads.
@@ -14,11 +16,14 @@ export function MonoPanel({
   label,
   text,
   tone = 'default',
+  language,
   className,
 }: {
   label: React.ReactNode
   text: string
   tone?: 'default' | 'danger'
+  /** `'javascript'` swaps the plain `<pre>` for a read-only, highlighted editor. */
+  language?: 'javascript'
   className?: string
 }) {
   const [copied, setCopied] = useState(false)
@@ -59,14 +64,26 @@ export function MonoPanel({
           {copied ? 'Copied' : 'Copy'}
         </Button>
       </div>
-      <pre
-        className={cn(
-          'max-h-80 overflow-auto px-3 py-2.5 font-mono text-xs whitespace-pre-wrap',
-          tone === 'danger' ? 'text-kumo-danger' : 'text-kumo-default',
-        )}
-      >
-        {text}
-      </pre>
+      {language === 'javascript' ? (
+        <CodeEditor
+          value={text}
+          readOnly
+          wrap
+          showLineNumbers={false}
+          maxHeight="20rem"
+          ariaLabel={typeof label === 'string' ? label : undefined}
+          className="rounded-none ring-0"
+        />
+      ) : (
+        <pre
+          className={cn(
+            'max-h-80 overflow-auto px-3 py-2.5 font-mono text-xs whitespace-pre-wrap',
+            tone === 'danger' ? 'text-kumo-danger' : 'text-kumo-default',
+          )}
+        >
+          {text}
+        </pre>
+      )}
     </div>
   )
 }

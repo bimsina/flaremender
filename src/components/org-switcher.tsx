@@ -29,17 +29,28 @@ export function OrgSwitcher({ session }: { session: AppSession }) {
       <DropdownMenu>
         <DropdownMenu.Trigger
           render={
+            // In the collapsed rail there is only room for the icon, so the
+            // name and the caret drop out and the button squares off — it still
+            // opens the same switcher.
             <Button
               variant="secondary"
               loading={switching}
-              className="w-full justify-between"
+              className={cn(
+                'h-8.5 w-full justify-between',
+                'group-data-[state=collapsed]/sidebar:w-8.5 group-data-[state=collapsed]/sidebar:justify-center group-data-[state=collapsed]/sidebar:px-0',
+              )}
               aria-label="Switch organization"
             >
               <span className="flex min-w-0 items-center gap-2">
                 <BuildingsIcon size={16} className="shrink-0" />
-                <span className="truncate">{active?.name ?? 'No organization'}</span>
+                <span className="truncate group-data-[state=collapsed]/sidebar:hidden">
+                  {active?.name ?? 'No organization'}
+                </span>
               </span>
-              <CaretUpDownIcon size={14} className="shrink-0 text-kumo-subtle" />
+              <CaretUpDownIcon
+                size={14}
+                className="shrink-0 text-kumo-subtle group-data-[state=collapsed]/sidebar:hidden"
+              />
             </Button>
           }
         />

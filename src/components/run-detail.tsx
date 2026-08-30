@@ -390,7 +390,9 @@ function AttemptDetail({
         </Button>
       </div>
 
-      {showScript ? <MonoPanel label="Script that ran" text={attempt.scriptUsed} /> : null}
+      {showScript ? (
+        <MonoPanel label="Script that ran" text={attempt.scriptUsed} language="javascript" />
+      ) : null}
     </div>
   )
 }

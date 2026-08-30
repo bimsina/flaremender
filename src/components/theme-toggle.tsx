@@ -10,7 +10,7 @@ const OPTIONS: Array<{ value: ThemePreference; label: string; icon: typeof SunIc
   { value: 'system', label: 'System', icon: DesktopIcon },
 ]
 
-export function ThemeToggle() {
+export function ThemeToggle({ className }: { className?: string }) {
   const { preference, resolved, setPreference } = useTheme()
   const CurrentIcon =
     preference === 'system' ? DesktopIcon : resolved === 'dark' ? MoonIcon : SunIcon
@@ -19,7 +19,13 @@ export function ThemeToggle() {
     <DropdownMenu>
       <DropdownMenu.Trigger
         render={
-          <Button variant="ghost" shape="square" size="sm" aria-label="Change theme">
+          <Button
+            variant="ghost"
+            shape="square"
+            size="sm"
+            aria-label="Change theme"
+            className={className}
+          >
             <CurrentIcon size={16} />
           </Button>
         }
