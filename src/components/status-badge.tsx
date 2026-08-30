@@ -44,10 +44,17 @@ const AUTHOR: Record<ScriptAuthor, { label: string; variant: BadgeVariant }> = {
   agent: { label: 'Agent', variant: 'blue' },
 }
 
+/** Kumo maps dot colors only for these variants; others render a plain badge. */
+const DOT_VARIANTS = new Set(['success', 'warning', 'error', 'neutral'])
+
+function dotFor(variant: string | undefined): 'dot' | undefined {
+  return variant !== undefined && DOT_VARIANTS.has(variant) ? 'dot' : undefined
+}
+
 export function IntentStatusBadge({ status }: { status: IntentStatus }) {
   const meta = INTENT[status] ?? INTENT.draft
   return (
-    <Badge variant={meta.variant} appearance="dot">
+    <Badge variant={meta.variant} appearance={dotFor(meta.variant)}>
       {meta.label}
     </Badge>
   )
@@ -56,7 +63,7 @@ export function IntentStatusBadge({ status }: { status: IntentStatus }) {
 export function RunStatusBadge({ status }: { status: RunStatus }) {
   const meta = RUN[status] ?? RUN.queued
   return (
-    <Badge variant={meta.variant} appearance="dot">
+    <Badge variant={meta.variant} appearance={dotFor(meta.variant)}>
       {meta.label}
     </Badge>
   )
@@ -65,7 +72,7 @@ export function RunStatusBadge({ status }: { status: RunStatus }) {
 export function SuiteRunStatusBadge({ status }: { status: SuiteRunStatus }) {
   const meta = SUITE[status] ?? SUITE.queued
   return (
-    <Badge variant={meta.variant} appearance="dot">
+    <Badge variant={meta.variant} appearance={dotFor(meta.variant)}>
       {meta.label}
     </Badge>
   )
@@ -75,7 +82,7 @@ export function SuiteRunStatusBadge({ status }: { status: SuiteRunStatus }) {
 export function ScriptAuthorBadge({ author }: { author: ScriptAuthor }) {
   const meta = AUTHOR[author] ?? AUTHOR.user
   return (
-    <Badge variant={meta.variant} appearance="dot">
+    <Badge variant={meta.variant} appearance={dotFor(meta.variant)}>
       {meta.label}
     </Badge>
   )
