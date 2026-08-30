@@ -16,6 +16,19 @@ export const PROVIDER_LABELS: Record<Provider, string> = {
   google: 'Google',
 }
 
+/**
+ * The Worker secret each provider reads. A key bound here always wins over one
+ * saved in the admin console, so the name is part of the UI's vocabulary — it
+ * is what an operator has to remove before the console will manage that key.
+ * Workers AI has none: it is reached through the `AI` binding.
+ */
+export const PROVIDER_SECRET_VARS = {
+  'workers-ai': null,
+  anthropic: 'ANTHROPIC_API_KEY',
+  openai: 'OPENAI_API_KEY',
+  google: 'GOOGLE_API_KEY',
+} as const satisfies Record<Provider, string | null>
+
 export interface ParsedModelId {
   provider: Provider
   slug: string

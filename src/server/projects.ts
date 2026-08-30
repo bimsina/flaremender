@@ -1,8 +1,10 @@
 import { createServerFn } from '@tanstack/react-start'
 import { and, count, desc, eq, sql } from 'drizzle-orm'
 
-import { environment, intent, project } from '#/db/schema/app.ts'
+import type { Db } from '#/db/index.ts'
+import { allowedModel, environment, instanceSettings, intent, project } from '#/db/schema/app.ts'
 import { createId, slugify } from '#/lib/ids.ts'
+import { DEFAULT_MODEL_ID, parseModelId } from '#/lib/models.ts'
 import { AuthError, orgMiddleware } from './auth.ts'
 import { ValidationError, optionalStr, str, url } from './validate.ts'
 
@@ -25,6 +27,38 @@ function toDefaultEnvironment(row: {
   return row.environmentId === null || row.environmentName === null || row.baseUrl === null
     ? null
     : { id: row.environmentId, name: row.environmentName, baseUrl: row.baseUrl }
+}
+
+/**
+ * What an agent working on this project would actually use: the project's own
+ * model, else the instance default, else the Workers AI floor. Resolved here
+ * rather than in `llm.ts` so a member who cannot see the admin console still
+ * gets an honest caption under the picker — the id is instance-wide
+ * configuration, not a credential.
+ */
+async function resolveEffectiveModel(db: Db, projectModelId: string | null) {
+  const [settings] = await db
+    .select({ defaultModelId: instanceSettings.defaultModelId })
+    .from(instanceSettings)
+    .where(eq(instanceSettings.id, 'default'))
+    .limit(1)
+
+  const origin = projectModelId ? 'project' : settings?.defaultModelId ? 'instance' : 'fallback'
+  const modelId = projectModelId ?? settings?.defaultModelId ?? DEFAULT_MODEL_ID
+
+  const [named] = await db
+    .select({ displayName: allowedModel.displayName })
+    .from(allowedModel)
+    .where(eq(allowedModel.modelId, modelId))
+    .limit(1)
+
+  return {
+    modelId,
+    origin,
+    // A model can leave the allowlist while a project still points at it, so
+    // fall back to the slug rather than showing nothing.
+    displayName: named?.displayName ?? parseModelId(modelId)?.slug ?? modelId,
+  }
 }
 
 export const listProjects = createServerFn({ method: 'GET' })
@@ -81,7 +115,12 @@ export const getProject = createServerFn({ method: 'GET' })
       .limit(1)
 
     if (!row) throw new AuthError('Project not found.', 404)
-    return { ...row.project, defaultEnvironment: toDefaultEnvironment(row) }
+
+    return {
+      ...row.project,
+      defaultEnvironment: toDefaultEnvironment(row),
+      effectiveModel: await resolveEffectiveModel(context.db, row.project.modelId),
+    }
   })
 
 export const createProject = createServerFn({ method: 'POST' })
@@ -150,6 +189,45 @@ export const updateProject = createServerFn({ method: 'POST' })
 
     if (result.length === 0) throw new AuthError('Project not found.', 404)
     return { ok: true as const }
+  })
+
+/**
+ * The project's model choice, kept apart from `updateProject` on purpose: it is
+ * picked from a different list (the admin allowlist), saved by a different
+ * control, and `null` here means "whatever the instance default is" rather than
+ * "cleared".
+ */
+export const setProjectModel = createServerFn({ method: 'POST' })
+  .middleware([orgMiddleware])
+  .validator((data: unknown) => ({
+    projectId: str(data, 'projectId'),
+    modelId: optionalStr(data, 'modelId', 200),
+  }))
+  .handler(async ({ data, context }) => {
+    if (data.modelId !== null) {
+      // Only the allowlist is selectable, so a stale picker cannot pin a
+      // project to a model an admin has since withdrawn.
+      const [model] = await context.db
+        .select({ id: allowedModel.id })
+        .from(allowedModel)
+        .where(eq(allowedModel.modelId, data.modelId))
+        .limit(1)
+
+      if (!model) {
+        throw new ValidationError('That model is not on this instance’s allowlist.')
+      }
+    }
+
+    const result = await context.db
+      .update(project)
+      .set({ modelId: data.modelId })
+      .where(
+        and(eq(project.id, data.projectId), eq(project.organizationId, context.organizationId)),
+      )
+      .returning({ id: project.id })
+
+    if (result.length === 0) throw new AuthError('Project not found.', 404)
+    return { modelId: data.modelId }
   })
 
 export const deleteProject = createServerFn({ method: 'POST' })

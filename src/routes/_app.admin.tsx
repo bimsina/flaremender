@@ -13,15 +13,19 @@ export const Route = createFileRoute('/_app/admin')({
 const TABS = [
   { value: '/admin', label: 'Users' },
   { value: '/admin/organizations', label: 'Organizations' },
+  { value: '/admin/settings', label: 'Settings' },
 ]
 
 function AdminLayout() {
   const location = useLocation()
   const navigate = useNavigate()
 
-  const current = location.pathname.startsWith('/admin/organizations')
-    ? '/admin/organizations'
-    : '/admin'
+  // Longest-prefix wins; `/admin` itself is the fallback rather than a match,
+  // because every tab's path starts with it.
+  const current =
+    TABS.map((tab) => tab.value)
+      .filter((value) => value !== '/admin')
+      .find((value) => location.pathname.startsWith(value)) ?? '/admin'
 
   return (
     <>

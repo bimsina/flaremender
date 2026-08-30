@@ -1,10 +1,17 @@
 import { queryOptions } from '@tanstack/react-query'
 
 import type { RunStatus, RunTrigger } from '#/db/schema/app.ts'
+import type { Provider } from '#/lib/models.ts'
 import { getAdminStats, listAllMemberships, listAllOrganizations } from '#/server/admin.ts'
 import { getDailyRunCounts, getOrgOverview } from '#/server/dashboard.ts'
 import { listEnvironments } from '#/server/environments.ts'
+import {
+  getInstanceSettings,
+  getInstanceSetupStatus,
+  listAllowedModels,
+} from '#/server/instance.ts'
 import { getIntent, getScriptVersion, listIntents, listScriptVersions } from '#/server/intents.ts'
+import { listProviderModels } from '#/server/model-catalog.ts'
 import { getProject, listProjects } from '#/server/projects.ts'
 import { getRun, listProjectRuns, listRuns } from '#/server/runs.ts'
 import { fetchSession, fetchThemePreference } from '#/server/session.ts'
@@ -154,6 +161,43 @@ export const suiteRunQuery = (suiteRunId: string) =>
   queryOptions({
     queryKey: ['suite-run', suiteRunId] as const,
     queryFn: () => getSuiteRun({ data: { suiteRunId } }),
+  })
+
+/** Provider status, the default model and setup state. Admins only. */
+export const instanceSettingsQuery = () =>
+  queryOptions({
+    queryKey: ['instance', 'settings'] as const,
+    queryFn: () => getInstanceSettings(),
+  })
+
+/** Asked on the way into the app by everyone; false for non-admins. */
+export const instanceSetupStatusQuery = () =>
+  queryOptions({
+    queryKey: ['instance', 'setup-status'] as const,
+    queryFn: () => getInstanceSetupStatus(),
+  })
+
+/**
+ * The curated model list, read by every project's picker as well as the admin
+ * console. Allowlists change on the scale of weeks, so it is worth holding.
+ */
+export const allowedModelsQuery = () =>
+  queryOptions({
+    queryKey: ['instance', 'allowed-models'] as const,
+    queryFn: () => listAllowedModels(),
+    staleTime: 5 * 60_000,
+  })
+
+/**
+ * One provider's live catalog. Matches the server's own half-hour cache, so
+ * switching back and forth between providers costs nothing; the refresh button
+ * passes `force` through its own request rather than invalidating this.
+ */
+export const providerModelsQuery = (provider: Provider) =>
+  queryOptions({
+    queryKey: ['instance', 'provider-models', provider] as const,
+    queryFn: () => listProviderModels({ data: { provider } }),
+    staleTime: 30 * 60_000,
   })
 
 export const adminStatsQuery = () =>

@@ -22,6 +22,7 @@ import { Route as AuthSignupRouteImport } from './routes/_auth.signup'
 import { Route as AcceptInvitationInvitationIdRouteImport } from './routes/accept-invitation.$invitationId'
 import { Route as AppAdminIndexRouteImport } from './routes/_app.admin.index'
 import { Route as AppAdminOrganizationsRouteImport } from './routes/_app.admin.organizations'
+import { Route as AppAdminSettingsRouteImport } from './routes/_app.admin.settings'
 import { Route as AppProjectsIndexRouteImport } from './routes/_app.projects.index'
 import { Route as ApiArtifactsSplatRouteImport } from './routes/api/artifacts.$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
@@ -97,6 +98,11 @@ const AppAdminOrganizationsRoute = AppAdminOrganizationsRouteImport.update({
   path: '/organizations',
   getParentRoute: () => AppAdminRoute,
 } as any)
+const AppAdminSettingsRoute = AppAdminSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AppAdminRoute,
+} as any)
 const AppProjectsIndexRoute = AppProjectsIndexRouteImport.update({
   id: '/projects/',
   path: '/projects/',
@@ -163,6 +169,7 @@ export interface FileRoutesByFullPath {
   '/signup': typeof AuthSignupRoute
   '/accept-invitation/$invitationId': typeof AcceptInvitationInvitationIdRoute
   '/admin/organizations': typeof AppAdminOrganizationsRoute
+  '/admin/settings': typeof AppAdminSettingsRoute
   '/api/artifacts/$': typeof ApiArtifactsSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/spike/browser': typeof ApiSpikeBrowserRoute
@@ -185,6 +192,7 @@ export interface FileRoutesByTo {
   '/signup': typeof AuthSignupRoute
   '/accept-invitation/$invitationId': typeof AcceptInvitationInvitationIdRoute
   '/admin/organizations': typeof AppAdminOrganizationsRoute
+  '/admin/settings': typeof AppAdminSettingsRoute
   '/api/artifacts/$': typeof ApiArtifactsSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/spike/browser': typeof ApiSpikeBrowserRoute
@@ -211,6 +219,7 @@ export interface FileRoutesById {
   '/_auth/signup': typeof AuthSignupRoute
   '/accept-invitation/$invitationId': typeof AcceptInvitationInvitationIdRoute
   '/_app/admin/organizations': typeof AppAdminOrganizationsRoute
+  '/_app/admin/settings': typeof AppAdminSettingsRoute
   '/api/artifacts/$': typeof ApiArtifactsSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/spike/browser': typeof ApiSpikeBrowserRoute
@@ -236,6 +245,7 @@ export interface FileRouteTypes {
     | '/signup'
     | '/accept-invitation/$invitationId'
     | '/admin/organizations'
+    | '/admin/settings'
     | '/api/artifacts/$'
     | '/api/auth/$'
     | '/api/spike/browser'
@@ -258,6 +268,7 @@ export interface FileRouteTypes {
     | '/signup'
     | '/accept-invitation/$invitationId'
     | '/admin/organizations'
+    | '/admin/settings'
     | '/api/artifacts/$'
     | '/api/auth/$'
     | '/api/spike/browser'
@@ -283,6 +294,7 @@ export interface FileRouteTypes {
     | '/_auth/signup'
     | '/accept-invitation/$invitationId'
     | '/_app/admin/organizations'
+    | '/_app/admin/settings'
     | '/api/artifacts/$'
     | '/api/auth/$'
     | '/api/spike/browser'
@@ -402,6 +414,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAdminOrganizationsRouteImport
       parentRoute: typeof AppAdminRoute
     }
+    '/_app/admin/settings': {
+      id: '/_app/admin/settings'
+      path: '/settings'
+      fullPath: '/admin/settings'
+      preLoaderRoute: typeof AppAdminSettingsRouteImport
+      parentRoute: typeof AppAdminRoute
+    }
     '/_app/projects/': {
       id: '/_app/projects/'
       path: '/projects'
@@ -477,11 +496,13 @@ declare module '@tanstack/react-router' {
 
 interface AppAdminRouteChildren {
   AppAdminOrganizationsRoute: typeof AppAdminOrganizationsRoute
+  AppAdminSettingsRoute: typeof AppAdminSettingsRoute
   AppAdminIndexRoute: typeof AppAdminIndexRoute
 }
 
 const AppAdminRouteChildren: AppAdminRouteChildren = {
   AppAdminOrganizationsRoute: AppAdminOrganizationsRoute,
+  AppAdminSettingsRoute: AppAdminSettingsRoute,
   AppAdminIndexRoute: AppAdminIndexRoute,
 }
 

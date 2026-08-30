@@ -11,16 +11,8 @@ import { eq } from 'drizzle-orm'
 
 import type { Db } from '#/db/index.ts'
 import { providerKey } from '#/db/schema/app.ts'
-import type { Provider } from '#/lib/models.ts'
+import { PROVIDER_SECRET_VARS, type Provider } from '#/lib/models.ts'
 import { decryptSecret } from './crypto.ts'
-
-/** Workers AI is reached through the `AI` binding, so it has no key at all. */
-export const PROVIDER_SECRET_VARS = {
-  'workers-ai': null,
-  anthropic: 'ANTHROPIC_API_KEY',
-  openai: 'OPENAI_API_KEY',
-  google: 'GOOGLE_API_KEY',
-} as const satisfies Record<Provider, string | null>
 
 export type ProviderKeySource = 'secret' | 'database' | 'none'
 

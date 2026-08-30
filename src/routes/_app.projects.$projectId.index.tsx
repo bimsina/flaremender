@@ -29,7 +29,7 @@ import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 
 import { EnvironmentsPanel } from '#/components/environments-panel.tsx'
-import { InlineEmpty, ListRow, ListToolbar, Section } from '#/components/list.tsx'
+import { InlineEmpty, ListRow, ListToolbar, Section, SettingRow } from '#/components/list.tsx'
 import { PageBody, PageHeader } from '#/components/page.tsx'
 import { ProjectRunsTab } from '#/components/project-runs.tsx'
 import { RelativeTime } from '#/components/relative-time.tsx'
@@ -38,6 +38,7 @@ import { SuiteProgress } from '#/components/suite-progress.tsx'
 import type { IntentStatus } from '#/db/schema/app.ts'
 import { describeCron } from '#/lib/cron.ts'
 import {
+  allowedModelsQuery,
   environmentsQuery,
   intentsQuery,
   projectQuery,
@@ -46,7 +47,7 @@ import {
   suiteRunsQuery,
 } from '#/lib/queries.ts'
 import { createIntent, deleteIntent, runIntent } from '#/server/intents.ts'
-import { deleteProject, updateProject } from '#/server/projects.ts'
+import { deleteProject, setProjectModel, updateProject } from '#/server/projects.ts'
 import { runSuite } from '#/server/suites.ts'
 
 const TABS = ['intents', 'runs', 'environments', 'settings'] as const
@@ -87,6 +88,7 @@ export const Route = createFileRoute('/_app/projects/$projectId/')({
         ...runTrendQuery(params.projectId),
         revalidateIfStale: true,
       }),
+      context.queryClient.ensureQueryData({ ...allowedModelsQuery(), revalidateIfStale: true }),
     ])
   },
   component: ProjectDetail,
@@ -553,6 +555,8 @@ type ProjectRow = {
   name: string
   slug: string
   description: string | null
+  modelId: string | null
+  effectiveModel: { modelId: string; displayName: string; origin: string }
   defaultEnvironment: { id: string; name: string; baseUrl: string } | null
 }
 
@@ -561,6 +565,13 @@ function SettingsTab({ project }: { project: ProjectRow }) {
     <div className="grid max-w-3xl gap-8">
       <Section title="Project details" description="How this project is named and described.">
         <ProjectDetailsCard project={project} />
+      </Section>
+
+      <Section
+        title="Model"
+        description="Which model generates and repairs scripts in this project."
+      >
+        <ProjectModelCard project={project} />
       </Section>
 
       <Section
@@ -646,6 +657,56 @@ function ProjectDetailsCard({ project }: { project: ProjectRow }) {
         </div>
       </form>
     </LayerCard>
+  )
+}
+
+/** Sentinel: "no choice of our own" is a value the picker has to be able to hold. */
+const INSTANCE_DEFAULT = '__instance-default'
+
+function ProjectModelCard({ project }: { project: ProjectRow }) {
+  const queryClient = useQueryClient()
+  const toast = useKumoToastManager()
+  const { data: allowed } = useSuspenseQuery(allowedModelsQuery())
+
+  const mutation = useMutation({
+    mutationFn: (modelId: string | null) =>
+      setProjectModel({ data: { projectId: project.id, modelId } }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries()
+      toast.add({ variant: 'success', title: 'Model updated' })
+    },
+    onError: (error: Error) =>
+      toast.add({ variant: 'error', title: 'Could not save', description: error.message }),
+  })
+
+  const items = useMemo(() => {
+    const entries: Record<string, string> = { [INSTANCE_DEFAULT]: 'Instance default' }
+    for (const model of allowed) entries[model.modelId] = model.displayName
+    return entries
+  }, [allowed])
+
+  return (
+    <SettingRow
+      label="Model"
+      hint={
+        project.effectiveModel.origin === 'project'
+          ? `Runs use ${project.effectiveModel.displayName}.`
+          : project.effectiveModel.origin === 'instance'
+            ? `Runs use ${project.effectiveModel.displayName}, this instance's default.`
+            : `Runs use ${project.effectiveModel.displayName}, the Workers AI fallback.`
+      }
+    >
+      <Select
+        aria-label="Model"
+        className="w-64"
+        items={items}
+        loading={mutation.isPending}
+        value={project.modelId ?? INSTANCE_DEFAULT}
+        onValueChange={(value: string | null) =>
+          mutation.mutate(!value || value === INSTANCE_DEFAULT ? null : value)
+        }
+      />
+    </SettingRow>
   )
 }
 
