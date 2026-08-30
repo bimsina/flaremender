@@ -8,11 +8,11 @@
  */
 import { createServerFn } from '@tanstack/react-start'
 import { env } from 'cloudflare:workers'
-import { desc, eq, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 
 import type { Db } from '#/db/index.ts'
 import type { IntentStatus, ScriptAuthor } from '#/db/schema/app.ts'
-import { intent, run, scriptVersion } from '#/db/schema/app.ts'
+import { generationJob, intent, run, scriptVersion } from '#/db/schema/app.ts'
 import { user } from '#/db/schema/auth.ts'
 import { createId } from '#/lib/ids.ts'
 import { orgMiddleware } from './auth.ts'
@@ -336,4 +336,125 @@ export const runIntent = createServerFn({ method: 'POST' })
     })
 
     return { runId: runRow.id, environmentId: environment.id, status: runRow.status }
+  })
+
+/**
+ * Asks the generator to write this intent's script.
+ *
+ * Enqueue-only, exactly like `runIntent`: the model, the browser and the
+ * verification run are all a Workflow's business, and this returns as soon as
+ * the job row exists. The job id is the handle for everything after — it names
+ * the Workflow instance, it addresses the live channel the UI watches, and it
+ * is the row `src/server.ts` checks before letting a socket near that channel.
+ *
+ * Refuses to start a second job while one is running. Two agents driving two
+ * browsers towards the same intent would race to save conflicting versions of
+ * it, and the one that lost would still have spent the tokens.
+ */
+export const generateIntentScript = createServerFn({ method: 'POST' })
+  .middleware([orgMiddleware])
+  .validator((data: unknown) => ({
+    intentId: str(data, 'intentId'),
+    environmentId: has(data, 'environmentId') ? str(data, 'environmentId') : null,
+  }))
+  .handler(async ({ data, context }) => {
+    const row = await loadIntent(context.db, context.organizationId, data.intentId)
+
+    if (row.intent.status === 'generating') {
+      throw new ValidationError('A script is already being generated for this intent.')
+    }
+
+    const [inFlight] = await context.db
+      .select({ id: generationJob.id })
+      .from(generationJob)
+      .where(
+        and(
+          eq(generationJob.intentId, row.intent.id),
+          inArray(generationJob.status, ['queued', 'running']),
+        ),
+      )
+      .limit(1)
+
+    if (inFlight) {
+      throw new ValidationError('A script is already being generated for this intent.')
+    }
+
+    // The description is the whole brief. It is `notNull` and validated on the
+    // way in, so this only catches an intent whose description was emptied by
+    // some path that predates that rule.
+    if (row.intent.description.trim().length < 10) {
+      throw new ValidationError(
+        'Describe what should happen, in a sentence or two, before generating a script.',
+      )
+    }
+
+    const environment = data.environmentId
+      ? (await loadEnvironment(context.db, context.organizationId, data.environmentId)).environment
+      : await loadDefaultEnvironment(context.db, row.project.id)
+
+    if (!environment) {
+      throw new ValidationError('This project has no environment to generate against.')
+    }
+    if (environment.projectId !== row.project.id) {
+      throw new ValidationError('That environment belongs to a different project.')
+    }
+
+    const jobRow = {
+      id: createId('gen'),
+      intentId: row.intent.id,
+      projectId: row.project.id,
+      environmentId: environment.id,
+      organizationId: context.organizationId,
+      status: 'queued' as const,
+      createdBy: context.user.id,
+    }
+
+    await context.db.insert(generationJob).values(jobRow)
+
+    await env.GENERATE_WORKFLOW.create({
+      id: jobRow.id,
+      params: {
+        jobId: jobRow.id,
+        intentId: row.intent.id,
+        environmentId: environment.id,
+        organizationId: context.organizationId,
+        userId: context.user.id,
+      },
+    })
+
+    return { jobId: jobRow.id, environmentId: environment.id }
+  })
+
+/**
+ * The newest generation job for an intent, or null.
+ *
+ * Two jobs at once: it is how a page reloaded mid-generation finds the channel
+ * to reconnect to, and it is the polling fallback for when the socket will not
+ * open. It is also where the stuck reason of the last failed attempt is read
+ * from, which is the only place that sentence is ever shown.
+ */
+export const getIntentGeneration = createServerFn({ method: 'GET' })
+  .middleware([orgMiddleware])
+  .validator((data: unknown) => ({ intentId: str(data, 'intentId') }))
+  .handler(async ({ data, context }) => {
+    await loadIntent(context.db, context.organizationId, data.intentId)
+
+    const [row] = await context.db
+      .select({
+        id: generationJob.id,
+        status: generationJob.status,
+        modelId: generationJob.modelId,
+        scriptVersionId: generationJob.scriptVersionId,
+        runId: generationJob.runId,
+        turns: generationJob.turns,
+        stuckReason: generationJob.stuckReason,
+        startedAt: generationJob.startedAt,
+        finishedAt: generationJob.finishedAt,
+      })
+      .from(generationJob)
+      .where(eq(generationJob.intentId, data.intentId))
+      .orderBy(desc(generationJob.startedAt))
+      .limit(1)
+
+    return row ?? null
   })

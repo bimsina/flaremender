@@ -17,7 +17,15 @@
  * its own progress panel. It cannot read anything, reach another run, or learn
  * that other runs exist.
  */
-import type { HarnessRequest, HarnessResponse } from '#/engine/contract.ts'
+import type {
+  ActResponse,
+  AttachRequest,
+  HarnessRequest,
+  HarnessResponse,
+  ObserveResponse,
+  SessionStartRequest,
+  SessionStartResponse,
+} from '#/engine/contract.ts'
 import HARNESS_SOURCE from '#/engine/harness/harness.generated.js?raw'
 
 /** Must be new enough for workerd's real `node:fs`, which traces need. */
@@ -34,10 +42,70 @@ const SCRIPT_MODULE = 'user-script.js'
  */
 export const DEFAULT_SCRIPT_TIMEOUT_MS = 300_000
 
+/** Per-fragment budget during generation. Far shorter than a whole script. */
+export const DEFAULT_FRAGMENT_TIMEOUT_MS = 60_000
+
+/**
+ * What one Playwright call may take while a model is writing the script.
+ *
+ * A third of what a real run allows, and deliberately so. In a run, a slow
+ * locator is usually a slow page and waiting is the right thing to do. In
+ * generation it is nearly always a locator that will never match — a
+ * `getByLabel` on a field that only has a placeholder — and every one of those
+ * costs the job a wait it will spend again on the next guess. Failing in ten
+ * seconds instead of thirty buys two more attempts inside the same budget,
+ * which is worth far more than the rare slow page it gives up on. The saved
+ * script is verified at the full run timeout, so nothing generous is lost.
+ */
+export const GENERATION_ACTION_TIMEOUT_MS = 10_000
+
+/** How much aria snapshot the model is shown per observation. */
+export const DEFAULT_SNAPSHOT_LIMIT = 10_000
+
 /** The subset of the harness entrypoint the host calls. */
 interface HarnessStub {
   execute(request: HarnessRequest): Promise<HarnessResponse>
+  startSession(request: SessionStartRequest): Promise<SessionStartResponse>
+  observe(request: AttachRequest): Promise<ObserveResponse>
+  act(request: AttachRequest): Promise<ActResponse>
   release(sessionId: string): Promise<{ released: boolean; message?: string }>
+}
+
+/** What every isolate this module builds is given, and nothing more. */
+interface HarnessBindings {
+  browser: Cloudflare.Env['BROWSER']
+  creds: Record<string, string>
+  baseUrl: string
+  runId: string
+  channel?: RunChannelStub | null
+}
+
+/**
+ * Builds the isolate. Every entry point below differs only in what it hands the
+ * module slot and which method it then calls, so the load itself is stated once.
+ */
+function loadHarness(loader: WorkerLoader, code: string, bindings: HarnessBindings): HarnessStub {
+  const worker = loader.load({
+    compatibilityDate: HARNESS_COMPATIBILITY_DATE,
+    // Playwright reaches for `node:fs`, `node:events` and friends.
+    compatibilityFlags: ['nodejs_compat'],
+    mainModule: HARNESS_MODULE,
+    modules: {
+      [HARNESS_MODULE]: HARNESS_SOURCE,
+      [SCRIPT_MODULE]: code,
+    },
+    env: {
+      BROWSER: bindings.browser,
+      CREDS: bindings.creds,
+      BASE_URL: bindings.baseUrl,
+      RUN_ID: bindings.runId,
+      CHANNEL: bindings.channel ?? null,
+    },
+    // No ambient `fetch`. Bindings still work, so the browser is still reachable.
+    globalOutbound: null,
+  })
+
+  return worker.getEntrypoint() as unknown as HarnessStub
 }
 
 /**
@@ -84,27 +152,13 @@ export interface ExecuteOptions {
  * inside the response.
  */
 export async function executeInDynamicWorker(options: ExecuteOptions): Promise<HarnessResponse> {
-  const worker = options.loader.load({
-    compatibilityDate: HARNESS_COMPATIBILITY_DATE,
-    // Playwright reaches for `node:fs`, `node:events` and friends.
-    compatibilityFlags: ['nodejs_compat'],
-    mainModule: HARNESS_MODULE,
-    modules: {
-      [HARNESS_MODULE]: HARNESS_SOURCE,
-      [SCRIPT_MODULE]: options.code,
-    },
-    env: {
-      BROWSER: options.browser,
-      CREDS: options.creds,
-      BASE_URL: options.baseUrl,
-      RUN_ID: options.runId,
-      CHANNEL: options.channel ?? null,
-    },
-    // No ambient `fetch`. Bindings still work, so the browser is still reachable.
-    globalOutbound: null,
+  const harness = loadHarness(options.loader, options.code, {
+    browser: options.browser,
+    creds: options.creds,
+    baseUrl: options.baseUrl,
+    runId: options.runId,
+    channel: options.channel,
   })
-
-  const harness = worker.getEntrypoint() as unknown as HarnessStub
 
   return harness.execute({
     timeoutMs: options.timeoutMs ?? DEFAULT_SCRIPT_TIMEOUT_MS,
@@ -129,25 +183,113 @@ export async function releaseBrowserSession(options: {
   browser: Cloudflare.Env['BROWSER']
   sessionId: string
 }): Promise<{ released: boolean; message?: string }> {
-  const worker = options.loader.load({
-    compatibilityDate: HARNESS_COMPATIBILITY_DATE,
-    compatibilityFlags: ['nodejs_compat'],
-    mainModule: HARNESS_MODULE,
-    modules: {
-      [HARNESS_MODULE]: HARNESS_SOURCE,
-      [SCRIPT_MODULE]: NO_SCRIPT,
-    },
-    env: {
-      BROWSER: options.browser,
-      CREDS: {},
-      BASE_URL: '',
-      RUN_ID: '',
-      CHANNEL: null,
-    },
-    globalOutbound: null,
+  const harness = loadHarness(options.loader, NO_SCRIPT, {
+    browser: options.browser,
+    creds: {},
+    baseUrl: '',
+    runId: '',
   })
 
-  const harness = worker.getEntrypoint() as unknown as HarnessStub
-
   return harness.release(options.sessionId)
+}
+
+/* --------------------------------------------------------- Generation mode */
+
+/**
+ * The three calls a generation loop makes, and how they differ from a run.
+ *
+ * A run is one isolate for one script. Generation is one isolate *per turn* —
+ * the model writes a fragment, the fragment executes, the model sees what
+ * happened and writes the next one — because a Worker Loader stub cannot cross
+ * a Workflow step boundary any more than a browser can. What holds the flow
+ * together across all those isolates is the Browser Rendering session, which is
+ * opened once by `startGenerationSession` and joined by everything after it.
+ *
+ * **All three are given the credentials, including the two that run no script.**
+ * `act` needs them because `secret('NAME')` has to resolve to a real value for
+ * the fragment to sign in. `observe` and `startSession` need them for the
+ * opposite reason: the scrubber is built from the values, so an isolate handed
+ * an empty set has nothing to redact *with*, and every page it reads goes to
+ * the model verbatim.
+ *
+ * That is not hypothetical. An aria snapshot carries the text of the page,
+ * which routinely includes the very value that was just typed into it — a demo
+ * site that prints its own password, a form that reflects what you filled in, a
+ * token in the URL. Withholding the credentials from the two calls that only
+ * *look* at the page reads like least privilege and is the opposite: it is
+ * precisely the path by which a secret reaches the model, the transcript and
+ * durable workflow storage.
+ */
+export interface GenerationSessionOptions {
+  loader: WorkerLoader
+  browser: Cloudflare.Env['BROWSER']
+  baseUrl: string
+  /** Decrypted environment variables — what the scrubber is built from. */
+  creds: Record<string, string>
+  actionTimeoutMs?: number
+  snapshotLimit?: number
+}
+
+export async function startGenerationSession(
+  options: GenerationSessionOptions,
+): Promise<SessionStartResponse> {
+  const harness = loadHarness(options.loader, NO_SCRIPT, {
+    browser: options.browser,
+    creds: options.creds,
+    baseUrl: options.baseUrl,
+    runId: '',
+  })
+
+  return harness.startSession({
+    actionTimeoutMs: options.actionTimeoutMs ?? GENERATION_ACTION_TIMEOUT_MS,
+    snapshotLimit: options.snapshotLimit ?? DEFAULT_SNAPSHOT_LIMIT,
+  })
+}
+
+export async function observeInDynamicWorker(
+  options: GenerationSessionOptions & { sessionId: string },
+): Promise<ObserveResponse> {
+  const harness = loadHarness(options.loader, NO_SCRIPT, {
+    browser: options.browser,
+    creds: options.creds,
+    baseUrl: options.baseUrl,
+    runId: '',
+  })
+
+  return harness.observe({
+    sessionId: options.sessionId,
+    actionTimeoutMs: options.actionTimeoutMs ?? GENERATION_ACTION_TIMEOUT_MS,
+    timeoutMs: DEFAULT_FRAGMENT_TIMEOUT_MS,
+    snapshotLimit: options.snapshotLimit ?? DEFAULT_SNAPSHOT_LIMIT,
+  })
+}
+
+export async function actInDynamicWorker(
+  options: GenerationSessionOptions & {
+    sessionId: string
+    /** The fragment, already wrapped into the module shape the harness runs. */
+    code: string
+    /** The generation job's channel, so executed steps stream live. */
+    channel?: RunChannelStub | null
+    /** The job id — what the streamed events are labelled with. */
+    jobId: string
+    stepIndexOffset?: number
+    timeoutMs?: number
+  },
+): Promise<ActResponse> {
+  const harness = loadHarness(options.loader, options.code, {
+    browser: options.browser,
+    creds: options.creds,
+    baseUrl: options.baseUrl,
+    runId: options.jobId,
+    channel: options.channel,
+  })
+
+  return harness.act({
+    sessionId: options.sessionId,
+    actionTimeoutMs: options.actionTimeoutMs ?? GENERATION_ACTION_TIMEOUT_MS,
+    timeoutMs: options.timeoutMs ?? DEFAULT_FRAGMENT_TIMEOUT_MS,
+    snapshotLimit: options.snapshotLimit ?? DEFAULT_SNAPSHOT_LIMIT,
+    stepIndexOffset: options.stepIndexOffset ?? 0,
+  })
 }

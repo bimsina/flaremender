@@ -89,6 +89,86 @@ export interface HarnessRequest {
   keepSessionAlive?: boolean
 }
 
+/* ------------------------------------------------------------- Generation */
+
+/**
+ * What the page looks like right now, in the terms a language model can act on.
+ *
+ * Deliberately not a screenshot: a script is written against the accessibility
+ * tree — roles, names, labels — so showing the model the same tree its locators
+ * will resolve against is what makes `getByRole('button', { name: 'Login' })`
+ * a thing it can *read off* the page rather than guess at.
+ */
+export interface PageObservation {
+  url: string
+  title: string
+  /** Aria snapshot in Playwright's YAML dialect, already scrubbed. */
+  snapshot: string
+  /** Whether the snapshot had to be trimmed to fit the budget. */
+  truncated: boolean
+}
+
+/**
+ * The three generation-time harness calls all attach to a session that is
+ * already open, act on the page that is already there, and leave both running.
+ *
+ * That is the whole difference from `execute`, and it is not a small one: the
+ * generation loop is a *conversation* with a live browser, so state has to
+ * survive from one fragment to the next. A fresh incognito context per call —
+ * which is exactly right for a run — would reset the flow to a signed-out home
+ * page every turn.
+ */
+export interface AttachRequest {
+  /** The session to join. Owned by the workflow, never ended by these calls. */
+  sessionId: string
+  actionTimeoutMs: number
+  /** Wall-clock budget for one fragment. */
+  timeoutMs: number
+  /** How many characters of aria snapshot to bring back. */
+  snapshotLimit: number
+  /**
+   * Where this fragment's live step numbering continues from. Each fragment
+   * runs in its own isolate and would otherwise start counting at zero, which
+   * the UI keys on and would collapse into the previous fragment's steps.
+   */
+  stepIndexOffset?: number
+}
+
+/** Opening the loop's session: take one, land on the base URL, look around. */
+export interface SessionStartRequest {
+  actionTimeoutMs: number
+  snapshotLimit: number
+}
+
+export interface SessionStartResponse {
+  sessionId: string | null
+  observation: PageObservation | null
+  errorMessage: string | null
+}
+
+export interface ObserveResponse {
+  observation: PageObservation | null
+  errorMessage: string | null
+  /**
+   * The session itself could not be joined. Distinct from every other failure
+   * because it is the only one the loop recovers from by starting again rather
+   * than by asking the model to try something else.
+   */
+  sessionLost: boolean
+}
+
+/** What one candidate fragment did to the live page. */
+export interface ActResponse {
+  ok: boolean
+  steps: Array<RunStep>
+  logs: Array<string>
+  errorMessage: string | null
+  /** The page after the fragment ran — present even when it threw. */
+  observation: PageObservation | null
+  durationMs: number
+  sessionLost: boolean
+}
+
 /**
  * A live progress event.
  *
@@ -96,6 +176,11 @@ export interface HarnessRequest {
  * a `step.started` and its `step.finished` always carry the same number and the
  * UI can key on it. Every event is already scrubbed by whoever produced it —
  * step events are redacted inside the harness, where the plaintext lives.
+ *
+ * `runId` is really the *channel* id: a run streams under its own id, and a
+ * generation job streams under the job id. The field keeps its name because the
+ * events, the Durable Object and the client are otherwise identical, and giving
+ * the two producers different wire formats would buy nothing.
  */
 export type RunEvent =
   | { type: 'run.started'; runId: string; at: number }

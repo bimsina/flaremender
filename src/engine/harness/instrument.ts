@@ -103,6 +103,8 @@ export interface Instrumentation {
   /** Wraps `expect` so assertions are recorded with the locator they ran against. */
   watchExpect: <T extends object>(target: T) => T
   steps: Array<RunStep>
+  /** The number the next step would take, so a caller can carry it forward. */
+  nextIndex: () => number
 }
 
 export function createInstrumentation(options: {
@@ -112,6 +114,13 @@ export function createInstrumentation(options: {
   onStepStarted?: (index: number, label: string) => void
   /** Fires as each step settles, so a live channel can forward it. */
   onStep?: (index: number, step: RunStep) => void
+  /**
+   * Where to start numbering. Zero for a run, which is one script in one
+   * isolate. A generation turn passes the number the previous fragment stopped
+   * at, because the fragments are one continuous transcript to the person
+   * watching even though each runs in an isolate of its own.
+   */
+  startIndex?: number
 }): Instrumentation {
   const steps: Array<RunStep> = []
 
@@ -120,7 +129,7 @@ export function createInstrumentation(options: {
    * the two agree — but when they do not, a `step.started` and its
    * `step.finished` still carry the same number, which is what the UI keys on.
    */
-  let nextIndex = 0
+  let nextIndex = options.startIndex ?? 0
 
   function record(index: number, label: string, started: number, error: unknown): void {
     const step: RunStep = {
@@ -235,5 +244,5 @@ export function createInstrumentation(options: {
     }) as T
   }
 
-  return { watch, watchExpect, steps }
+  return { watch, watchExpect, steps, nextIndex: () => nextIndex }
 }

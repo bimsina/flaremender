@@ -6,6 +6,8 @@ type BadgeVariant = React.ComponentProps<typeof Badge>['variant']
 
 const INTENT: Record<IntentStatus, { label: string; variant: BadgeVariant }> = {
   draft: { label: 'Draft', variant: 'neutral' },
+  // Transient, and only ever set by a running `GenerateWorkflow`.
+  generating: { label: 'Generating', variant: 'info' },
   ready: { label: 'Ready to run', variant: 'blue' },
   passing: { label: 'Passing', variant: 'success' },
   failing: { label: 'Failing', variant: 'error' },

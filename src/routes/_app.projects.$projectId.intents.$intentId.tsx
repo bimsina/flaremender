@@ -25,6 +25,7 @@ import {
   FloppyDiskIcon,
   PencilSimpleIcon,
   PlayIcon,
+  SparkleIcon,
   TrashIcon,
   WarningCircleIcon,
   XIcon,
@@ -36,6 +37,7 @@ import { Fragment, useMemo, useState } from 'react'
 import { CodeEditor } from '#/components/code-editor.tsx'
 import { Duration } from '#/components/duration.tsx'
 import { DurationTrend } from '#/components/duration-trend.tsx'
+import { GenerationLivePanel } from '#/components/generation-live-panel.tsx'
 import { ListRow, Section } from '#/components/list.tsx'
 import { PageBody, PageHeader } from '#/components/page.tsx'
 import { RelativeTime } from '#/components/relative-time.tsx'
@@ -48,6 +50,7 @@ import { describeCron, isValidCron } from '#/lib/cron.ts'
 import { shortId } from '#/lib/ids.ts'
 import {
   environmentsQuery,
+  intentGenerationQuery,
   intentQuery,
   runsQuery,
   scriptVersionQuery,
@@ -56,6 +59,7 @@ import {
 import { DEFAULT_SCRIPT_TEMPLATE } from '#/lib/script-template.ts'
 import {
   deleteIntent,
+  generateIntentScript,
   restoreScriptVersion,
   runIntent,
   saveScript,
@@ -92,6 +96,12 @@ export const Route = createFileRoute('/_app/projects/$projectId/intents/$intentI
         ...environmentsQuery(params.projectId),
         revalidateIfStale: true,
       }),
+      // Asked for on every visit, not only after pressing Generate: a page
+      // reloaded mid-generation has to find its way back to the live channel.
+      context.queryClient.ensureQueryData({
+        ...intentGenerationQuery(params.intentId),
+        revalidateIfStale: true,
+      }),
     ])
   },
   component: IntentDetail,
@@ -107,6 +117,7 @@ function IntentDetail() {
   const { data: runs } = useSuspenseQuery(runsQuery(intentId))
   const { data: versions } = useSuspenseQuery(scriptVersionsQuery(intentId))
   const { data: environments } = useSuspenseQuery(environmentsQuery(projectId))
+  const { data: generation } = useSuspenseQuery(intentGenerationQuery(intentId))
 
   const queryClient = useQueryClient()
   const toast = useKumoToastManager()
@@ -117,6 +128,8 @@ function IntentDetail() {
   const [deleting, setDeleting] = useState(false)
   /** Explicitly watched run — set the moment one is queued from this page. */
   const [watching, setWatching] = useState<string | null>(null)
+  /** Same, for a generation started from this page — kept after it finishes. */
+  const [watchingGeneration, setWatchingGeneration] = useState<string | null>(null)
   const [environmentId, setEnvironmentId] = useState<string | null>(null)
 
   const defaultEnvironment = environments.find((row) => row.isDefault) ?? environments[0] ?? null
@@ -126,6 +139,16 @@ function IntentDetail() {
   // so an unfinished run in the history seeds the watch as well.
   const inFlight = runs.find((row) => !TERMINAL.has(row.status))
   const liveRunId = watching ?? inFlight?.id ?? null
+
+  // The same rule for generations, with one difference: a *finished* job is
+  // still worth showing while the page that started it is open, so the panel
+  // can say how it went rather than vanishing at the moment of the verdict.
+  const unfinishedGeneration =
+    generation && (generation.status === 'queued' || generation.status === 'running')
+      ? generation.id
+      : null
+  const liveGenerationId = watchingGeneration ?? unfinishedGeneration
+  const generating = unfinishedGeneration !== null || intent.status === 'generating'
 
   const run = useMutation({
     mutationFn: () =>
@@ -145,6 +168,33 @@ function IntentDetail() {
     },
     onError: (error: Error) => {
       toast.add({ variant: 'error', title: 'Could not queue the run', description: error.message })
+    },
+  })
+
+  const generate = useMutation({
+    mutationFn: () =>
+      generateIntentScript({
+        data: {
+          intentId,
+          ...(targetEnvironmentId ? { environmentId: targetEnvironmentId } : {}),
+        },
+      }),
+    onSuccess: async (result) => {
+      setWatchingGeneration(result.jobId)
+      await queryClient.invalidateQueries()
+      if (tab !== 'script') void navigate({ search: { tab: 'script' }, replace: true })
+      toast.add({
+        variant: 'info',
+        title: 'Generating',
+        description: 'The agent is building this test in a real browser.',
+      })
+    },
+    onError: (error: Error) => {
+      toast.add({
+        variant: 'error',
+        title: 'Could not start generating',
+        description: error.message,
+      })
     },
   })
 
@@ -234,7 +284,7 @@ function IntentDetail() {
               variant="primary"
               icon={<PlayIcon size={16} />}
               loading={run.isPending}
-              disabled={currentVersion === null || targetEnvironmentId === null}
+              disabled={currentVersion === null || targetEnvironmentId === null || generating}
               onClick={() => run.mutate()}
             >
               Run
@@ -263,6 +313,14 @@ function IntentDetail() {
             schedule={intent.schedule}
             currentVersion={currentVersion}
             liveRunId={liveRunId}
+            liveGenerationId={liveGenerationId}
+            generating={generating}
+            lastGeneration={generation}
+            environmentItems={environmentItems}
+            environmentId={targetEnvironmentId}
+            onEnvironmentChange={setEnvironmentId}
+            generatePending={generate.isPending}
+            onGenerate={() => generate.mutate()}
             onEditDescription={() => setEditingDescription(true)}
           />
         ) : null}
@@ -291,12 +349,27 @@ function IntentDetail() {
 
 /* -------------------------------------------------------------- Script tab */
 
+interface GenerationSummary {
+  id: string
+  status: 'queued' | 'running' | 'succeeded' | 'failed'
+  stuckReason: string | null
+  turns: number
+}
+
 function ScriptTab({
   intentId,
   description,
   schedule,
   currentVersion,
   liveRunId,
+  liveGenerationId,
+  generating,
+  lastGeneration,
+  environmentItems,
+  environmentId,
+  onEnvironmentChange,
+  generatePending,
+  onGenerate,
   onEditDescription,
 }: {
   intentId: string
@@ -304,6 +377,14 @@ function ScriptTab({
   schedule: string | null
   currentVersion: { id: string; version: number; code: string; author: ScriptAuthor } | null
   liveRunId: string | null
+  liveGenerationId: string | null
+  generating: boolean
+  lastGeneration: GenerationSummary | null
+  environmentItems: Array<{ label: string; value: string }>
+  environmentId: string | null
+  onEnvironmentChange: (value: string | null) => void
+  generatePending: boolean
+  onGenerate: () => void
   onEditDescription: () => void
 }) {
   const queryClient = useQueryClient()
@@ -314,9 +395,17 @@ function ScriptTab({
   const saved = currentVersion?.code ?? DEFAULT_SCRIPT_TEMPLATE
   const [code, setCode] = useState(saved)
   const [note, setNote] = useState('')
+  /** Set by "start from a blank script", which is the way past the hero. */
+  const [authoring, setAuthoring] = useState(false)
 
   const dirty = code !== saved
   const untouched = currentVersion === null && !dirty
+
+  // With no script and nothing in flight, the editor is not the first thing to
+  // show someone: the intent is already written down, and the fastest route
+  // from it to a working test is to let the agent try. Writing it by hand is
+  // one click away and always will be.
+  const hero = currentVersion === null && !authoring && !generating
 
   const save = useMutation({
     mutationFn: () =>
@@ -327,6 +416,9 @@ function ScriptTab({
       toast.add({ variant: 'success', title: `Saved as v${result.version}` })
     },
   })
+
+  const failedLast =
+    lastGeneration?.status === 'failed' && !generating && liveGenerationId !== lastGeneration.id
 
   return (
     <div className="grid gap-6">
@@ -351,65 +443,141 @@ function ScriptTab({
         </LayerCard>
       </Section>
 
-      <ScheduleSection key={schedule ?? 'unscheduled'} intentId={intentId} schedule={schedule} />
+      {hero ? null : (
+        <ScheduleSection key={schedule ?? 'unscheduled'} intentId={intentId} schedule={schedule} />
+      )}
 
-      <Section
-        title="Playwright script"
-        description="Every save is a new, immutable version. Restoring an old one saves it forward."
-      >
-        <LayerCard className="px-5 py-4">
-          <div className="grid gap-3">
-            {save.error ? (
-              <Banner
-                variant="error"
-                icon={<WarningCircleIcon weight="fill" />}
-                title="Could not save"
-                description={save.error.message}
-              />
-            ) : null}
+      {hero ? (
+        <LayerCard className="px-5 py-10">
+          <Empty
+            icon={<SparkleIcon size={48} className="text-kumo-inactive" />}
+            title="No script yet"
+            description="The agent opens a real browser, performs this flow one step at a time, keeps only the code that worked, and verifies the finished script before saving it."
+            contents={
+              <div className="grid justify-items-center gap-3">
+                {failedLast && lastGeneration?.stuckReason ? (
+                  <Banner
+                    variant="alert"
+                    icon={<WarningCircleIcon weight="fill" />}
+                    title="The last attempt did not finish"
+                    description={lastGeneration.stuckReason}
+                  />
+                ) : null}
 
-            <CodeEditor
-              ariaLabel="Playwright script"
-              value={code}
-              onChange={setCode}
-              minHeight="26rem"
-              maxHeight="60vh"
-            />
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  {environmentItems.length > 1 ? (
+                    <Select
+                      aria-label="Environment to generate against"
+                      className="w-52"
+                      items={environmentItems}
+                      value={environmentId}
+                      onValueChange={onEnvironmentChange}
+                    />
+                  ) : null}
+                  <Button
+                    variant="primary"
+                    icon={<SparkleIcon size={16} />}
+                    loading={generatePending}
+                    disabled={environmentItems.length === 0}
+                    onClick={onGenerate}
+                  >
+                    Generate the test
+                  </Button>
+                </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <Text variant="secondary" size="xs">
-                {untouched
-                  ? 'Seeded from the default template — save it to make this intent runnable.'
-                  : dirty
-                    ? 'Unsaved changes. Runs always use the last saved version.'
-                    : currentVersion
-                      ? `Saved as v${currentVersion.version}.`
-                      : 'Not saved yet.'}
-              </Text>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <Input
-                  size="sm"
-                  className="w-56"
-                  aria-label="Version note"
-                  placeholder="Note (optional)"
-                  value={note}
-                  onChange={(event) => setNote(event.target.value)}
-                />
-                <Button
-                  variant={dirty ? 'primary' : 'secondary'}
-                  icon={<FloppyDiskIcon size={16} />}
-                  loading={save.isPending}
-                  disabled={!dirty && currentVersion !== null}
-                  onClick={() => save.mutate()}
-                >
-                  Save version
+                <Button variant="ghost" size="sm" onClick={() => setAuthoring(true)}>
+                  Or start from a blank script
                 </Button>
               </div>
-            </div>
-          </div>
+            }
+          />
         </LayerCard>
-      </Section>
+      ) : (
+        <Section
+          title="Playwright script"
+          description="Every save is a new, immutable version. Restoring an old one saves it forward."
+          actions={
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<SparkleIcon size={14} />}
+              loading={generatePending}
+              disabled={generating || environmentItems.length === 0}
+              onClick={onGenerate}
+            >
+              {currentVersion ? 'Regenerate' : 'Generate'}
+            </Button>
+          }
+        >
+          <LayerCard className="px-5 py-4">
+            <div className="grid gap-3">
+              {save.error ? (
+                <Banner
+                  variant="error"
+                  icon={<WarningCircleIcon weight="fill" />}
+                  title="Could not save"
+                  description={save.error.message}
+                />
+              ) : null}
+
+              <CodeEditor
+                ariaLabel="Playwright script"
+                value={code}
+                onChange={setCode}
+                minHeight="26rem"
+                maxHeight="60vh"
+              />
+
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <Text variant="secondary" size="xs">
+                  {generating
+                    ? 'The agent is writing this script. Saving now would be overwritten.'
+                    : untouched
+                      ? 'Seeded from the default template — save it to make this intent runnable.'
+                      : dirty
+                        ? 'Unsaved changes. Runs always use the last saved version.'
+                        : currentVersion
+                          ? `Saved as v${currentVersion.version}.`
+                          : 'Not saved yet.'}
+                </Text>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <Input
+                    size="sm"
+                    className="w-56"
+                    aria-label="Version note"
+                    placeholder="Note (optional)"
+                    value={note}
+                    onChange={(event) => setNote(event.target.value)}
+                  />
+                  <Button
+                    variant={dirty ? 'primary' : 'secondary'}
+                    icon={<FloppyDiskIcon size={16} />}
+                    loading={save.isPending}
+                    disabled={(!dirty && currentVersion !== null) || generating}
+                    onClick={() => save.mutate()}
+                  >
+                    Save version
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </LayerCard>
+        </Section>
+      )}
+
+      {liveGenerationId ? (
+        <Section
+          title="Generation"
+          description="What the agent is doing, and what the browser did about it."
+        >
+          <GenerationLivePanel
+            key={liveGenerationId}
+            jobId={liveGenerationId}
+            intentId={intentId}
+          />
+        </Section>
+      ) : null}
 
       {liveRunId ? (
         <Section title="Live run" description="Steps appear as the browser makes them.">

@@ -15,7 +15,9 @@ export const getOrgOverview = createServerFn({ method: 'GET' })
         intents: sql<number>`count(${intent.id})`,
         passing: sql<number>`sum(case when ${intent.status} = 'passing' then 1 else 0 end)`,
         failing: sql<number>`sum(case when ${intent.status} = 'failing' then 1 else 0 end)`,
-        pending: sql<number>`sum(case when ${intent.status} in ('draft','ready') then 1 else 0 end)`,
+        // Everything that has not yet been decided by a run, which is what
+        // `'generating'` is too — an intent mid-generation has no verdict.
+        pending: sql<number>`sum(case when ${intent.status} in ('draft','generating','ready') then 1 else 0 end)`,
       })
       .from(project)
       .leftJoin(intent, eq(intent.projectId, project.id))

@@ -13,27 +13,39 @@
  * on the host side.
  */
 import fs from 'node:fs'
-import type { BrowserWorker } from '@cloudflare/playwright'
+import type { BrowserWorker, Page } from '@cloudflare/playwright'
 import { expect as playwrightExpect } from '@cloudflare/playwright/test'
 import { WorkerEntrypoint } from 'cloudflare:workers'
 
 import type {
+  ActResponse,
+  AttachRequest,
   HarnessRequest,
   HarnessResponse,
+  ObserveResponse,
+  PageObservation,
   RunChannelSink,
   RunErrorKind,
   RunEvent,
   RunOutcome,
   RunResult,
+  RunStep,
+  SessionStartRequest,
+  SessionStartResponse,
 } from '#/engine/contract.ts'
 import {
+  type AttachedSession,
   type BrowserSession,
   BrowserLaunchError,
+  SessionLostError,
+  attachGenerationSession,
+  disconnectBrowser,
   openBrowser,
+  openGenerationSession,
   releaseSession,
   teardownBrowser,
 } from '#/engine/runner/browser.ts'
-import { createScrubber } from '#/engine/runner/scrub.ts'
+import { type Scrubber, createScrubber } from '#/engine/runner/scrub.ts'
 import { createInstrumentation } from './instrument.ts'
 import userScript from './user-script.ts'
 
@@ -162,6 +174,132 @@ class ScriptTimeoutError extends Error {
     super(`Script did not finish within ${Math.round(timeoutMs / 1000)}s.`)
     this.name = 'TimeoutError'
   }
+}
+
+/* --------------------------------------------------------- Generation mode */
+
+/** How long the snapshot itself may take before it is not worth waiting for. */
+const SNAPSHOT_TIMEOUT_MS = 15_000
+
+/**
+ * How much of the budget the top of the page gets, verbatim.
+ *
+ * Above this line the snapshot is kept exactly as Playwright produced it —
+ * indentation and all — because the hierarchy is half of what makes it
+ * readable. Below it only the rows a locator could target survive, on the
+ * grounds that a model deciding what to click next needs the *names* of the
+ * things further down the page far more than it needs their nesting.
+ */
+const SNAPSHOT_VERBATIM_SHARE = 0.6
+
+/** Roles worth keeping once the verbatim budget is spent. */
+const ACTIONABLE_ROLE =
+  /^\s*-\s*(?:button|link|textbox|searchbox|combobox|listbox|option|checkbox|radio|menuitem[a-z]*|tab|switch|slider|spinbutton|heading|alert|status|dialog|cell|columnheader|rowheader|text)\b/
+
+function fitSnapshot(snapshot: string, limit: number): { snapshot: string; truncated: boolean } {
+  if (snapshot.length <= limit) return { snapshot, truncated: false }
+
+  const verbatimBudget = Math.floor(limit * SNAPSHOT_VERBATIM_SHARE)
+  const kept: Array<string> = []
+  let size = 0
+  let spentVerbatim = false
+
+  for (const line of snapshot.split('\n')) {
+    if (!spentVerbatim && size + line.length + 1 > verbatimBudget) {
+      spentVerbatim = true
+      kept.push('  # …only actionable rows below this point…')
+      size += 48
+    }
+
+    if (spentVerbatim && !ACTIONABLE_ROLE.test(line)) continue
+    if (size + line.length + 1 > limit) break
+
+    kept.push(line)
+    size += line.length + 1
+  }
+
+  return { snapshot: kept.join('\n'), truncated: true }
+}
+
+/**
+ * What the page is, right now.
+ *
+ * Never throws: an observation is context, and a turn that cannot see the page
+ * is still better off being told so than being failed. A snapshot that times
+ * out — a page mid-navigation is the usual reason — comes back as a note in
+ * place of the tree.
+ */
+async function observePage(
+  page: Page,
+  limit: number,
+  scrubber: Scrubber,
+): Promise<PageObservation> {
+  let url = ''
+  let title = ''
+
+  try {
+    url = page.url()
+  } catch {
+    // A page that cannot report its own URL is about to fail louder elsewhere.
+  }
+
+  try {
+    title = await page.title()
+  } catch {
+    title = ''
+  }
+
+  let snapshot = ''
+  let truncated = false
+  try {
+    const raw = await page.locator('body').ariaSnapshot({ timeout: SNAPSHOT_TIMEOUT_MS })
+    const fitted = fitSnapshot(raw, limit)
+    snapshot = fitted.snapshot
+    truncated = fitted.truncated
+  } catch (error) {
+    snapshot = `# the page could not be snapshotted: ${messageOf(error)}`
+  }
+
+  return {
+    url: scrubber.text(url),
+    title: scrubber.text(title),
+    snapshot: scrubber.text(snapshot),
+    truncated,
+  }
+}
+
+/**
+ * Relative navigation, in a context that has no `baseURL`.
+ *
+ * Attach mode reuses the browser's default context so that a page survives
+ * between turns, and the default context cannot be given a `baseURL` — that is
+ * a `newContext` option. Rather than teach the model two dialects of navigation
+ * (absolute while generating, relative in the saved script), the two calls that
+ * take a URL resolve one here. The fragment the model writes is therefore the
+ * fragment that ends up in the file.
+ */
+function withBaseUrl(page: Page, baseUrl: string): Page {
+  if (!baseUrl) return page
+
+  const resolve = (value: unknown): unknown =>
+    typeof value === 'string' && value.startsWith('/') ? new URL(value, baseUrl).toString() : value
+
+  return new Proxy(page, {
+    get(target, property) {
+      const value = (target as unknown as Record<string | symbol, unknown>)[property]
+      if (typeof value !== 'function') return value
+      if (property !== 'goto' && property !== 'waitForURL') return value
+
+      return function resolved(this: unknown, first: unknown, ...rest: Array<unknown>) {
+        // Applied to the real page: Playwright's internals use private fields,
+        // which a proxy receiver would not satisfy.
+        return (value as (...args: Array<unknown>) => unknown).apply(target, [
+          resolve(first),
+          ...rest,
+        ])
+      }
+    },
+  }) as Page
 }
 
 export default class Harness extends WorkerEntrypoint<HarnessEnv> {
@@ -332,6 +470,183 @@ export default class Harness extends WorkerEntrypoint<HarnessEnv> {
       trace,
       sessionId: session?.sessionId ?? null,
       sessionReused: session?.reused ?? false,
+    }
+  }
+
+  /**
+   * Opens the session a generation loop will spend its whole life in.
+   *
+   * The page it leaves behind — parked on the environment's base URL — is what
+   * every `observe` and `act` after this will find and carry forward. Nothing
+   * is closed on the way out but this isolate's own socket.
+   */
+  async startSession(request: SessionStartRequest): Promise<SessionStartResponse> {
+    const scrubber = createScrubber(Object.values(this.env.CREDS ?? {}))
+    const baseUrl = this.env.BASE_URL ?? ''
+
+    let session: (AttachedSession & { sessionId: string }) | undefined
+    try {
+      session = await openGenerationSession(this.env.BROWSER, {
+        actionTimeoutMs: request.actionTimeoutMs,
+      })
+
+      if (baseUrl) await session.page.goto(baseUrl)
+
+      const observation = await observePage(session.page, request.snapshotLimit, scrubber)
+      return { sessionId: session.sessionId, observation, errorMessage: null }
+    } catch (error) {
+      return {
+        // Reported even on failure: a session that was taken and then could not
+        // be navigated still exists, and the workflow has to be able to end it.
+        sessionId: session?.sessionId ?? null,
+        observation: null,
+        errorMessage: scrubber.text(messageOf(error)),
+      }
+    } finally {
+      await disconnectBrowser(session?.browser)
+    }
+  }
+
+  /** Looks at the loop's live page without touching it. */
+  async observe(request: AttachRequest): Promise<ObserveResponse> {
+    const scrubber = createScrubber(Object.values(this.env.CREDS ?? {}))
+
+    let session: AttachedSession | undefined
+    try {
+      session = await attachGenerationSession(this.env.BROWSER, request.sessionId, {
+        actionTimeoutMs: request.actionTimeoutMs,
+      })
+
+      const observation = await observePage(session.page, request.snapshotLimit, scrubber)
+      return { observation, errorMessage: null, sessionLost: false }
+    } catch (error) {
+      return {
+        observation: null,
+        errorMessage: scrubber.text(messageOf(error)),
+        sessionLost: error instanceof SessionLostError,
+      }
+    } finally {
+      await disconnectBrowser(session?.browser)
+    }
+  }
+
+  /**
+   * Runs one candidate fragment against the live page, for real.
+   *
+   * The module the loader supplied is the fragment wrapped in the same
+   * `{ page, expect, secret }` shape a saved script has, so a fragment that
+   * works here is a fragment that works in the finished file — which is the
+   * entire reason generation drives a real browser instead of guessing.
+   *
+   * Never throws. A fragment that fails is a *result*: the loop shows the model
+   * the error and the page it left behind, and asks for something different.
+   */
+  async act(request: AttachRequest): Promise<ActResponse> {
+    const startedAt = Date.now()
+    const creds = this.env.CREDS ?? {}
+    const scrubber = createScrubber(Object.values(creds))
+    const runId = this.env.RUN_ID ?? ''
+    const channel = createEmitter(this.env.CHANNEL)
+
+    const logs: Array<string> = []
+    const push = (line: string) => {
+      if (logs.length >= MAX_LOG_LINES) return
+      logs.push(line.length > MAX_LOG_LINE_LENGTH ? `${line.slice(0, MAX_LOG_LINE_LENGTH)}…` : line)
+    }
+
+    const instrumentation = createInstrumentation({
+      redact: scrubber.text,
+      startIndex: request.stepIndexOffset ?? 0,
+      onStepStarted: (index, label) =>
+        channel.emit({ type: 'step.started', runId, index, label, at: Date.now() }),
+      onStep: (index, step) =>
+        channel.emit({ type: 'step.finished', runId, index, step, at: Date.now() }),
+    })
+
+    let session: AttachedSession | undefined
+    let ok = true
+    let errorMessage: string | null = null
+    let sessionLost = false
+    let observation: PageObservation | null = null
+
+    const restoreConsole = captureConsole(push)
+
+    try {
+      session = await attachGenerationSession(this.env.BROWSER, request.sessionId, {
+        actionTimeoutMs: request.actionTimeoutMs,
+      })
+
+      const onConsole = (message: { type: () => string; text: () => string }) =>
+        push(`[page:${message.type()}] ${message.text()}`)
+      session.page.on('console', onConsole)
+
+      const context = {
+        page: instrumentation.watch(withBaseUrl(session.page, this.env.BASE_URL ?? ''), 'page'),
+        expect: instrumentation.watchExpect(playwrightExpect),
+        secret: (name: string): string => {
+          const value = creds[name]
+          if (value === undefined) {
+            throw new Error(
+              `No environment variable named "${name}". Add it to this environment before running.`,
+            )
+          }
+          return value
+        },
+      }
+
+      let timer: ReturnType<typeof setTimeout> | undefined
+      try {
+        await Promise.race([
+          Promise.resolve(userScript(context)),
+          new Promise((_resolve, reject) => {
+            timer = setTimeout(
+              () => reject(new ScriptTimeoutError(request.timeoutMs)),
+              request.timeoutMs,
+            )
+          }),
+        ])
+      } finally {
+        if (timer !== undefined) clearTimeout(timer)
+        session.page.off('console', onConsole)
+      }
+    } catch (error) {
+      ok = false
+      sessionLost = error instanceof SessionLostError
+      errorMessage = messageOf(error)
+    } finally {
+      restoreConsole()
+
+      // The page is the loop's state, so it is looked at *after* the fragment
+      // ran whether or not the fragment worked — a failure that navigated
+      // somewhere unexpected is exactly what the model needs to see.
+      if (session) {
+        try {
+          observation = await observePage(session.page, request.snapshotLimit, scrubber)
+        } catch {
+          observation = null
+        }
+      }
+
+      // A disconnect, never a teardown: the session and its page belong to the
+      // workflow and have to outlive this isolate.
+      await disconnectBrowser(session?.browser)
+      await channel.drain()
+    }
+
+    const steps: Array<RunStep> = instrumentation.steps.map((step) => ({
+      ...step,
+      label: scrubber.text(step.label),
+      ...(step.error === undefined ? {} : { error: scrubber.text(step.error) }),
+    }))
+
+    return {
+      ok,
+      steps,
+      logs: scrubber.lines(logs),
+      errorMessage: scrubber.nullable(errorMessage),
+      observation,
+      durationMs: Date.now() - startedAt,
+      sessionLost,
     }
   }
 

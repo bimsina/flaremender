@@ -285,9 +285,16 @@ type IntentRow = {
   lastRunAt: Date | null
 }
 
+/**
+ * Ordered as an intent moves through them, not alphabetically — `'generating'`
+ * sits between having nothing and having something for the same reason it does
+ * in the enum. Transient, but a project with twenty intents mid-generation is
+ * exactly when someone wants to filter for them.
+ */
 const STATUS_FILTERS = {
   all: 'Any status',
   draft: 'Draft',
+  generating: 'Generating',
   ready: 'Ready to run',
   passing: 'Passing',
   failing: 'Failing',

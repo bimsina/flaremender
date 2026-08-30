@@ -10,7 +10,13 @@ import {
   getInstanceSetupStatus,
   listAllowedModels,
 } from '#/server/instance.ts'
-import { getIntent, getScriptVersion, listIntents, listScriptVersions } from '#/server/intents.ts'
+import {
+  getIntent,
+  getIntentGeneration,
+  getScriptVersion,
+  listIntents,
+  listScriptVersions,
+} from '#/server/intents.ts'
 import { listProviderModels } from '#/server/model-catalog.ts'
 import { getProject, listProjects } from '#/server/projects.ts'
 import { getRun, listProjectRuns, listRuns } from '#/server/runs.ts'
@@ -73,6 +79,19 @@ export const intentQuery = (intentId: string) =>
   queryOptions({
     queryKey: ['intent', intentId] as const,
     queryFn: () => getIntent({ data: { intentId } }),
+  })
+
+/**
+ * The newest generation job for an intent, or null.
+ *
+ * How a page reloaded mid-generation finds the channel to reconnect to, and the
+ * polling fallback for when the socket will not open — so it is asked for on
+ * every visit to an intent, not only after pressing Generate.
+ */
+export const intentGenerationQuery = (intentId: string) =>
+  queryOptions({
+    queryKey: ['intent-generation', intentId] as const,
+    queryFn: () => getIntentGeneration({ data: { intentId } }),
   })
 
 export const environmentsQuery = (projectId: string) =>

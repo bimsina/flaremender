@@ -37,6 +37,11 @@
       "binding": "SUITE_WORKFLOW",
       "class_name": "SuiteWorkflow",
     },
+    {
+      "name": "flaremender-generate",
+      "binding": "GENERATE_WORKFLOW",
+      "class_name": "GenerateWorkflow",
+    },
   ],
   // The minute tick dispatches due intent schedules; 03:30 UTC sweeps history.
   // Both land on `scheduled` in src/server.ts, which tells them apart by

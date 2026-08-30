@@ -7,11 +7,21 @@ import { organization, user } from './auth.ts'
 const now = sql`(cast(unixepoch('subsecond') * 1000 as integer))`
 
 /**
- * Lifecycle of an intent. `'generating'` returns once AI generation lands; a
- * hand-written script goes straight from `'draft'` to `'ready'` on first save.
+ * Lifecycle of an intent. A hand-written script goes straight from `'draft'` to
+ * `'ready'` on first save; `'generating'` is the transient state an intent sits
+ * in while a `GenerateWorkflow` is driving a browser on its behalf, and is
+ * always replaced by whatever the verification run decided.
  */
-export const INTENT_STATUSES = ['draft', 'ready', 'passing', 'failing'] as const
+export const INTENT_STATUSES = ['draft', 'generating', 'ready', 'passing', 'failing'] as const
 export type IntentStatus = (typeof INTENT_STATUSES)[number]
+
+/**
+ * How a generation job ended. Deliberately coarser than a run's statuses: a job
+ * either produced a script that verified green, or it did not, and the reason it
+ * did not is prose rather than an enum.
+ */
+export const GENERATION_JOB_STATUSES = ['queued', 'running', 'succeeded', 'failed'] as const
+export type GenerationJobStatus = (typeof GENERATION_JOB_STATUSES)[number]
 
 /** `'healed'` is deliberately not collapsed into `'passed'` — it reads differently. */
 export const RUN_STATUSES = ['queued', 'running', 'passed', 'healed', 'failed', 'error'] as const
@@ -342,6 +352,68 @@ export const attempt = sqliteTable(
 )
 
 /**
+ * Prefix `gen_`. One attempt at writing a script from an intent's description.
+ *
+ * The row exists for three reasons, and the first is the load-bearing one:
+ *
+ * - **It is what authorizes the live socket.** Generation streams through the
+ *   same `RunChannel` a run does, addressed by the job id — and `src/server.ts`
+ *   has to be able to answer "does this organization own that channel?" before
+ *   forwarding the upgrade. A run row answers that for runs; this answers it for
+ *   generations.
+ * - It gives the UI something to poll when the socket will not open.
+ * - It is the history of what the generator was asked and what became of it,
+ *   which outlives the workflow instance that did the asking.
+ *
+ * `scriptVersionId` and `runId` are plain columns rather than foreign keys: both
+ * are written near the end of a job, and the nightly retention sweep deletes run
+ * rows out from under old jobs on purpose.
+ */
+export const generationJob = sqliteTable(
+  'generation_job',
+  {
+    id: text('id').primaryKey(),
+    intentId: text('intent_id')
+      .notNull()
+      .references(() => intent.id, { onDelete: 'cascade' }),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => project.id, { onDelete: 'cascade' }),
+    environmentId: text('environment_id')
+      .notNull()
+      .references(() => environment.id, { onDelete: 'cascade' }),
+    /**
+     * Denormalised from the project on purpose: this is the organization the
+     * *session* was in when the job was enqueued, which is the value the
+     * workflow re-checks against and the one the socket is authorized on.
+     */
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    status: text('status').$type<GenerationJobStatus>().default('queued').notNull(),
+    /** `"{provider}:{slug}"` — which model actually wrote the script. */
+    modelId: text('model_id'),
+    /** The version the job produced, green or partial. Null if it wrote nothing. */
+    scriptVersionId: text('script_version_id'),
+    /** The verification run, which is a real run and shows up in run history. */
+    runId: text('run_id'),
+    /** How many model turns it took. Caps live in the workflow. */
+    turns: integer('turns').default(0).notNull(),
+    /** Why it stopped short, in the words the UI shows. Null when it succeeded. */
+    stuckReason: text('stuck_reason'),
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    startedAt: integer('started_at', { mode: 'timestamp_ms' }).default(now).notNull(),
+    finishedAt: integer('finished_at', { mode: 'timestamp_ms' }),
+  },
+  (table) => [
+    index('generation_job_intentId_idx').on(table.intentId),
+    index('generation_job_projectId_idx').on(table.projectId),
+  ],
+)
+
+/**
  * Prefix `pk_`. Instance-wide provider credentials, managed from the admin
  * console. Inert whenever a Worker secret exists for the same provider.
  */
@@ -440,6 +512,17 @@ export const intentRelations = relations(intent, ({ one, many }) => ({
   }),
   versions: many(scriptVersion, { relationName: 'versions' }),
   runs: many(run),
+  generations: many(generationJob),
+}))
+
+export const generationJobRelations = relations(generationJob, ({ one }) => ({
+  intent: one(intent, { fields: [generationJob.intentId], references: [intent.id] }),
+  project: one(project, { fields: [generationJob.projectId], references: [project.id] }),
+  environment: one(environment, {
+    fields: [generationJob.environmentId],
+    references: [environment.id],
+  }),
+  creator: one(user, { fields: [generationJob.createdBy], references: [user.id] }),
 }))
 
 export const scriptVersionRelations = relations(scriptVersion, ({ one, many }) => ({
