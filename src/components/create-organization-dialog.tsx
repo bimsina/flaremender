@@ -80,7 +80,7 @@ function CreateOrganizationForm({
           </Dialog.Title>
           <Dialog.Description>
             <Text as="span" variant="secondary">
-              Projects, test cases and runs all live inside an organization.
+              Projects, intents and runs all live inside an organization.
             </Text>
           </Dialog.Description>
         </div>

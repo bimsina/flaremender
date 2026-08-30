@@ -71,7 +71,7 @@ function Onboarding() {
                 Create your organization
               </Text>
               <Text variant="secondary">
-                Projects, test cases and runs all live inside an organization. You can create more
+                Projects, intents and runs all live inside an organization. You can create more
                 later and switch between them.
               </Text>
             </div>

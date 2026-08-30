@@ -80,7 +80,7 @@ function AdminUsers() {
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatTile label="Users" value={stats.users} hint={`${stats.admins} admin`} />
         <StatTile label="Organizations" value={stats.organizations} />
-        <StatTile label="Projects" value={stats.projects} hint={`${stats.tests} test cases`} />
+        <StatTile label="Projects" value={stats.projects} hint={`${stats.intents} intents`} />
         <StatTile label="Runs" value={stats.runs} hint={`${stats.banned} banned users`} />
       </section>
 

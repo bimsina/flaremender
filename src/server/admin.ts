@@ -25,7 +25,7 @@ export const getAdminStats = createServerFn({ method: 'GET' })
       users: users?.value ?? 0,
       organizations: orgs?.value ?? 0,
       projects: projects?.value ?? 0,
-      tests: tests?.value ?? 0,
+      intents: tests?.value ?? 0,
       runs: runs?.value ?? 0,
       admins: admins?.value ?? 0,
       banned: banned?.value ?? 0,
