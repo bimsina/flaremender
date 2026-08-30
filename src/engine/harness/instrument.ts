@@ -108,14 +108,23 @@ export interface Instrumentation {
 export function createInstrumentation(options: {
   /** Applied to every label and error before it is recorded. */
   redact: (text: string) => string
-  /** Fires as each step settles, so a future live channel can forward it. */
-  onStep?: (step: RunStep) => void
+  /** Fires the moment a call is made, before it has settled. */
+  onStepStarted?: (index: number, label: string) => void
+  /** Fires as each step settles, so a live channel can forward it. */
+  onStep?: (index: number, step: RunStep) => void
 }): Instrumentation {
   const steps: Array<RunStep> = []
 
-  function record(label: string, started: number, error: unknown): void {
+  /**
+   * Start order, not finish order. Scripts are sequential awaits in practice, so
+   * the two agree — but when they do not, a `step.started` and its
+   * `step.finished` still carry the same number, which is what the UI keys on.
+   */
+  let nextIndex = 0
+
+  function record(index: number, label: string, started: number, error: unknown): void {
     const step: RunStep = {
-      label: options.redact(clip(label)),
+      label,
       ok: error === undefined,
       durationMs: Date.now() - started,
       ...(error === undefined
@@ -124,18 +133,25 @@ export function createInstrumentation(options: {
     }
 
     steps.push(step)
-    options.onStep?.(step)
+    options.onStep?.(index, step)
   }
 
   /** Runs a promise-returning call as one step. */
-  async function settle(label: string, promise: Promise<unknown>): Promise<unknown> {
+  async function settle(rawLabel: string, promise: Promise<unknown>): Promise<unknown> {
     const started = Date.now()
+    const index = nextIndex++
+    // Redacted once, here, so neither the recorded step nor the live event can
+    // carry a credential the script echoed into its own call.
+    const label = options.redact(clip(rawLabel))
+
+    options.onStepStarted?.(index, label)
+
     try {
       const value = await promise
-      record(label, started, undefined)
+      record(index, label, started, undefined)
       return value
     } catch (error) {
-      record(label, started, error)
+      record(index, label, started, error)
       throw error
     }
   }

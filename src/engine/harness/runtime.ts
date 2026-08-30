@@ -20,7 +20,9 @@ import { WorkerEntrypoint } from 'cloudflare:workers'
 import type {
   HarnessRequest,
   HarnessResponse,
+  RunChannelSink,
   RunErrorKind,
+  RunEvent,
   RunOutcome,
   RunResult,
 } from '#/engine/contract.ts'
@@ -47,6 +49,38 @@ interface HarnessEnv {
   CREDS: Record<string, string>
   /** What relative navigations resolve against. */
   BASE_URL: string
+  /** Which run these events belong to. */
+  RUN_ID: string
+  /**
+   * This run's live channel, and nothing else — a stub whose only method is
+   * `push`, bound to a single run's Durable Object. It is the one capability the
+   * sandbox has that reaches back out, which is why every event that goes
+   * through it is redacted first, here, where the plaintext lives.
+   *
+   * Absent when the host chose not to stream; the harness works either way.
+   */
+  CHANNEL?: RunChannelSink | null
+}
+
+/**
+ * Sends events in the order they were produced, without making the script wait.
+ *
+ * Each `push` is chained onto the last so the Durable Object's sequence numbers
+ * follow the script; failures are swallowed, because a channel that has gone
+ * away must never turn a passing test into a failing one.
+ */
+function createEmitter(channel: RunChannelSink | null | undefined) {
+  if (!channel) return { emit: (_event: RunEvent) => {}, drain: async () => {} }
+
+  let tail: Promise<void> = Promise.resolve()
+
+  return {
+    emit(event: RunEvent): void {
+      tail = tail.then(() => channel.push(event)).catch(() => {})
+    },
+    /** Awaited before the response goes back, so nothing is lost on teardown. */
+    drain: () => tail,
+  }
 }
 
 function formatLogArg(value: unknown): string {
@@ -148,7 +182,16 @@ export default class Harness extends WorkerEntrypoint<HarnessEnv> {
       logs.push(line.length > MAX_LOG_LINE_LENGTH ? `${line.slice(0, MAX_LOG_LINE_LENGTH)}…` : line)
     }
 
-    const instrumentation = createInstrumentation({ redact: scrubber.text })
+    const runId = this.env.RUN_ID ?? ''
+    const channel = createEmitter(this.env.CHANNEL)
+
+    const instrumentation = createInstrumentation({
+      redact: scrubber.text,
+      onStepStarted: (index, label) =>
+        channel.emit({ type: 'step.started', runId, index, label, at: Date.now() }),
+      onStep: (index, step) =>
+        channel.emit({ type: 'step.finished', runId, index, step, at: Date.now() }),
+    })
 
     let session: BrowserSession | undefined
     let outcome: RunOutcome = 'passed'
@@ -253,6 +296,10 @@ export default class Harness extends WorkerEntrypoint<HarnessEnv> {
       }
 
       await closeBrowser(session?.browser)
+
+      // The isolate is about to be torn down with the RPC response; anything
+      // still in flight to the channel would go with it.
+      await channel.drain()
     }
 
     const result: RunResult = {

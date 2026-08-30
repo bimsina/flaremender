@@ -2,12 +2,20 @@
  * Handing a saved script to a Dynamic Worker.
  *
  * The isolate is built from exactly two modules — the pre-bundled harness and
- * the user's script — and given exactly three bindings: the Browser Rendering
- * binding, the decrypted credentials and the base URL. Notably absent: `DB`,
- * `ARTIFACTS`, `AI`, `LOADER` and ambient network access (`globalOutbound:
- * null`). A script that goes looking for `env` from inside the isolate finds
- * nothing that belongs to another tenant, which is the whole reason execution
- * happens out here rather than in the Workflow's own isolate.
+ * the user's script — and given four bindings: the Browser Rendering binding,
+ * the decrypted credentials, the base URL and a stub for this run's live
+ * channel. Notably absent: `DB`, `ARTIFACTS`, `AI`, `LOADER` and ambient network
+ * access (`globalOutbound: null`). A script that goes looking for `env` from
+ * inside the isolate finds nothing that belongs to another tenant, which is the
+ * whole reason execution happens out here rather than in the Workflow's own
+ * isolate.
+ *
+ * The channel stub is the one addition that reaches back out, and it is
+ * deliberately the narrowest thing that could: it addresses a single run's
+ * Durable Object — the run being executed — and that object's only write method
+ * appends an event to that run's own progress feed. A hostile script can spam
+ * its own progress panel. It cannot read anything, reach another run, or learn
+ * that other runs exist.
  */
 import type { HarnessRequest, HarnessResponse } from '#/engine/contract.ts'
 import HARNESS_SOURCE from '#/engine/harness/harness.generated.js?raw'
@@ -26,15 +34,22 @@ interface HarnessStub {
   execute(request: HarnessRequest): Promise<HarnessResponse>
 }
 
+/** A stub for one run's `RunChannel`, as `RUN_CHANNEL.getByName()` returns it. */
+type RunChannelStub = ReturnType<Cloudflare.Env['RUN_CHANNEL']['getByName']>
+
 export interface ExecuteOptions {
   loader: WorkerLoader
   /** Passed through untouched; the harness is what calls Playwright on it. */
   browser: Cloudflare.Env['BROWSER']
+  /** The run being executed; only used to label the events it emits. */
+  runId: string
   /** The saved script, verbatim. */
   code: string
   baseUrl: string
   /** Decrypted environment variables, keyed by name. */
   creds: Record<string, string>
+  /** This run's live channel. Omit to run without streaming. */
+  channel?: RunChannelStub | null
   timeoutMs?: number
   actionTimeoutMs?: number
   trace?: boolean
@@ -62,6 +77,8 @@ export async function executeInDynamicWorker(options: ExecuteOptions): Promise<H
       BROWSER: options.browser,
       CREDS: options.creds,
       BASE_URL: options.baseUrl,
+      RUN_ID: options.runId,
+      CHANNEL: options.channel ?? null,
     },
     // No ambient `fetch`. Bindings still work, so the browser is still reachable.
     globalOutbound: null,

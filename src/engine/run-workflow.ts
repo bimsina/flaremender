@@ -15,6 +15,11 @@
  * - **Secrets never reach durable storage.** Decryption happens inside
  *   `execute` and the plaintext dies with it: step return values are persisted
  *   by Workflows, so anything handed between steps has already been scrubbed.
+ *
+ * Alongside all of that the run narrates itself to a `RunChannel` Durable
+ * Object, which is what the intent page watches. That narration is strictly
+ * best-effort: a channel that cannot be reached is logged and ignored, because
+ * the database, not the socket, is what says whether a run passed.
  */
 import { and, eq, inArray } from 'drizzle-orm'
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from 'cloudflare:workers'
@@ -31,7 +36,7 @@ import {
   run,
   scriptVersion,
 } from '#/db/schema/app.ts'
-import type { RunOutcome, RunResult } from '#/engine/contract.ts'
+import type { RunEvent, RunOutcome, RunResult } from '#/engine/contract.ts'
 import { artifactPrefix, writeArtifacts } from '#/engine/runner/artifacts.ts'
 import { executeInDynamicWorker } from '#/engine/runner/loader.ts'
 import { createScrubber } from '#/engine/runner/scrub.ts'
@@ -94,7 +99,7 @@ export class RunWorkflow extends WorkflowEntrypoint<Cloudflare.Env, RunWorkflowP
         // One retry buys a transient browser 429 or a lost session another go.
         // A script that failed on its own terms never reaches this path.
         { retries: { limit: 1, delay: '5 seconds' }, timeout: '10 minutes' },
-        () => this.execute(loaded),
+        () => this.execute(runId, loaded),
       )
 
       return await step.do('persist', () => this.persist(runId, loaded, executed))
@@ -144,6 +149,8 @@ export class RunWorkflow extends WorkflowEntrypoint<Cloudflare.Env, RunWorkflowP
       .set({ status: 'running', artifactPrefix: prefix, workflowInstanceId: runId })
       .where(eq(run.id, runId))
 
+    await this.announce(runId, { type: 'run.started', runId, at: Date.now() })
+
     return {
       intentId: row.run.intentId,
       projectId: row.projectId,
@@ -162,7 +169,7 @@ export class RunWorkflow extends WorkflowEntrypoint<Cloudflare.Env, RunWorkflowP
    * can fix. A broken script, a failed assertion or a timeout all return
    * normally, carrying the outcome the UI will show.
    */
-  private async execute(loaded: LoadedRun): Promise<ExecutedRun> {
+  private async execute(runId: string, loaded: LoadedRun): Promise<ExecutedRun> {
     const db = createDb(this.env.DB)
 
     const rows = await db
@@ -200,9 +207,14 @@ export class RunWorkflow extends WorkflowEntrypoint<Cloudflare.Env, RunWorkflowP
       const response = await executeInDynamicWorker({
         loader: this.env.LOADER,
         browser: this.env.BROWSER,
+        runId,
         code: loaded.code,
         baseUrl: loaded.baseUrl,
         creds,
+        // Obtained here rather than carried in from `load`: a stub is a live
+        // connection, and Workflows serialises everything that crosses a step
+        // boundary. It has to be fetched inside the step that uses it.
+        channel: this.env.RUN_CHANNEL.getByName(runId),
       })
 
       if (response.errorKind === 'browser') {
@@ -301,6 +313,18 @@ export class RunWorkflow extends WorkflowEntrypoint<Cloudflare.Env, RunWorkflowP
         .where(eq(intent.id, loaded.intentId)),
     ])
 
+    await this.announce(
+      runId,
+      {
+        type: 'run.finished',
+        runId,
+        outcome: executed.result.outcome,
+        errorMessage: executed.result.errorMessage,
+        at: Date.now(),
+      },
+      { final: true },
+    )
+
     return { runId, status }
   }
 
@@ -321,5 +345,41 @@ export class RunWorkflow extends WorkflowEntrypoint<Cloudflare.Env, RunWorkflowP
       .where(and(eq(run.id, runId), inArray(run.status, ['queued', 'running'])))
 
     console.error(`[run-workflow] ${runId} failed:`, error)
+
+    // Anyone watching gets the same verdict the database just recorded, rather
+    // than a progress panel that spins for ever. The message is the engine's
+    // own — it never quotes the script, so there is nothing here to scrub.
+    await this.announce(
+      runId,
+      {
+        type: 'run.finished',
+        runId,
+        outcome: 'error',
+        errorMessage: 'The run could not be completed.',
+        at: Date.now(),
+      },
+      { final: true },
+    )
+  }
+
+  /**
+   * Tells the run's channel what just happened, and never lets that matter.
+   *
+   * The stub is resolved per call for the same reason `execute` resolves its
+   * own: stubs do not survive a step boundary. `final` schedules the channel's
+   * own cleanup, so a finished run stops costing storage a quarter of an hour
+   * after the last person could plausibly want to watch it.
+   */
+  private async announce(
+    runId: string,
+    event: RunEvent,
+    options?: { final?: boolean },
+  ): Promise<void> {
+    try {
+      const channel = this.env.RUN_CHANNEL.getByName(runId)
+      await (options?.final ? channel.finish(event) : channel.push(event))
+    } catch (error) {
+      console.error(`[run-workflow] ${runId} could not reach its channel:`, error)
+    }
   }
 }

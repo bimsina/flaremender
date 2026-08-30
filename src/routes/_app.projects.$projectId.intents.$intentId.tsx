@@ -29,6 +29,7 @@ import { useState } from 'react'
 
 import { PageBody, PageHeader } from '#/components/page.tsx'
 import { RelativeTime } from '#/components/relative-time.tsx'
+import { RunLivePanel } from '#/components/run-live-panel.tsx'
 import { RunStatusBadge, TestCaseStatusBadge } from '#/components/status-badge.tsx'
 import { formatDuration } from '#/lib/format.ts'
 import { intentQuery, runsQuery, scriptVersionsQuery } from '#/lib/queries.ts'
@@ -80,6 +81,8 @@ function IntentDetail() {
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [code, setCode] = useState(data.currentVersion?.code ?? STARTER_SCRIPT)
+  /** The run this page is currently watching. Set the moment one is queued. */
+  const [liveRunId, setLiveRunId] = useState<string | null>(null)
 
   const { intent, currentVersion, project } = data
   const lastRun = runs[0]
@@ -97,12 +100,13 @@ function IntentDetail() {
   // M7: an environment selector goes here; today the run targets the project's
   // default environment, which is what `runIntent` falls back to.
   //
-  // The verdict no longer arrives with the response — a run is a Workflow now,
-  // and this only queues it. M6 streams progress; until then the history table
-  // catches up on the next refetch.
+  // The verdict does not arrive with the response — a run is a Workflow, and
+  // this only queues it. The live panel takes over from here and refreshes the
+  // history itself once the run reports a verdict.
   const run = useMutation({
     mutationFn: () => runIntent({ data: { intentId } }),
     onSuccess: async (result) => {
+      setLiveRunId(result.runId)
       await queryClient.invalidateQueries()
       toast.add({ variant: 'info', title: 'Run queued', description: result.runId })
     },
@@ -208,6 +212,8 @@ function IntentDetail() {
             description={error.message}
           />
         ) : null}
+
+        {liveRunId ? <RunLivePanel key={liveRunId} runId={liveRunId} intentId={intentId} /> : null}
 
         {intent.status === 'failing' && lastRun?.lastErrorMessage ? (
           <Banner

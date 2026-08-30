@@ -68,9 +68,12 @@ export interface HarnessRequest {
 }
 
 /**
- * A live progress event. Nothing publishes these yet — M6 wires the RunChannel
- * Durable Object up to them — but the harness already produces the data each
- * one carries, so the shape is fixed here rather than invented twice.
+ * A live progress event.
+ *
+ * `index` counts the order steps *started* in, not the order they finished, so
+ * a `step.started` and its `step.finished` always carry the same number and the
+ * UI can key on it. Every event is already scrubbed by whoever produced it —
+ * step events are redacted inside the harness, where the plaintext lives.
  */
 export type RunEvent =
   | { type: 'run.started'; runId: string; at: number }
@@ -84,3 +87,26 @@ export type RunEvent =
       errorMessage: string | null
       at: number
     }
+
+/**
+ * How an event travels once the channel has it.
+ *
+ * The sequence number is assigned by the Durable Object, is unique and
+ * monotonic per run, and is what makes a replay and a live broadcast
+ * indistinguishable to the client: it drops anything it has already seen.
+ */
+export interface RunEventEnvelope {
+  seq: number
+  event: RunEvent
+}
+
+/**
+ * The only thing the harness is allowed to do with its channel.
+ *
+ * Declared here rather than imported from `run-channel.ts` so the harness
+ * bundle never pulls the Durable Object implementation in — and so the sandbox's
+ * view of the channel is, in the type system as well as in practice, one method.
+ */
+export interface RunChannelSink {
+  push(event: RunEvent): Promise<void>
+}
