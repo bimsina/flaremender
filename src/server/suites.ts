@@ -8,13 +8,12 @@
  * that the intent pages already know how to render.
  */
 import { createServerFn } from '@tanstack/react-start'
-import { env } from 'cloudflare:workers'
-import { and, asc, desc, eq, isNotNull, sql } from 'drizzle-orm'
+import { asc, desc, eq, sql } from 'drizzle-orm'
 
 import { attempt, environment, intent, run, suiteRun } from '#/db/schema/app.ts'
-import { createId } from '#/lib/ids.ts'
+import { queueSuiteRun, resolveTargetEnvironment } from './actions.ts'
 import { orgMiddleware } from './auth.ts'
-import { assertProject, loadDefaultEnvironment, loadEnvironment, loadSuiteRun } from './scope.ts'
+import { assertProject, loadEnvironment, loadSuiteRun } from './scope.ts'
 import { ValidationError, has, str } from './validate.ts'
 
 const DEFAULT_LIMIT = 20
@@ -48,48 +47,24 @@ export const runSuite = createServerFn({ method: 'POST' })
   .handler(async ({ data, context }) => {
     const project = await assertProject(context.db, context.organizationId, data.projectId)
 
-    const target = data.environmentId
+    const named = data.environmentId
       ? (await loadEnvironment(context.db, context.organizationId, data.environmentId)).environment
-      : await loadDefaultEnvironment(context.db, project.id)
+      : null
 
-    if (!target) {
-      throw new ValidationError('This project has no environment to run against.')
-    }
-    // A named environment from another project would silently retarget the suite.
-    if (target.projectId !== project.id) {
-      throw new ValidationError('That environment belongs to a different project.')
-    }
+    const target = await resolveTargetEnvironment(context.db, project.id, named, 'run')
 
-    const [runnable] = await context.db
-      .select({ count: sql<number>`count(*)` })
-      .from(intent)
-      .where(and(eq(intent.projectId, project.id), isNotNull(intent.currentVersionId)))
-
-    if (Number(runnable?.count ?? 0) === 0) {
-      throw new ValidationError('No intent in this project has a saved script yet.')
-    }
-
-    const row = {
-      id: createId('srun'),
+    const queued = await queueSuiteRun(context.db, {
       projectId: project.id,
-      environmentId: target.id,
-      status: 'queued' as const,
-      trigger: 'manual' as const,
+      organizationId: context.organizationId,
+      environment: target,
       createdBy: context.user.id,
-      startedAt: new Date(),
-    }
-
-    await context.db.insert(suiteRun).values(row)
-
-    // The organization comes from the session, not from the row: the Workflow
-    // re-checks it, and a value the client could influence would make that
-    // check meaningless.
-    await env.SUITE_WORKFLOW.create({
-      id: row.id,
-      params: { suiteRunId: row.id, organizationId: context.organizationId },
     })
 
-    return { suiteRunId: row.id, environmentId: target.id, status: row.status }
+    return {
+      suiteRunId: queued.suiteRunId,
+      environmentId: queued.environmentId,
+      status: 'queued' as const,
+    }
   })
 
 export const listSuiteRuns = createServerFn({ method: 'GET' })

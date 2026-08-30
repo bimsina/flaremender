@@ -1,6 +1,7 @@
 import { relations, sql } from 'drizzle-orm'
 import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 
+import type { ChatMessageStatus, ChatPart, ChatRole } from '#/engine/chat/contract.ts'
 import type { Provider } from '#/lib/models.ts'
 import { organization, user } from './auth.ts'
 
@@ -414,6 +415,37 @@ export const generationJob = sqliteTable(
 )
 
 /**
+ * Prefix `msg_`. One turn of a project's chat, by a person or by the assistant.
+ *
+ * `parts` is the whole content: a typed array of text fragments and **cards**,
+ * where a card is a reference to a row this conversation acted on — see
+ * `src/engine/chat/contract.ts`. Prose and references are kept apart because
+ * the references are the point: a card renders as a live intent, run or
+ * generation, and everything it names can be opened in the ordinary UI.
+ *
+ * Nothing in here is ever a secret. Every part is passed through the run
+ * engine's scrubber, built from the project's environment variable values,
+ * before it is written — including the message that carried a credential in,
+ * which is rewritten the moment the value reaches an environment.
+ */
+export const chatMessage = sqliteTable(
+  'chat_message',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => project.id, { onDelete: 'cascade' }),
+    role: text('role').$type<ChatRole>().notNull(),
+    parts: text('parts', { mode: 'json' }).$type<Array<ChatPart>>().notNull(),
+    status: text('status').$type<ChatMessageStatus>().default('complete').notNull(),
+    /** Null for the assistant, which speaks for the project rather than a person. */
+    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).default(now).notNull(),
+  },
+  (table) => [index('chat_message_project_created_idx').on(table.projectId, table.createdAt)],
+)
+
+/**
  * Prefix `pk_`. Instance-wide provider credentials, managed from the admin
  * console. Inert whenever a Worker secret exists for the same provider.
  */
@@ -485,6 +517,12 @@ export const projectRelations = relations(project, ({ one, many }) => ({
   intents: many(intent),
   runs: many(run),
   suiteRuns: many(suiteRun),
+  chatMessages: many(chatMessage),
+}))
+
+export const chatMessageRelations = relations(chatMessage, ({ one }) => ({
+  project: one(project, { fields: [chatMessage.projectId], references: [project.id] }),
+  author: one(user, { fields: [chatMessage.createdBy], references: [user.id] }),
 }))
 
 export const environmentRelations = relations(environment, ({ one, many }) => ({

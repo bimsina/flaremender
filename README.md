@@ -55,6 +55,7 @@ src/
   lib/            auth client, theme, query options, formatting
   server/         server functions, split by resource
     auth.ts       session middleware and the organization tenant boundary
+    actions.ts    the shared core each of them (and the chat) calls
   engine/         the run engine — Workflow, harness, artifacts (see below)
   components/     shared UI
   routes/         _auth.* (signed out), _app.* (signed in), api/auth/$,
@@ -126,6 +127,46 @@ a step. `secret()` reads an environment variable; its value — raw,
 URL-encoded or base64 — is replaced with `***` in every log, label and error
 message before anything is stored. Screenshots and traces can still _show_ a
 secret: that is a visual leak no string replacement can fix.
+
+### The project chat
+
+Every project's default tab is a chat, and it is a console rather than a
+chatbot: the assistant carries requests out with tools that call the same
+org-scoped functions in `src/server/actions.ts` the dialogs and buttons call, and
+answers with **cards** — an intent, a live generation, a run, a suite, an
+environment — each of which links to the row it names. Nothing exists only inside
+a conversation.
+
+```
+src/engine/
+  chat/contract.ts   message parts, cards and the socket's event types
+  chat/prompts.ts    the system prompt and the project's standing facts
+  chat/tools.ts      the tool belt, wrapping server/actions.ts
+  project-chat.ts    the ProjectChat Durable Object
+src/server/
+  actions.ts         what the product does, with nobody in particular asking
+  chat.ts            listChatMessages + sendChatMessage
+```
+
+One `ProjectChat` Durable Object per project, addressed by the project id,
+serialises turns — a second send while one is running is refused rather than
+queued — runs the model turn (`streamText` with the tool belt), and streams
+deltas, tool events and cards over hibernating WebSockets at
+`/api/projects/:projectId/chat`. `src/server.ts` answers that upgrade the same
+way it answers a run's: signed in, in an organization, and that organization owns
+the project. Messages are persisted to D1 (`chat_message`, typed JSON parts) and
+the history is what the model is shown next turn, with cards compacted to
+one-line facts so it never has to invent an id.
+
+**Credential lifting.** Paste a password into the chat and the assistant stores
+it with `set_environment_variable`; from that moment the value is `***`
+everywhere — the turn's redactor is rebuilt around it and the message that
+carried it is rewritten in D1 and on every open socket. The user's own message is
+never broadcast, precisely because it is the one string that can hold a value the
+redactor has not been told about yet; the sender renders their own copy, everyone
+else sees the redacted row when the turn ends. The residual risk is inherent and
+documented: the value reached the configured model provider once, in that message
+and in the tool call that stored it.
 
 ### Schedules and retention
 

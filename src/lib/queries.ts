@@ -3,6 +3,7 @@ import { queryOptions } from '@tanstack/react-query'
 import type { RunStatus, RunTrigger } from '#/db/schema/app.ts'
 import type { Provider } from '#/lib/models.ts'
 import { getAdminStats, listAllMemberships, listAllOrganizations } from '#/server/admin.ts'
+import { listChatMessages } from '#/server/chat.ts'
 import { getDailyRunCounts, getOrgOverview } from '#/server/dashboard.ts'
 import { listEnvironments } from '#/server/environments.ts'
 import {
@@ -92,6 +93,19 @@ export const intentGenerationQuery = (intentId: string) =>
   queryOptions({
     queryKey: ['intent-generation', intentId] as const,
     queryFn: () => getIntentGeneration({ data: { intentId } }),
+  })
+
+/**
+ * The project chat's history — the latest fifty messages, oldest first.
+ *
+ * Everything live arrives on the socket instead; this is what a page loads on
+ * the way in, and what it re-reads once a turn finishes so the two views of the
+ * same conversation cannot drift.
+ */
+export const chatMessagesQuery = (projectId: string) =>
+  queryOptions({
+    queryKey: ['chat-messages', projectId] as const,
+    queryFn: () => listChatMessages({ data: { projectId } }),
   })
 
 export const environmentsQuery = (projectId: string) =>

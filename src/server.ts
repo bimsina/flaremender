@@ -18,11 +18,15 @@ import { dispatchSchedules } from '#/engine/schedule-dispatch.ts'
 import { createAuth } from '#/lib/auth.ts'
 
 export { GenerateWorkflow } from '#/engine/generate-workflow.ts'
+export { ProjectChat } from '#/engine/project-chat.ts'
 export { RunChannel } from '#/engine/run-channel.ts'
 export { RunWorkflow } from '#/engine/run-workflow.ts'
 export { SuiteWorkflow } from '#/engine/suite-workflow.ts'
 
 const LIVE_PATH = /^\/api\/runs\/([^/]+)\/live\/?$/
+
+/** The project chat's socket. Same shape, a different object and a different check. */
+const CHAT_PATH = /^\/api\/projects\/([^/]+)\/chat\/?$/
 
 /**
  * Generation jobs stream through the same path as runs, and are told apart by
@@ -89,13 +93,50 @@ async function serveLive(
   return env.RUN_CHANNEL.getByName(channelId).fetch(request)
 }
 
+/**
+ * The project chat's socket.
+ *
+ * The same shape as `serveLive` and for the same reason: the `ProjectChat`
+ * Durable Object trusts whoever reaches it, so the entire tenant check happens
+ * here, once, before the upgrade is forwarded. The check is simpler than a
+ * run's — a project *is* the thing being addressed, so owning it is the whole
+ * question — and it is available to every member of the organization, because a
+ * chat that only its author could watch would not be the project's console.
+ */
+async function serveChat(
+  request: Request,
+  env: Cloudflare.Env,
+  projectId: string,
+): Promise<Response> {
+  const session = await createAuth(env.DB, env).api.getSession({ headers: request.headers })
+  if (!session?.user) return new Response('Unauthorized', { status: 401 })
+
+  const organizationId = session.session.activeOrganizationId
+  if (!organizationId) return notFound()
+
+  const [row] = await drizzle(env.DB)
+    .select({ id: project.id })
+    .from(project)
+    .where(and(eq(project.id, projectId), eq(project.organizationId, organizationId)))
+    .limit(1)
+
+  if (!row) return notFound()
+
+  return env.PROJECT_CHAT.getByName(projectId).fetch(request)
+}
+
 export default {
   fetch(request, env) {
     // Only an actual upgrade is intercepted; a plain GET of the same path is
     // left to Start, which has no route for it and says so.
     if (request.method === 'GET' && request.headers.get('Upgrade')?.toLowerCase() === 'websocket') {
-      const channelId = LIVE_PATH.exec(new URL(request.url).pathname)?.[1]
+      const { pathname } = new URL(request.url)
+
+      const channelId = LIVE_PATH.exec(pathname)?.[1]
       if (channelId) return serveLive(request, env, decodeURIComponent(channelId))
+
+      const projectId = CHAT_PATH.exec(pathname)?.[1]
+      if (projectId) return serveChat(request, env, decodeURIComponent(projectId))
     }
 
     // Start reads its bindings from `cloudflare:workers`, and its second

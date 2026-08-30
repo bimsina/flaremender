@@ -7,82 +7,42 @@
  * is just another save that copies old code forward.
  */
 import { createServerFn } from '@tanstack/react-start'
-import { env } from 'cloudflare:workers'
-import { and, desc, eq, inArray, sql } from 'drizzle-orm'
+import { desc, eq, sql } from 'drizzle-orm'
 
-import type { Db } from '#/db/index.ts'
-import type { IntentStatus, ScriptAuthor } from '#/db/schema/app.ts'
 import { generationJob, intent, run, scriptVersion } from '#/db/schema/app.ts'
 import { user } from '#/db/schema/auth.ts'
-import { createId } from '#/lib/ids.ts'
-import { orgMiddleware } from './auth.ts'
 import {
-  assertProject,
-  loadDefaultEnvironment,
-  loadEnvironment,
-  loadIntent,
-  loadScriptVersion,
-} from './scope.ts'
+  appendScriptVersion,
+  assertNoGenerationInFlight,
+  createIntentRecord,
+  deleteIntentRecord,
+  loadCurrentVersion,
+  queueGeneration,
+  queueIntentRun,
+  resolveTargetEnvironment,
+  updateIntentRecord,
+} from './actions.ts'
+import { orgMiddleware } from './auth.ts'
+import { assertProject, loadEnvironment, loadIntent, loadScriptVersion } from './scope.ts'
 import { ValidationError, cron, has, optionalStr, str } from './validate.ts'
 
-async function loadCurrentVersion(db: Db, currentVersionId: string | null) {
-  if (!currentVersionId) return null
-
-  const [row] = await db
-    .select()
-    .from(scriptVersion)
-    .where(eq(scriptVersion.id, currentVersionId))
-    .limit(1)
-
-  return row ?? null
-}
-
 /**
- * Appends a version and points the intent at it, atomically.
+ * The environment a run or a generation was aimed at.
  *
- * `status` only moves `'draft' → 'ready'`: an intent that has already passed or
- * failed keeps that history until the next run re-decides it.
+ * Named ids are resolved through the caller's organization first, so an id from
+ * another tenant is a 404 before it is ever compared against this project.
  */
-async function appendVersion(
-  db: Db,
-  input: {
-    intentId: string
-    status: IntentStatus
-    code: string
-    author: ScriptAuthor
-    note: string | null
-    createdBy: string
-  },
+async function targetEnvironment(
+  context: { db: Parameters<typeof loadEnvironment>[0]; organizationId: string },
+  projectId: string,
+  environmentId: string | null,
+  purpose: string,
 ) {
-  const [last] = await db
-    .select({ version: scriptVersion.version })
-    .from(scriptVersion)
-    .where(eq(scriptVersion.intentId, input.intentId))
-    .orderBy(desc(scriptVersion.version))
-    .limit(1)
+  const named = environmentId
+    ? (await loadEnvironment(context.db, context.organizationId, environmentId)).environment
+    : null
 
-  const row = {
-    id: createId('sv'),
-    intentId: input.intentId,
-    version: (last?.version ?? 0) + 1,
-    code: input.code,
-    author: input.author,
-    createdBy: input.createdBy,
-    note: input.note,
-  }
-
-  await db.batch([
-    db.insert(scriptVersion).values(row),
-    db
-      .update(intent)
-      .set({
-        currentVersionId: row.id,
-        ...(input.status === 'draft' ? { status: 'ready' as const } : {}),
-      })
-      .where(eq(intent.id, input.intentId)),
-  ])
-
-  return { id: row.id, version: row.version }
+  return resolveTargetEnvironment(context.db, projectId, named, purpose)
 }
 
 export const listIntents = createServerFn({ method: 'GET' })
@@ -153,18 +113,14 @@ export const createIntent = createServerFn({ method: 'POST' })
   .handler(async ({ data, context }) => {
     await assertProject(context.db, context.organizationId, data.projectId)
 
-    // Deliberately no script: an intent starts as a description, and the first
-    // save — by hand today, by the generator later — is what makes it runnable.
-    const row = {
-      id: createId('int'),
+    const created = await createIntentRecord(context.db, {
       projectId: data.projectId,
       title: data.title,
       description: data.description,
       createdBy: context.user.id,
-    }
+    })
 
-    await context.db.insert(intent).values(row)
-    return { id: row.id }
+    return { id: created.id }
   })
 
 export const updateIntent = createServerFn({ method: 'POST' })
@@ -181,15 +137,13 @@ export const updateIntent = createServerFn({ method: 'POST' })
   .handler(async ({ data, context }) => {
     await loadIntent(context.db, context.organizationId, data.intentId)
 
-    const patch = {
-      ...(data.title === undefined ? {} : { title: data.title }),
-      ...(data.description === undefined ? {} : { description: data.description }),
-      ...(data.schedule === undefined ? {} : { schedule: data.schedule }),
-    }
+    await updateIntentRecord(context.db, {
+      intentId: data.intentId,
+      title: data.title,
+      description: data.description,
+      schedule: data.schedule,
+    })
 
-    if (Object.keys(patch).length === 0) return { ok: true as const }
-
-    await context.db.update(intent).set(patch).where(eq(intent.id, data.intentId))
     return { ok: true as const }
   })
 
@@ -198,8 +152,7 @@ export const deleteIntent = createServerFn({ method: 'POST' })
   .validator((data: unknown) => ({ intentId: str(data, 'intentId') }))
   .handler(async ({ data, context }) => {
     await loadIntent(context.db, context.organizationId, data.intentId)
-    await context.db.delete(intent).where(eq(intent.id, data.intentId))
-    return { ok: true as const }
+    return deleteIntentRecord(context.db, data.intentId)
   })
 
 export const saveScript = createServerFn({ method: 'POST' })
@@ -212,7 +165,7 @@ export const saveScript = createServerFn({ method: 'POST' })
   .handler(async ({ data, context }) => {
     const row = await loadIntent(context.db, context.organizationId, data.intentId)
 
-    return appendVersion(context.db, {
+    return appendScriptVersion(context.db, {
       intentId: row.intent.id,
       status: row.intent.status,
       code: data.code,
@@ -272,7 +225,7 @@ export const restoreScriptVersion = createServerFn({ method: 'POST' })
 
     // History is immutable, so restoring copies the code forward as a new
     // version rather than moving the pointer backwards.
-    return appendVersion(context.db, {
+    return appendScriptVersion(context.db, {
       intentId: row.intent.id,
       status: row.intent.status,
       code: row.version.code,
@@ -299,43 +252,18 @@ export const runIntent = createServerFn({ method: 'POST' })
   .handler(async ({ data, context }) => {
     const row = await loadIntent(context.db, context.organizationId, data.intentId)
 
-    const environment = data.environmentId
-      ? (await loadEnvironment(context.db, context.organizationId, data.environmentId)).environment
-      : await loadDefaultEnvironment(context.db, row.project.id)
-
-    if (!environment) {
-      throw new ValidationError('This project has no environment to run against.')
-    }
-    // A named environment from another project would silently retarget the run.
-    if (environment.projectId !== row.project.id) {
-      throw new ValidationError('That environment belongs to a different project.')
-    }
+    const target = await targetEnvironment(context, row.project.id, data.environmentId, 'run')
 
     const version = await loadCurrentVersion(context.db, row.intent.currentVersionId)
     if (!version) throw new ValidationError('Save a script first.')
 
-    const runRow = {
-      id: createId('run'),
+    return queueIntentRun(context.db, {
       intentId: row.intent.id,
-      environmentId: environment.id,
       projectId: row.project.id,
+      organizationId: context.organizationId,
+      environment: target,
       scriptVersionId: version.id,
-      status: 'queued' as const,
-      trigger: 'manual' as const,
-      startedAt: new Date(),
-    }
-
-    await context.db.insert(run).values(runRow)
-
-    // The organization comes from the session, not from the run row: the
-    // Workflow re-checks it, and a value the client could influence would make
-    // that check meaningless.
-    await env.RUN_WORKFLOW.create({
-      id: runRow.id,
-      params: { runId: runRow.id, organizationId: context.organizationId },
     })
-
-    return { runId: runRow.id, environmentId: environment.id, status: runRow.status }
   })
 
 /**
@@ -360,24 +288,7 @@ export const generateIntentScript = createServerFn({ method: 'POST' })
   .handler(async ({ data, context }) => {
     const row = await loadIntent(context.db, context.organizationId, data.intentId)
 
-    if (row.intent.status === 'generating') {
-      throw new ValidationError('A script is already being generated for this intent.')
-    }
-
-    const [inFlight] = await context.db
-      .select({ id: generationJob.id })
-      .from(generationJob)
-      .where(
-        and(
-          eq(generationJob.intentId, row.intent.id),
-          inArray(generationJob.status, ['queued', 'running']),
-        ),
-      )
-      .limit(1)
-
-    if (inFlight) {
-      throw new ValidationError('A script is already being generated for this intent.')
-    }
+    await assertNoGenerationInFlight(context.db, row.intent.id, row.intent.status)
 
     // The description is the whole brief. It is `notNull` and validated on the
     // way in, so this only catches an intent whose description was emptied by
@@ -388,41 +299,15 @@ export const generateIntentScript = createServerFn({ method: 'POST' })
       )
     }
 
-    const environment = data.environmentId
-      ? (await loadEnvironment(context.db, context.organizationId, data.environmentId)).environment
-      : await loadDefaultEnvironment(context.db, row.project.id)
+    const target = await targetEnvironment(context, row.project.id, data.environmentId, 'generate')
 
-    if (!environment) {
-      throw new ValidationError('This project has no environment to generate against.')
-    }
-    if (environment.projectId !== row.project.id) {
-      throw new ValidationError('That environment belongs to a different project.')
-    }
-
-    const jobRow = {
-      id: createId('gen'),
+    return queueGeneration(context.db, {
       intentId: row.intent.id,
       projectId: row.project.id,
-      environmentId: environment.id,
       organizationId: context.organizationId,
-      status: 'queued' as const,
+      environment: target,
       createdBy: context.user.id,
-    }
-
-    await context.db.insert(generationJob).values(jobRow)
-
-    await env.GENERATE_WORKFLOW.create({
-      id: jobRow.id,
-      params: {
-        jobId: jobRow.id,
-        intentId: row.intent.id,
-        environmentId: environment.id,
-        organizationId: context.organizationId,
-        userId: context.user.id,
-      },
     })
-
-    return { jobId: jobRow.id, environmentId: environment.id }
   })
 
 /**

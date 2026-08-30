@@ -31,6 +31,7 @@ import { useMemo, useState } from 'react'
 import { EnvironmentsPanel } from '#/components/environments-panel.tsx'
 import { InlineEmpty, ListRow, ListToolbar, Section, SettingRow } from '#/components/list.tsx'
 import { PageBody, PageHeader } from '#/components/page.tsx'
+import { ProjectChatTab } from '#/components/project-chat.tsx'
 import { ProjectRunsTab } from '#/components/project-runs.tsx'
 import { RelativeTime } from '#/components/relative-time.tsx'
 import { IntentStatusBadge } from '#/components/status-badge.tsx'
@@ -39,6 +40,7 @@ import type { IntentStatus } from '#/db/schema/app.ts'
 import { describeCron } from '#/lib/cron.ts'
 import {
   allowedModelsQuery,
+  chatMessagesQuery,
   environmentsQuery,
   intentsQuery,
   projectQuery,
@@ -50,7 +52,13 @@ import { createIntent, deleteIntent, runIntent } from '#/server/intents.ts'
 import { deleteProject, setProjectModel, updateProject } from '#/server/projects.ts'
 import { runSuite } from '#/server/suites.ts'
 
-const TABS = ['intents', 'runs', 'environments', 'settings'] as const
+/**
+ * Chat comes first and is the default: the project's own console, from which
+ * everything else in the project can be described rather than assembled. The
+ * manual tabs are unchanged and always one click away — they are the parallel
+ * view of exactly the same rows.
+ */
+const TABS = ['chat', 'intents', 'runs', 'environments', 'settings'] as const
 type Tab = (typeof TABS)[number]
 
 function isTab(value: unknown): value is Tab {
@@ -88,6 +96,10 @@ export const Route = createFileRoute('/_app/projects/$projectId/')({
         ...runTrendQuery(params.projectId),
         revalidateIfStale: true,
       }),
+      context.queryClient.ensureQueryData({
+        ...chatMessagesQuery(params.projectId),
+        revalidateIfStale: true,
+      }),
       context.queryClient.ensureQueryData({ ...allowedModelsQuery(), revalidateIfStale: true }),
     ])
   },
@@ -97,7 +109,7 @@ export const Route = createFileRoute('/_app/projects/$projectId/')({
 function ProjectDetail() {
   const { projectId } = Route.useParams()
   const search = Route.useSearch()
-  const tab = search.tab ?? 'intents'
+  const tab = search.tab ?? 'chat'
   const navigate = useNavigate({ from: Route.fullPath })
 
   const { data: project } = useSuspenseQuery(projectQuery(projectId))
@@ -191,6 +203,7 @@ function ProjectDetail() {
           <Tabs
             variant="underline"
             tabs={[
+              { value: 'chat', label: 'Chat' },
               { value: 'intents', label: 'Intents' },
               { value: 'runs', label: 'Runs' },
               { value: 'environments', label: 'Environments' },
@@ -244,7 +257,8 @@ function ProjectDetail() {
         }
       />
 
-      <PageBody className="grid gap-6">
+      <PageBody className={tab === 'chat' ? 'flex min-h-0 flex-col' : 'grid gap-6'}>
+        {tab === 'chat' ? <ProjectChatTab projectId={projectId} /> : null}
         {tab === 'intents' ? (
           <IntentsTab
             projectId={projectId}

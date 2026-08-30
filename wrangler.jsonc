@@ -49,7 +49,15 @@
   // `RETENTION_CRON` there.
   "triggers": { "crons": ["* * * * *", "30 3 * * *"] },
   "durable_objects": {
-    "bindings": [{ "name": "RUN_CHANNEL", "class_name": "RunChannel" }],
+    "bindings": [
+      { "name": "RUN_CHANNEL", "class_name": "RunChannel" },
+      // One per project, addressed by the project id: it serialises chat turns
+      // and streams them over hibernating sockets.
+      { "name": "PROJECT_CHAT", "class_name": "ProjectChat" },
+    ],
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RunChannel"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["RunChannel"] },
+    { "tag": "v2", "new_sqlite_classes": ["ProjectChat"] },
+  ],
 }

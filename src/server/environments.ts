@@ -15,21 +15,19 @@ import { and, asc, eq, inArray, ne } from 'drizzle-orm'
 
 import type { Db } from '#/db/index.ts'
 import { environment, environmentVariable } from '#/db/schema/app.ts'
-import { createId } from '#/lib/ids.ts'
+import {
+  assertVariableName,
+  createEnvironmentRecord,
+  setEnvironmentVariableRecord,
+  updateEnvironmentRecord,
+} from './actions.ts'
 import { orgMiddleware } from './auth.ts'
-import { decryptSecret, encryptSecret, maskSecret } from './crypto.ts'
+import { decryptSecret, maskSecret } from './crypto.ts'
 import { assertProject, loadEnvironment, loadEnvironmentVariable } from './scope.ts'
 import { ValidationError, bool, str, url } from './validate.ts'
 
-/** Shell-style, because that is how the harness exposes them to a script. */
 function variableName(data: unknown): string {
-  const value = str(data, 'name', { max: 64 })
-  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) {
-    throw new ValidationError(
-      'A variable name must start with a letter or underscore and contain only letters, numbers and underscores.',
-    )
-  }
-  return value
+  return assertVariableName(str(data, 'name', { max: 64 }))
 }
 
 /** Clears `isDefault` on every sibling; pair it with the row that wins. */
@@ -113,33 +111,15 @@ export const createEnvironment = createServerFn({ method: 'POST' })
   .handler(async ({ data, context }) => {
     await assertProject(context.db, context.organizationId, data.projectId)
 
-    const siblings = await context.db
-      .select({ id: environment.id })
-      .from(environment)
-      .where(eq(environment.projectId, data.projectId))
-
-    // A project always has a default; the first environment has no competition.
-    const isDefault = siblings.length === 0 || data.isDefault
-
-    const row = {
-      id: createId('env'),
+    const created = await createEnvironmentRecord(context.db, {
       projectId: data.projectId,
       name: data.name,
       baseUrl: data.baseUrl,
-      isDefault,
+      isDefault: data.isDefault,
       createdBy: context.user.id,
-    }
+    })
 
-    if (isDefault && siblings.length > 0) {
-      await context.db.batch([
-        context.db.insert(environment).values(row),
-        clearDefaults(context.db, data.projectId, row.id),
-      ])
-    } else {
-      await context.db.insert(environment).values(row)
-    }
-
-    return { id: row.id, isDefault }
+    return { id: created.id, isDefault: created.isDefault }
   })
 
 export const updateEnvironment = createServerFn({ method: 'POST' })
@@ -152,10 +132,11 @@ export const updateEnvironment = createServerFn({ method: 'POST' })
   .handler(async ({ data, context }) => {
     await loadEnvironment(context.db, context.organizationId, data.environmentId)
 
-    await context.db
-      .update(environment)
-      .set({ name: data.name, baseUrl: data.baseUrl })
-      .where(eq(environment.id, data.environmentId))
+    await updateEnvironmentRecord(context.db, {
+      environmentId: data.environmentId,
+      name: data.name,
+      baseUrl: data.baseUrl,
+    })
 
     return { ok: true as const }
   })
@@ -231,25 +212,11 @@ export const setEnvironmentVariable = createServerFn({ method: 'POST' })
   .handler(async ({ data, context }) => {
     await loadEnvironment(context.db, context.organizationId, data.environmentId)
 
-    const encryptedValue = await encryptSecret(data.value)
-
-    // Upsert on the `(environmentId, name)` unique index: setting a variable
-    // twice replaces the value rather than failing or duplicating the row.
-    const [row] = await context.db
-      .insert(environmentVariable)
-      .values({
-        id: createId('evar'),
-        environmentId: data.environmentId,
-        name: data.name,
-        encryptedValue,
-      })
-      .onConflictDoUpdate({
-        target: [environmentVariable.environmentId, environmentVariable.name],
-        set: { encryptedValue, updatedAt: new Date() },
-      })
-      .returning({ id: environmentVariable.id })
-
-    return { id: row!.id, name: data.name, hint: maskSecret(data.value) }
+    return setEnvironmentVariableRecord(context.db, {
+      environmentId: data.environmentId,
+      name: data.name,
+      value: data.value,
+    })
   })
 
 export const deleteEnvironmentVariable = createServerFn({ method: 'POST' })
