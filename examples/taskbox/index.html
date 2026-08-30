@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Taskbox</title>
+<style>
+  :root { color-scheme: light; font-family: system-ui, sans-serif; }
+  body { margin: 0; background: #f4f5f7; color: #1a1d21; display: grid; place-items: center; min-height: 100svh; }
+  .card { background: #fff; border: 1px solid #e0e2e6; border-radius: 10px; padding: 28px; width: min(420px, 92vw); box-shadow: 0 1px 3px rgb(0 0 0 / 6%); }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p.sub { margin: 0 0 20px; color: #5c6370; font-size: 14px; }
+  label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 4px; }
+  input[type="email"], input[type="password"], input[type="text"] {
+    width: 100%; box-sizing: border-box; padding: 9px 10px; border: 1px solid #c9cdd3; border-radius: 7px; font-size: 14px;
+  }
+  button { font: inherit; border-radius: 7px; border: 1px solid transparent; padding: 9px 14px; cursor: pointer; }
+  button.primary { background: #2456e6; color: #fff; width: 100%; margin-top: 16px; font-weight: 600; }
+  button.ghost { background: none; border-color: #c9cdd3; padding: 5px 10px; font-size: 13px; }
+  .error { background: #fdecec; border: 1px solid #f5b5b1; color: #9b1c1c; padding: 9px 12px; border-radius: 7px; font-size: 13px; margin-top: 14px; display: none; }
+  .error.show { display: block; }
+  .row { display: flex; gap: 8px; margin-bottom: 16px; }
+  .row input { flex: 1; }
+  ul { list-style: none; padding: 0; margin: 0; }
+  li { display: flex; align-items: center; gap: 10px; padding: 9px 4px; border-bottom: 1px solid #eef0f2; }
+  li.done .title { text-decoration: line-through; color: #9aa1ab; }
+  li .title { flex: 1; font-size: 14px; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .count { color: #5c6370; font-size: 13px; }
+  .empty { color: #9aa1ab; font-size: 14px; text-align: center; padding: 22px 0; }
+  .banner { background: #e8f5ee; border: 1px solid #b3dcc3; color: #14532d; padding: 9px 12px; border-radius: 7px; font-size: 13px; margin-bottom: 12px; display: none; }
+  .banner.show { display: block; }
+</style>
+</head>
+<body>
+  <!-- Sign-in view -->
+  <main class="card" id="login-view">
+    <h1>Taskbox</h1>
+    <p class="sub">Sign in to manage your tasks.</p>
+    <form id="login-form">
+      <label for="email">Email</label>
+      <input id="email" type="email" autocomplete="username" placeholder="you@example.com" required />
+      <label for="password">Password</label>
+      <input id="password" type="password" autocomplete="current-password" placeholder="Your password" required />
+      <div class="error" id="login-error" role="alert">Wrong email or password.</div>
+      <button class="primary" type="submit">Sign in</button>
+    </form>
+  </main>
+
+  <!-- App view -->
+  <main class="card" id="app-view" hidden>
+    <div class="topbar">
+      <h1>Your tasks</h1>
+      <button class="ghost" id="signout">Sign out</button>
+    </div>
+    <div class="banner" id="welcome-banner">Welcome back, Demo User.</div>
+    <form class="row" id="add-form">
+      <input id="new-task" type="text" placeholder="What needs doing?" aria-label="New task" />
+      <button class="ghost" type="submit">Add task</button>
+    </form>
+    <ul id="task-list" aria-label="Task list"></ul>
+    <div class="empty" id="empty" hidden>No tasks yet. Add your first one.</div>
+    <p class="count"><span id="open-count">0</span> open tasks</p>
+  </main>
+
+<script>
+  const EMAIL = 'demo@taskbox.test'
+  const PASSWORD = 'letmein-123'
+  let tasks = []
+
+  const $ = (id) => document.getElementById(id)
+
+  function render() {
+    const list = $('task-list')
+    list.innerHTML = ''
+    for (const t of tasks) {
+      const li = document.createElement('li')
+      li.className = t.done ? 'done' : ''
+      const cb = document.createElement('input')
+      cb.type = 'checkbox'
+      cb.checked = t.done
+      cb.setAttribute('aria-label', 'Complete ' + t.title)
+      cb.addEventListener('change', () => { t.done = cb.checked; render() })
+      const span = document.createElement('span')
+      span.className = 'title'
+      span.textContent = t.title
+      const del = document.createElement('button')
+      del.className = 'ghost'
+      del.textContent = 'Delete'
+      del.setAttribute('aria-label', 'Delete ' + t.title)
+      del.addEventListener('click', () => { tasks = tasks.filter((x) => x !== t); render() })
+      li.append(cb, span, del)
+      list.append(li)
+    }
+    $('empty').hidden = tasks.length > 0
+    $('open-count').textContent = String(tasks.filter((t) => !t.done).length)
+  }
+
+  $('login-form').addEventListener('submit', (e) => {
+    e.preventDefault()
+    if ($('email').value.trim().toLowerCase() === EMAIL && $('password').value === PASSWORD) {
+      $('login-view').hidden = true
+      $('app-view').hidden = false
+      $('welcome-banner').classList.add('show')
+      render()
+    } else {
+      $('login-error').classList.add('show')
+    }
+  })
+
+  $('add-form').addEventListener('submit', (e) => {
+    e.preventDefault()
+    const title = $('new-task').value.trim()
+    if (!title) return
+    tasks.push({ title, done: false })
+    $('new-task').value = ''
+    render()
+  })
+
+  $('signout').addEventListener('click', () => {
+    tasks = []
+    $('app-view').hidden = true
+    $('login-view').hidden = false
+    $('login-error').classList.remove('show')
+    $('login-form').reset()
+  })
+</script>
+</body>
+</html>
