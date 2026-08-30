@@ -74,7 +74,7 @@ function Projects() {
                           {project.name}
                         </Text>
                         <Text variant="mono-secondary" truncate>
-                          {project.baseUrl}
+                          {project.defaultEnvironment?.baseUrl ?? '—'}
                         </Text>
                       </div>
 

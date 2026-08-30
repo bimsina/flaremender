@@ -31,6 +31,14 @@ export function optionalStr(data: unknown, key: string, max = 5000): string | nu
   return trimmed || null
 }
 
+/**
+ * Whether a patch actually mentions a field. Lets partial updates tell "leave
+ * this alone" (key absent) apart from "clear this" (key present, null).
+ */
+export function has(data: unknown, key: string): boolean {
+  return record(data)[key] !== undefined
+}
+
 export function bool(data: unknown, key: string): boolean {
   const value = record(data)[key]
   if (typeof value === 'boolean') return value

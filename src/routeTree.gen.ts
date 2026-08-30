@@ -29,7 +29,7 @@ import { Route as ApiSpikeWorkflowRouteImport } from './routes/api/spike/workflo
 import { Route as ApiSpikeWorkflowStatusRouteImport } from './routes/api/spike/workflow-status'
 import { Route as AppProjectsProjectIdIndexRouteImport } from './routes/_app.projects.$projectId.index'
 import { Route as ApiSpikeLoaderIndexRouteImport } from './routes/api/spike/loader/index'
-import { Route as AppProjectsProjectIdTestsTestCaseIdRouteImport } from './routes/_app.projects.$projectId.tests.$testCaseId'
+import { Route as AppProjectsProjectIdIntentsIntentIdRouteImport } from './routes/_app.projects.$projectId.intents.$intentId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -131,10 +131,10 @@ const ApiSpikeLoaderIndexRoute = ApiSpikeLoaderIndexRouteImport.update({
   path: '/api/spike/loader/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AppProjectsProjectIdTestsTestCaseIdRoute =
-  AppProjectsProjectIdTestsTestCaseIdRouteImport.update({
-    id: '/projects/$projectId/tests/$testCaseId',
-    path: '/projects/$projectId/tests/$testCaseId',
+const AppProjectsProjectIdIntentsIntentIdRoute =
+  AppProjectsProjectIdIntentsIntentIdRouteImport.update({
+    id: '/projects/$projectId/intents/$intentId',
+    path: '/projects/$projectId/intents/$intentId',
     getParentRoute: () => AppRoute,
   } as any)
 
@@ -157,7 +157,7 @@ export interface FileRoutesByFullPath {
   '/projects/': typeof AppProjectsIndexRoute
   '/projects/$projectId/': typeof AppProjectsProjectIdIndexRoute
   '/api/spike/loader/': typeof ApiSpikeLoaderIndexRoute
-  '/projects/$projectId/tests/$testCaseId': typeof AppProjectsProjectIdTestsTestCaseIdRoute
+  '/projects/$projectId/intents/$intentId': typeof AppProjectsProjectIdIntentsIntentIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -177,7 +177,7 @@ export interface FileRoutesByTo {
   '/projects': typeof AppProjectsIndexRoute
   '/projects/$projectId': typeof AppProjectsProjectIdIndexRoute
   '/api/spike/loader': typeof ApiSpikeLoaderIndexRoute
-  '/projects/$projectId/tests/$testCaseId': typeof AppProjectsProjectIdTestsTestCaseIdRoute
+  '/projects/$projectId/intents/$intentId': typeof AppProjectsProjectIdIntentsIntentIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -201,7 +201,7 @@ export interface FileRoutesById {
   '/_app/projects/': typeof AppProjectsIndexRoute
   '/_app/projects/$projectId/': typeof AppProjectsProjectIdIndexRoute
   '/api/spike/loader/': typeof ApiSpikeLoaderIndexRoute
-  '/_app/projects/$projectId/tests/$testCaseId': typeof AppProjectsProjectIdTestsTestCaseIdRoute
+  '/_app/projects/$projectId/intents/$intentId': typeof AppProjectsProjectIdIntentsIntentIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -224,7 +224,7 @@ export interface FileRouteTypes {
     | '/projects/'
     | '/projects/$projectId/'
     | '/api/spike/loader/'
-    | '/projects/$projectId/tests/$testCaseId'
+    | '/projects/$projectId/intents/$intentId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -244,7 +244,7 @@ export interface FileRouteTypes {
     | '/projects'
     | '/projects/$projectId'
     | '/api/spike/loader'
-    | '/projects/$projectId/tests/$testCaseId'
+    | '/projects/$projectId/intents/$intentId'
   id:
     | '__root__'
     | '/'
@@ -267,7 +267,7 @@ export interface FileRouteTypes {
     | '/_app/projects/'
     | '/_app/projects/$projectId/'
     | '/api/spike/loader/'
-    | '/_app/projects/$projectId/tests/$testCaseId'
+    | '/_app/projects/$projectId/intents/$intentId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -425,11 +425,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSpikeLoaderIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_app/projects/$projectId/tests/$testCaseId': {
-      id: '/_app/projects/$projectId/tests/$testCaseId'
-      path: '/projects/$projectId/tests/$testCaseId'
-      fullPath: '/projects/$projectId/tests/$testCaseId'
-      preLoaderRoute: typeof AppProjectsProjectIdTestsTestCaseIdRouteImport
+    '/_app/projects/$projectId/intents/$intentId': {
+      id: '/_app/projects/$projectId/intents/$intentId'
+      path: '/projects/$projectId/intents/$intentId'
+      fullPath: '/projects/$projectId/intents/$intentId'
+      preLoaderRoute: typeof AppProjectsProjectIdIntentsIntentIdRouteImport
       parentRoute: typeof AppRoute
     }
   }
@@ -456,7 +456,7 @@ interface AppRouteChildren {
   AppSettingsRoute: typeof AppSettingsRoute
   AppProjectsIndexRoute: typeof AppProjectsIndexRoute
   AppProjectsProjectIdIndexRoute: typeof AppProjectsProjectIdIndexRoute
-  AppProjectsProjectIdTestsTestCaseIdRoute: typeof AppProjectsProjectIdTestsTestCaseIdRoute
+  AppProjectsProjectIdIntentsIntentIdRoute: typeof AppProjectsProjectIdIntentsIntentIdRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
@@ -466,8 +466,8 @@ const AppRouteChildren: AppRouteChildren = {
   AppSettingsRoute: AppSettingsRoute,
   AppProjectsIndexRoute: AppProjectsIndexRoute,
   AppProjectsProjectIdIndexRoute: AppProjectsProjectIdIndexRoute,
-  AppProjectsProjectIdTestsTestCaseIdRoute:
-    AppProjectsProjectIdTestsTestCaseIdRoute,
+  AppProjectsProjectIdIntentsIntentIdRoute:
+    AppProjectsProjectIdIntentsIntentIdRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)

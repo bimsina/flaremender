@@ -2,9 +2,11 @@ import { queryOptions } from '@tanstack/react-query'
 
 import { getAdminStats, listAllMemberships, listAllOrganizations } from '#/server/admin.ts'
 import { getOrgOverview } from '#/server/dashboard.ts'
+import { listEnvironments } from '#/server/environments.ts'
+import { getIntent, listIntents, listScriptVersions } from '#/server/intents.ts'
 import { getProject, listProjects } from '#/server/projects.ts'
+import { getRun, listRuns } from '#/server/runs.ts'
 import { fetchSession, fetchThemePreference } from '#/server/session.ts'
-import { getTestCase, listTestCases } from '#/server/test-cases.ts'
 
 export const sessionQuery = () =>
   queryOptions({
@@ -38,16 +40,40 @@ export const projectQuery = (projectId: string) =>
     queryFn: () => getProject({ data: { projectId } }),
   })
 
-export const testCasesQuery = (projectId: string) =>
+export const intentsQuery = (projectId: string) =>
   queryOptions({
-    queryKey: ['test-cases', projectId] as const,
-    queryFn: () => listTestCases({ data: { projectId } }),
+    queryKey: ['intents', projectId] as const,
+    queryFn: () => listIntents({ data: { projectId } }),
   })
 
-export const testCaseQuery = (testCaseId: string) =>
+export const intentQuery = (intentId: string) =>
   queryOptions({
-    queryKey: ['test-case', testCaseId] as const,
-    queryFn: () => getTestCase({ data: { testCaseId } }),
+    queryKey: ['intent', intentId] as const,
+    queryFn: () => getIntent({ data: { intentId } }),
+  })
+
+export const environmentsQuery = (projectId: string) =>
+  queryOptions({
+    queryKey: ['environments', projectId] as const,
+    queryFn: () => listEnvironments({ data: { projectId } }),
+  })
+
+export const scriptVersionsQuery = (intentId: string) =>
+  queryOptions({
+    queryKey: ['script-versions', intentId] as const,
+    queryFn: () => listScriptVersions({ data: { intentId } }),
+  })
+
+export const runsQuery = (intentId: string) =>
+  queryOptions({
+    queryKey: ['runs', intentId] as const,
+    queryFn: () => listRuns({ data: { intentId } }),
+  })
+
+export const runQuery = (runId: string) =>
+  queryOptions({
+    queryKey: ['run', runId] as const,
+    queryFn: () => getRun({ data: { runId } }),
   })
 
 export const adminStatsQuery = () =>

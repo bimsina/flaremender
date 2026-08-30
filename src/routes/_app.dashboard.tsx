@@ -85,10 +85,11 @@ function Dashboard() {
                 <Table>
                   <Table.Header>
                     <Table.Row>
-                      <Table.Head>Test case</Table.Head>
+                      <Table.Head>Intent</Table.Head>
                       <Table.Head>Project</Table.Head>
+                      <Table.Head>Environment</Table.Head>
                       <Table.Head>Status</Table.Head>
-                      <Table.Head>Attempt</Table.Head>
+                      <Table.Head>Attempts</Table.Head>
                       <Table.Head>Duration</Table.Head>
                       <Table.Head>When</Table.Head>
                     </Table.Row>
@@ -98,11 +99,11 @@ function Dashboard() {
                       <Table.Row key={run.id}>
                         <Table.Cell>
                           <Link
-                            to="/projects/$projectId/tests/$testCaseId"
-                            params={{ projectId: run.projectId, testCaseId: run.testCaseId }}
+                            to="/projects/$projectId/intents/$intentId"
+                            params={{ projectId: run.projectId, intentId: run.intentId }}
                             className="text-kumo-link underline underline-offset-2"
                           >
-                            {run.testCaseTitle}
+                            {run.intentTitle}
                           </Link>
                         </Table.Cell>
                         <Table.Cell>
@@ -115,11 +116,16 @@ function Dashboard() {
                           </Link>
                         </Table.Cell>
                         <Table.Cell>
+                          <Text as="span" variant="mono-secondary">
+                            {run.environmentName}
+                          </Text>
+                        </Table.Cell>
+                        <Table.Cell>
                           <RunStatusBadge status={run.status} />
                         </Table.Cell>
                         <Table.Cell>
                           <Text as="span" variant="mono-secondary">
-                            #{run.attempt}
+                            {run.attemptCount}
                           </Text>
                         </Table.Cell>
                         <Table.Cell>{formatDuration(run.durationMs)}</Table.Cell>

@@ -7,15 +7,25 @@ import { AuthError, orgMiddleware } from './auth.ts'
 import { ValidationError, optionalStr, str, url } from './validate.ts'
 
 /**
- * M4: base URLs moved to `environment`, but the UI still speaks in terms of a
- * single project URL. Until the environments UI lands, every project has
- * exactly one environment ("Production") and these functions read and write it
- * as if it were still a project column.
+ * Base URLs live on `environment`, never on `project`. Listings surface the
+ * project's default environment so cards and headers have something to show;
+ * everything that *edits* a base URL goes through `environments.ts`.
  */
 const defaultEnvironment = and(
   eq(environment.projectId, project.id),
   eq(environment.isDefault, true),
 )
+
+/** Null only while a project is mid-creation or its last environment is gone. */
+function toDefaultEnvironment(row: {
+  environmentId: string | null
+  environmentName: string | null
+  baseUrl: string | null
+}) {
+  return row.environmentId === null || row.environmentName === null || row.baseUrl === null
+    ? null
+    : { id: row.environmentId, name: row.environmentName, baseUrl: row.baseUrl }
+}
 
 export const listProjects = createServerFn({ method: 'GET' })
   .middleware([orgMiddleware])
@@ -26,6 +36,8 @@ export const listProjects = createServerFn({ method: 'GET' })
         name: project.name,
         slug: project.slug,
         description: project.description,
+        environmentId: environment.id,
+        environmentName: environment.name,
         baseUrl: environment.baseUrl,
         createdAt: project.createdAt,
         updatedAt: project.updatedAt,
@@ -37,12 +49,14 @@ export const listProjects = createServerFn({ method: 'GET' })
       .leftJoin(environment, defaultEnvironment)
       .leftJoin(intent, eq(intent.projectId, project.id))
       .where(eq(project.organizationId, context.organizationId))
-      .groupBy(project.id)
+      // The environment columns join at most one row per project, but grouping
+      // by its id too keeps them legally aggregated rather than bare.
+      .groupBy(project.id, environment.id)
       .orderBy(desc(project.updatedAt))
 
-    return rows.map((row) => ({
+    return rows.map(({ environmentId, environmentName, baseUrl, ...row }) => ({
       ...row,
-      baseUrl: row.baseUrl ?? '—',
+      defaultEnvironment: toDefaultEnvironment({ environmentId, environmentName, baseUrl }),
       failingCount: Number(row.failingCount ?? 0),
       passingCount: Number(row.passingCount ?? 0),
     }))
@@ -53,7 +67,12 @@ export const getProject = createServerFn({ method: 'GET' })
   .validator((data: unknown) => ({ projectId: str(data, 'projectId') }))
   .handler(async ({ data, context }) => {
     const [row] = await context.db
-      .select({ project, baseUrl: environment.baseUrl })
+      .select({
+        project,
+        environmentId: environment.id,
+        environmentName: environment.name,
+        baseUrl: environment.baseUrl,
+      })
       .from(project)
       .leftJoin(environment, defaultEnvironment)
       .where(
@@ -62,7 +81,7 @@ export const getProject = createServerFn({ method: 'GET' })
       .limit(1)
 
     if (!row) throw new AuthError('Project not found.', 404)
-    return { ...row.project, baseUrl: row.baseUrl ?? '—' }
+    return { ...row.project, defaultEnvironment: toDefaultEnvironment(row) }
   })
 
 export const createProject = createServerFn({ method: 'POST' })
@@ -117,9 +136,10 @@ export const updateProject = createServerFn({ method: 'POST' })
     projectId: str(data, 'projectId'),
     name: str(data, 'name', { max: 80 }),
     description: optionalStr(data, 'description', 500),
-    baseUrl: url(data, 'baseUrl'),
   }))
   .handler(async ({ data, context }) => {
+    // No `baseUrl` here on purpose: environments own it, and a project form
+    // that silently rewrote the default environment would be a trapdoor.
     const result = await context.db
       .update(project)
       .set({ name: data.name, description: data.description })
@@ -129,13 +149,6 @@ export const updateProject = createServerFn({ method: 'POST' })
       .returning({ id: project.id })
 
     if (result.length === 0) throw new AuthError('Project not found.', 404)
-
-    // M4: the environments UI edits this directly; the project form is a proxy.
-    await context.db
-      .update(environment)
-      .set({ baseUrl: data.baseUrl })
-      .where(and(eq(environment.projectId, data.projectId), eq(environment.isDefault, true)))
-
     return { ok: true as const }
   })
 

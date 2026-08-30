@@ -30,9 +30,10 @@ import { useState } from 'react'
 import { PageBody, PageHeader } from '#/components/page.tsx'
 import { TestCaseStatusBadge } from '#/components/status-badge.tsx'
 import { RelativeTime } from '#/components/relative-time.tsx'
-import { projectQuery, testCasesQuery } from '#/lib/queries.ts'
+import { formatDuration } from '#/lib/format.ts'
+import { intentsQuery, projectQuery } from '#/lib/queries.ts'
+import { createIntent, runIntent } from '#/server/intents.ts'
 import { deleteProject, updateProject } from '#/server/projects.ts'
-import { createTestCase, regenerateAndRun, runTestCase } from '#/server/test-cases.ts'
 
 export const Route = createFileRoute('/_app/projects/$projectId/')({
   loader: async ({ context, params }) => {
@@ -42,7 +43,7 @@ export const Route = createFileRoute('/_app/projects/$projectId/')({
         revalidateIfStale: true,
       }),
       context.queryClient.ensureQueryData({
-        ...testCasesQuery(params.projectId),
+        ...intentsQuery(params.projectId),
         revalidateIfStale: true,
       }),
     ])
@@ -53,22 +54,23 @@ export const Route = createFileRoute('/_app/projects/$projectId/')({
 function ProjectDetail() {
   const { projectId } = Route.useParams()
   const { data: project } = useSuspenseQuery(projectQuery(projectId))
-  const { data: testCases } = useSuspenseQuery(testCasesQuery(projectId))
+  const { data: intents } = useSuspenseQuery(intentsQuery(projectId))
 
   const queryClient = useQueryClient()
   const toast = useKumoToastManager()
 
-  const [addingCase, setAddingCase] = useState(false)
+  const [addingIntent, setAddingIntent] = useState(false)
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
-  const runnable = testCases.filter((testCase) => testCase.generatedCode !== null)
+  // Only intents with a saved script have anything to execute.
+  const runnable = intents.filter((row) => row.currentVersion > 0)
 
   const runAll = useMutation({
     mutationFn: async () => {
       let passed = 0
-      for (const testCase of runnable) {
-        const result = await runTestCase({ data: { testCaseId: testCase.id } })
+      for (const row of runnable) {
+        const result = await runIntent({ data: { intentId: row.id } })
         if (result.status === 'passed') passed++
       }
       return { passed, total: runnable.length }
@@ -78,8 +80,7 @@ function ProjectDetail() {
       toast.add({
         variant: passed === total ? 'success' : 'error',
         title: `${passed}/${total} passed`,
-        description:
-          passed === total ? 'Suite is green.' : 'Regenerate the failing cases to repair them.',
+        description: passed === total ? 'Suite is green.' : 'Open a failing intent to fix it.',
       })
     },
   })
@@ -101,7 +102,7 @@ function ProjectDetail() {
           </div>
         }
         title={project.name}
-        description={project.description ?? project.baseUrl}
+        description={project.description ?? project.defaultEnvironment?.baseUrl ?? '—'}
         actions={
           <>
             <Button
@@ -116,9 +117,9 @@ function ProjectDetail() {
             <Button
               variant="primary"
               icon={<PlusIcon size={16} />}
-              onClick={() => setAddingCase(true)}
+              onClick={() => setAddingIntent(true)}
             >
-              New test case
+              New intent
             </Button>
             <DropdownMenu>
               <DropdownMenu.Trigger
@@ -148,22 +149,23 @@ function ProjectDetail() {
 
       <PageBody className="grid gap-6">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="neutral">{testCases.length} cases</Badge>
-          <Text variant="mono-secondary">{project.baseUrl}</Text>
+          <Badge variant="neutral">{intents.length} intents</Badge>
+          {/* M7: this becomes the Environments section, listing every environment. */}
+          <Text variant="mono-secondary">{project.defaultEnvironment?.baseUrl ?? '—'}</Text>
         </div>
 
-        {testCases.length === 0 ? (
+        {intents.length === 0 ? (
           <Empty
             icon={<TestTubeIcon size={48} className="text-kumo-inactive" />}
-            title="No test cases yet"
-            description="Describe what a user should be able to do and Flaremender writes the spec."
+            title="No intents yet"
+            description="Describe what a user should be able to do, then write the script that proves it."
             contents={
               <Button
                 variant="primary"
                 icon={<PlusIcon size={16} />}
-                onClick={() => setAddingCase(true)}
+                onClick={() => setAddingIntent(true)}
               >
-                Describe a test case
+                Describe an intent
               </Button>
             }
           />
@@ -173,43 +175,47 @@ function ProjectDetail() {
               <Table>
                 <Table.Header>
                   <Table.Row>
-                    <Table.Head>Test case</Table.Head>
+                    <Table.Head>Intent</Table.Head>
                     <Table.Head>Status</Table.Head>
-                    <Table.Head>Generations</Table.Head>
+                    <Table.Head>Version</Table.Head>
                     <Table.Head>Updated</Table.Head>
                     <Table.Head className="w-0" />
                   </Table.Row>
                 </Table.Header>
                 <Table.Body>
-                  {testCases.map((testCase) => (
-                    <Table.Row key={testCase.id}>
+                  {intents.map((row) => (
+                    <Table.Row key={row.id}>
                       <Table.Cell>
                         <div className="grid gap-0.5">
                           <Link
-                            to="/projects/$projectId/tests/$testCaseId"
-                            params={{ projectId, testCaseId: testCase.id }}
+                            to="/projects/$projectId/intents/$intentId"
+                            params={{ projectId, intentId: row.id }}
                             className="text-kumo-link underline underline-offset-2"
                           >
-                            {testCase.title}
+                            {row.title}
                           </Link>
                           <Text variant="secondary" size="xs" truncate>
-                            {testCase.prompt.split('\n')[0]}
+                            {row.description.split('\n')[0]}
                           </Text>
                         </div>
                       </Table.Cell>
                       <Table.Cell>
-                        <TestCaseStatusBadge status={testCase.status} />
+                        <TestCaseStatusBadge status={row.status} />
                       </Table.Cell>
                       <Table.Cell>
                         <Text as="span" variant="mono-secondary">
-                          {testCase.generationCount}
+                          {row.currentVersion === 0 ? '—' : `v${row.currentVersion}`}
                         </Text>
                       </Table.Cell>
                       <Table.Cell>
-                        <RelativeTime value={testCase.updatedAt} />
+                        <RelativeTime value={row.updatedAt} />
                       </Table.Cell>
                       <Table.Cell>
-                        <RowActions projectId={projectId} testCaseId={testCase.id} />
+                        <RowActions
+                          projectId={projectId}
+                          intentId={row.id}
+                          runnable={row.currentVersion > 0}
+                        />
                       </Table.Cell>
                     </Table.Row>
                   ))}
@@ -220,25 +226,37 @@ function ProjectDetail() {
         )}
       </PageBody>
 
-      <CreateTestCaseDialog projectId={projectId} open={addingCase} onOpenChange={setAddingCase} />
+      <CreateIntentDialog
+        projectId={projectId}
+        open={addingIntent}
+        onOpenChange={setAddingIntent}
+      />
       <EditProjectDialog project={project} open={editing} onOpenChange={setEditing} />
       <DeleteProjectDialog project={project} open={deleting} onOpenChange={setDeleting} />
     </>
   )
 }
 
-function RowActions({ projectId, testCaseId }: { projectId: string; testCaseId: string }) {
+function RowActions({
+  projectId,
+  intentId,
+  runnable,
+}: {
+  projectId: string
+  intentId: string
+  runnable: boolean
+}) {
   const queryClient = useQueryClient()
   const toast = useKumoToastManager()
 
-  const repair = useMutation({
-    mutationFn: () => regenerateAndRun({ data: { testCaseId } }),
+  const run = useMutation({
+    mutationFn: () => runIntent({ data: { intentId } }),
     onSuccess: async (result) => {
       await queryClient.invalidateQueries()
       toast.add({
         variant: result.status === 'passed' ? 'success' : 'error',
-        title: result.status === 'passed' ? 'Passed after repair' : 'Still failing',
-        description: `Attempt #${result.attempt}`,
+        title: result.status === 'passed' ? 'Run passed' : 'Run failed',
+        description: formatDuration(result.durationMs),
       })
     },
   })
@@ -248,20 +266,20 @@ function RowActions({ projectId, testCaseId }: { projectId: string; testCaseId: 
       <DropdownMenu>
         <DropdownMenu.Trigger
           render={
-            <Button variant="ghost" shape="square" size="sm" aria-label="Test case actions">
+            <Button variant="ghost" shape="square" size="sm" aria-label="Intent actions">
               <DotsThreeIcon size={16} weight="bold" />
             </Button>
           }
         />
         <DropdownMenu.Content>
           <DropdownMenu.LinkItem
-            href={`/projects/${projectId}/tests/${testCaseId}`}
+            href={`/projects/${projectId}/intents/${intentId}`}
             icon={TestTubeIcon}
           >
             Open
           </DropdownMenu.LinkItem>
-          <DropdownMenu.Item icon={PlayIcon} onClick={() => repair.mutate()}>
-            Regenerate and run
+          <DropdownMenu.Item icon={PlayIcon} disabled={!runnable} onClick={() => run.mutate()}>
+            Run
           </DropdownMenu.Item>
         </DropdownMenu.Content>
       </DropdownMenu>
@@ -269,13 +287,13 @@ function RowActions({ projectId, testCaseId }: { projectId: string; testCaseId: 
   )
 }
 
-const EXAMPLE_PROMPT = `Go to /pricing
+const EXAMPLE_DESCRIPTION = `Go to /pricing
 Click "Start free trial"
 Enter "ada@example.com" in the Email field
 Click "Continue"
 Should see "Check your inbox"`
 
-function CreateTestCaseDialog({
+function CreateIntentDialog({
   projectId,
   open,
   onOpenChange,
@@ -287,13 +305,13 @@ function CreateTestCaseDialog({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog size="lg" className="px-6 py-5">
-        <CreateTestCaseForm projectId={projectId} onOpenChange={onOpenChange} />
+        <CreateIntentForm projectId={projectId} onOpenChange={onOpenChange} />
       </Dialog>
     </Dialog.Root>
   )
 }
 
-function CreateTestCaseForm({
+function CreateIntentForm({
   projectId,
   onOpenChange,
 }: {
@@ -304,16 +322,16 @@ function CreateTestCaseForm({
   const navigate = useNavigate()
 
   const [title, setTitle] = useState('')
-  const [prompt, setPrompt] = useState('')
+  const [description, setDescription] = useState('')
 
   const mutation = useMutation({
-    mutationFn: () => createTestCase({ data: { projectId, title: title.trim(), prompt } }),
+    mutationFn: () => createIntent({ data: { projectId, title: title.trim(), description } }),
     onSuccess: async (result) => {
       await queryClient.invalidateQueries()
       onOpenChange(false)
       await navigate({
-        to: '/projects/$projectId/tests/$testCaseId',
-        params: { projectId, testCaseId: result.id },
+        to: '/projects/$projectId/intents/$intentId',
+        params: { projectId, intentId: result.id },
       })
     },
   })
@@ -330,7 +348,7 @@ function CreateTestCaseForm({
         <div className="grid gap-1.5">
           <Dialog.Title>
             <Text as="span" variant="heading">
-              Describe a test case
+              Describe an intent
             </Text>
           </Dialog.Title>
           <Dialog.Description>
@@ -353,7 +371,7 @@ function CreateTestCaseForm({
         <Banner
           variant="error"
           icon={<WarningCircleIcon weight="fill" />}
-          title="Could not create test case"
+          title="Could not create intent"
           description={mutation.error.message}
         />
       ) : null}
@@ -368,21 +386,21 @@ function CreateTestCaseForm({
         />
         <InputArea
           label="What should happen?"
-          description="Plain English. This is the prompt the generator compiles."
-          placeholder={EXAMPLE_PROMPT}
+          description="Plain English. This is the permanent source of truth."
+          placeholder={EXAMPLE_DESCRIPTION}
           autoResize
           minRows={8}
           maxRows={20}
           required
-          value={prompt}
-          onChange={(event) => setPrompt(event.target.value)}
+          value={description}
+          onChange={(event) => setDescription(event.target.value)}
         />
         <Button
           type="button"
           variant="ghost"
           size="sm"
           className="justify-self-start"
-          onClick={() => setPrompt(EXAMPLE_PROMPT)}
+          onClick={() => setDescription(EXAMPLE_DESCRIPTION)}
         >
           Use the example
         </Button>
@@ -400,9 +418,9 @@ function CreateTestCaseForm({
           type="submit"
           variant="primary"
           loading={mutation.isPending}
-          disabled={!title.trim() || prompt.trim().length < 10}
+          disabled={!title.trim() || description.trim().length < 10}
         >
-          Create test case
+          Create intent
         </Button>
       </div>
     </form>
@@ -413,7 +431,6 @@ type ProjectRow = {
   id: string
   name: string
   description: string | null
-  baseUrl: string
 }
 
 function EditProjectDialog({
@@ -445,7 +462,6 @@ function EditProjectForm({
   const toast = useKumoToastManager()
 
   const [name, setName] = useState(project.name)
-  const [baseUrl, setBaseUrl] = useState(project.baseUrl)
   const [description, setDescription] = useState(project.description ?? '')
 
   const mutation = useMutation({
@@ -454,7 +470,6 @@ function EditProjectForm({
         data: {
           projectId: project.id,
           name: name.trim(),
-          baseUrl,
           description: description.trim() || null,
         },
       }),
@@ -495,12 +510,7 @@ function EditProjectForm({
           value={name}
           onChange={(event) => setName(event.target.value)}
         />
-        <Input
-          label="Base URL"
-          required
-          value={baseUrl}
-          onChange={(event) => setBaseUrl(event.target.value)}
-        />
+        {/* M7: base URLs are edited in the Environments section, not here. */}
         <InputArea
           label="Description"
           autoResize
@@ -584,7 +594,7 @@ function DeleteProjectForm({
         </Dialog.Title>
         <Dialog.Description>
           <Text as="span" variant="secondary">
-            Every test case and run history under {project.name} goes with it. This cannot be
+            Every environment, intent and run under {project.name} goes with it. This cannot be
             undone.
           </Text>
         </Dialog.Description>

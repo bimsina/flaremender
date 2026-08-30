@@ -12,13 +12,12 @@ import {
   Text,
   useKumoToastManager,
 } from '@cloudflare/kumo'
-import { CodeHighlighted, ShikiProvider } from '@cloudflare/kumo/code'
 import {
-  ArrowsClockwiseIcon,
   CaretRightIcon,
+  ClockCounterClockwiseIcon,
   DotsThreeIcon,
+  FloppyDiskIcon,
   PlayIcon,
-  SparkleIcon,
   TerminalWindowIcon,
   TrashIcon,
   WarningCircleIcon,
@@ -29,78 +28,88 @@ import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 
 import { PageBody, PageHeader } from '#/components/page.tsx'
+import { RelativeTime } from '#/components/relative-time.tsx'
 import { RunStatusBadge, TestCaseStatusBadge } from '#/components/status-badge.tsx'
 import { formatDuration } from '#/lib/format.ts'
-import { RelativeTime } from '#/components/relative-time.tsx'
-import { testCaseQuery } from '#/lib/queries.ts'
+import { intentQuery, runsQuery, scriptVersionsQuery } from '#/lib/queries.ts'
 import {
-  deleteTestCase,
-  generateTestCase,
-  regenerateAndRun,
-  runTestCase,
-  updateTestCase,
-} from '#/server/test-cases.ts'
+  deleteIntent,
+  restoreScriptVersion,
+  runIntent,
+  saveScript,
+  updateIntent,
+} from '#/server/intents.ts'
 
-export const Route = createFileRoute('/_app/projects/$projectId/tests/$testCaseId')({
-  loader: ({ context, params }) =>
-    context.queryClient.ensureQueryData({
-      ...testCaseQuery(params.testCaseId),
-      revalidateIfStale: true,
-    }),
-  component: TestCaseDetail,
+export const Route = createFileRoute('/_app/projects/$projectId/intents/$intentId')({
+  loader: async ({ context, params }) => {
+    await Promise.all([
+      context.queryClient.ensureQueryData({
+        ...intentQuery(params.intentId),
+        revalidateIfStale: true,
+      }),
+      context.queryClient.ensureQueryData({
+        ...runsQuery(params.intentId),
+        revalidateIfStale: true,
+      }),
+      context.queryClient.ensureQueryData({
+        ...scriptVersionsQuery(params.intentId),
+        revalidateIfStale: true,
+      }),
+    ])
+  },
+  component: IntentDetail,
 })
 
-function TestCaseDetail() {
-  const { projectId, testCaseId } = Route.useParams()
-  const { data } = useSuspenseQuery(testCaseQuery(testCaseId))
+const STARTER_SCRIPT = `import { expect, test } from '@playwright/test'
+
+test('walks the happy path', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByRole('heading')).toBeVisible()
+})
+`
+
+function IntentDetail() {
+  const { projectId, intentId } = Route.useParams()
+  const { data } = useSuspenseQuery(intentQuery(intentId))
+  const { data: runs } = useSuspenseQuery(runsQuery(intentId))
+  const { data: versions } = useSuspenseQuery(scriptVersionsQuery(intentId))
+
   const queryClient = useQueryClient()
   const toast = useKumoToastManager()
 
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [code, setCode] = useState(data.currentVersion?.code ?? STARTER_SCRIPT)
 
-  const { testCase, project, runs } = data
+  const { intent, currentVersion, project } = data
   const lastRun = runs[0]
-  const hasCode = testCase.generatedCode !== null
+  const hasScript = currentVersion !== null
+  const dirty = code !== (currentVersion?.code ?? STARTER_SCRIPT)
 
-  const generate = useMutation({
-    mutationFn: () => generateTestCase({ data: { testCaseId } }),
+  const save = useMutation({
+    mutationFn: () => saveScript({ data: { intentId, code } }),
     onSuccess: async (result) => {
       await queryClient.invalidateQueries()
-      toast.add({
-        variant: 'success',
-        title: 'Playwright code generated',
-        description: result.summary,
-      })
+      toast.add({ variant: 'success', title: `Saved as v${result.version}` })
     },
   })
 
+  // M7: an environment selector goes here; today the run targets the project's
+  // default environment, which is what `runIntent` falls back to.
   const run = useMutation({
-    mutationFn: () => runTestCase({ data: { testCaseId } }),
+    mutationFn: () => runIntent({ data: { intentId } }),
     onSuccess: async (result) => {
       await queryClient.invalidateQueries()
       toast.add({
         variant: result.status === 'passed' ? 'success' : 'error',
-        title: result.status === 'passed' ? 'Test passed' : 'Test failed',
-        description: `Attempt #${result.attempt} in ${formatDuration(result.durationMs)}`,
+        title: result.status === 'passed' ? 'Run passed' : 'Run failed',
+        description: formatDuration(result.durationMs),
       })
     },
   })
 
-  const repair = useMutation({
-    mutationFn: () => regenerateAndRun({ data: { testCaseId } }),
-    onSuccess: async (result) => {
-      await queryClient.invalidateQueries()
-      toast.add({
-        variant: result.status === 'passed' ? 'success' : 'error',
-        title: result.status === 'passed' ? 'Repaired and passing' : 'Still failing',
-        description: `Attempt #${result.attempt}`,
-      })
-    },
-  })
-
-  const busy = generate.isPending || run.isPending || repair.isPending
-  const error = generate.error ?? run.error ?? repair.error
+  const busy = save.isPending || run.isPending
+  const error = save.error ?? run.error
 
   return (
     <>
@@ -124,50 +133,41 @@ function TestCaseDetail() {
             </Link>
             <CaretRightIcon size={12} className="text-kumo-subtle" />
             <Text as="span" variant="secondary" size="xs">
-              Test case
+              Intent
             </Text>
           </div>
         }
-        title={testCase.title}
-        description={`${project.baseUrl} · ${testCase.generationCount} generation${
-          testCase.generationCount === 1 ? '' : 's'
-        }`}
+        title={intent.title}
+        description={currentVersion ? `Version ${currentVersion.version}` : 'No script saved yet'}
         actions={
           <>
             <Button
-              variant={hasCode ? 'secondary' : 'primary'}
-              icon={<SparkleIcon size={16} />}
-              loading={generate.isPending}
-              disabled={busy}
-              onClick={() => generate.mutate()}
+              variant={dirty ? 'primary' : 'secondary'}
+              icon={<FloppyDiskIcon size={16} />}
+              loading={save.isPending}
+              disabled={busy || !dirty}
+              onClick={() => save.mutate()}
             >
-              {hasCode ? 'Regenerate' : 'Generate code'}
+              Save script
             </Button>
             <Button
-              variant={hasCode ? 'primary' : 'secondary'}
+              variant={dirty ? 'secondary' : 'primary'}
               icon={<PlayIcon size={16} />}
               loading={run.isPending}
-              disabled={busy || !hasCode}
+              disabled={busy || !hasScript}
               onClick={() => run.mutate()}
             >
-              Run test
+              Run
             </Button>
             <DropdownMenu>
               <DropdownMenu.Trigger
                 render={
-                  <Button variant="secondary" shape="square" aria-label="Test case actions">
+                  <Button variant="secondary" shape="square" aria-label="Intent actions">
                     <DotsThreeIcon size={16} weight="bold" />
                   </Button>
                 }
               />
               <DropdownMenu.Content>
-                <DropdownMenu.Item
-                  icon={ArrowsClockwiseIcon}
-                  disabled={busy || !hasCode}
-                  onClick={() => repair.mutate()}
-                >
-                  Regenerate and run
-                </DropdownMenu.Item>
                 <DropdownMenu.Item icon={TerminalWindowIcon} onClick={() => setEditing(true)}>
                   Edit description
                 </DropdownMenu.Item>
@@ -177,7 +177,7 @@ function TestCaseDetail() {
                   variant="danger"
                   onClick={() => setDeleting(true)}
                 >
-                  Delete test case
+                  Delete intent
                 </DropdownMenu.Item>
               </DropdownMenu.Content>
             </DropdownMenu>
@@ -187,10 +187,10 @@ function TestCaseDetail() {
 
       <PageBody className="grid gap-6">
         <div className="flex flex-wrap items-center gap-2">
-          <TestCaseStatusBadge status={testCase.status} />
+          <TestCaseStatusBadge status={intent.status} />
           {lastRun ? (
             <Text variant="secondary" size="xs">
-              Last run <RelativeTime value={lastRun.startedAt} /> · attempt #{lastRun.attempt} ·{' '}
+              Last run <RelativeTime value={lastRun.startedAt} /> · {lastRun.environmentName} ·{' '}
               {formatDuration(lastRun.durationMs)}
             </Text>
           ) : (
@@ -209,24 +209,12 @@ function TestCaseDetail() {
           />
         ) : null}
 
-        {testCase.status === 'failing' && lastRun?.errorMessage ? (
+        {intent.status === 'failing' && lastRun?.lastErrorMessage ? (
           <Banner
             variant="error"
             icon={<WarningCircleIcon weight="fill" />}
             title="The last run failed"
-            description={lastRun.errorMessage.split('\n')[0]}
-            action={
-              <Button
-                variant="secondary"
-                size="sm"
-                icon={<ArrowsClockwiseIcon size={14} />}
-                loading={repair.isPending}
-                disabled={busy}
-                onClick={() => repair.mutate()}
-              >
-                Regenerate and run
-              </Button>
-            }
+            description={lastRun.lastErrorMessage.split('\n')[0]}
           />
         ) : null}
 
@@ -236,9 +224,9 @@ function TestCaseDetail() {
               <div className="flex items-end justify-between gap-4">
                 <div className="grid gap-1.5">
                   <Text as="h2" variant="heading">
-                    Description
+                    Intent
                   </Text>
-                  <Text variant="secondary">The prompt the generator compiles.</Text>
+                  <Text variant="secondary">Plain English, and the permanent source of truth.</Text>
                 </div>
                 <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
                   Edit
@@ -246,7 +234,7 @@ function TestCaseDetail() {
               </div>
               <LayerCard className="px-5 py-4">
                 <pre className="font-mono text-[0.9em] whitespace-pre-wrap text-kumo-default">
-                  {testCase.prompt}
+                  {intent.description}
                 </pre>
               </LayerCard>
             </section>
@@ -254,74 +242,82 @@ function TestCaseDetail() {
             <section className="grid gap-3">
               <div className="grid gap-1.5">
                 <Text as="h2" variant="heading">
-                  Generated Playwright spec
+                  Playwright script
                 </Text>
                 <Text variant="secondary">
-                  Regenerating after a failure feeds the error back into the prompt.
+                  Every save is a new version in history. M7 replaces this box with a real editor.
                 </Text>
               </div>
-
-              {testCase.generatedCode ? (
-                <ShikiProvider engine="javascript" languages={['ts']}>
-                  <CodeHighlighted
-                    code={testCase.generatedCode}
-                    lang="ts"
-                    showLineNumbers
-                    showCopyButton
-                  />
-                </ShikiProvider>
-              ) : (
-                <Empty
-                  size="sm"
-                  icon={<SparkleIcon size={32} className="text-kumo-inactive" />}
-                  title="No code yet"
-                  description="Generate a spec from the description above."
-                  contents={
-                    <Button
-                      variant="primary"
-                      icon={<SparkleIcon size={16} />}
-                      loading={generate.isPending}
-                      onClick={() => generate.mutate()}
-                    >
-                      Generate code
-                    </Button>
-                  }
-                />
-              )}
+              <InputArea
+                aria-label="Playwright script"
+                className="font-mono"
+                minRows={18}
+                maxRows={40}
+                value={code}
+                onChange={(event) => setCode(event.target.value)}
+              />
             </section>
           </div>
 
-          <section className="grid content-start gap-3">
-            <div className="grid gap-1.5">
-              <Text as="h2" variant="heading">
-                Run history
-              </Text>
-              <Text variant="secondary">Every attempt, newest first.</Text>
-            </div>
+          <div className="grid content-start gap-6">
+            <section className="grid content-start gap-3">
+              <div className="grid gap-1.5">
+                <Text as="h2" variant="heading">
+                  Version history
+                </Text>
+                <Text variant="secondary">Newest first.</Text>
+              </div>
 
-            {runs.length === 0 ? (
-              <Empty
-                size="sm"
-                icon={<PlayIcon size={32} className="text-kumo-inactive" />}
-                title="No runs yet"
-                description="Generate the spec, then run it."
-              />
-            ) : (
-              <ol className="grid gap-2">
-                {runs.map((runRow) => (
-                  <li key={runRow.id}>
-                    <RunRow run={runRow} />
-                  </li>
-                ))}
-              </ol>
-            )}
-          </section>
+              {versions.length === 0 ? (
+                <Empty
+                  size="sm"
+                  icon={<ClockCounterClockwiseIcon size={32} className="text-kumo-inactive" />}
+                  title="No versions yet"
+                  description="Save the script to start its history."
+                />
+              ) : (
+                <ol className="grid gap-2">
+                  {versions.map((version) => (
+                    <li key={version.id}>
+                      <VersionRow version={version} isCurrent={version.id === currentVersion?.id} />
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </section>
+
+            <section className="grid content-start gap-3">
+              <div className="grid gap-1.5">
+                <Text as="h2" variant="heading">
+                  Run history
+                </Text>
+                <Text variant="secondary">Every run, newest first.</Text>
+              </div>
+
+              {runs.length === 0 ? (
+                <Empty
+                  size="sm"
+                  icon={<PlayIcon size={32} className="text-kumo-inactive" />}
+                  title="No runs yet"
+                  description="Save the script, then run it."
+                />
+              ) : (
+                <ol className="grid gap-2">
+                  {runs.map((runRow) => (
+                    <li key={runRow.id}>
+                      <RunRow run={runRow} />
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </section>
+          </div>
         </div>
       </PageBody>
 
-      <EditTestCaseDialog testCase={testCase} open={editing} onOpenChange={setEditing} />
-      <DeleteTestCaseDialog
-        testCase={testCase}
+      <EditIntentDialog intent={intent} open={editing} onOpenChange={setEditing} />
+      <DeleteIntentDialog
+        intent={intent}
         projectId={projectId}
         open={deleting}
         onOpenChange={setDeleting}
@@ -330,14 +326,76 @@ function TestCaseDetail() {
   )
 }
 
+type VersionRowData = {
+  id: string
+  version: number
+  author: 'user' | 'agent'
+  note: string | null
+  createdByName: string
+  createdAt: Date
+  codeLength: number
+}
+
+function VersionRow({ version, isCurrent }: { version: VersionRowData; isCurrent: boolean }) {
+  const queryClient = useQueryClient()
+  const toast = useKumoToastManager()
+
+  const restore = useMutation({
+    mutationFn: () => restoreScriptVersion({ data: { versionId: version.id } }),
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries()
+      toast.add({ variant: 'success', title: `Restored as v${result.version}` })
+    },
+  })
+
+  return (
+    <LayerCard className="px-4 py-3">
+      <div className="grid gap-2">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <Text as="span" variant="mono-secondary">
+              v{version.version}
+            </Text>
+            <Badge variant={version.author === 'agent' ? 'blue' : 'neutral'} appearance="dot">
+              {version.author}
+            </Badge>
+            {isCurrent ? <Badge variant="success">current</Badge> : null}
+          </div>
+          <Text as="span" variant="secondary" size="xs">
+            {version.codeLength} chars
+          </Text>
+        </div>
+
+        <Text variant="secondary" size="xs">
+          {version.note ?? 'No note'} · {version.createdByName} ·{' '}
+          <RelativeTime value={version.createdAt} />
+        </Text>
+
+        {isCurrent ? null : (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="justify-self-start"
+            loading={restore.isPending}
+            onClick={() => restore.mutate()}
+          >
+            Restore
+          </Button>
+        )}
+      </div>
+    </LayerCard>
+  )
+}
+
 type RunRowData = {
   id: string
   status: 'queued' | 'running' | 'passed' | 'healed' | 'failed' | 'error'
-  attempt: number
   trigger: 'manual' | 'regenerate' | 'schedule'
+  environmentName: string
+  version: number
   durationMs: number | null
   startedAt: Date
-  logs: string | null
+  lastErrorMessage: string | null
 }
 
 function RunRow({ run }: { run: RunRowData }) {
@@ -351,7 +409,7 @@ function RunRow({ run }: { run: RunRowData }) {
             <div className="flex min-w-0 items-center gap-2">
               <RunStatusBadge status={run.status} />
               <Text as="span" variant="mono-secondary">
-                #{run.attempt}
+                v{run.version}
               </Text>
             </div>
             <Text as="span" variant="secondary" size="xs">
@@ -361,21 +419,22 @@ function RunRow({ run }: { run: RunRowData }) {
 
           <div className="flex items-center justify-between gap-3">
             <Text as="span" variant="secondary" size="xs">
-              <RelativeTime value={run.startedAt} />
+              <RelativeTime value={run.startedAt} /> · {run.environmentName}
             </Text>
-            {run.trigger === 'regenerate' ? (
+            {run.trigger === 'schedule' ? (
               <Badge variant="blue" appearance="dot">
-                repair
+                scheduled
               </Badge>
             ) : null}
           </div>
 
+          {/* M7: this drills into `getRun` for per-attempt logs and artifacts. */}
           <Collapsible.DefaultTrigger className="text-xs">
-            {open ? 'Hide output' : 'Show output'}
+            {open ? 'Hide error' : 'Show error'}
           </Collapsible.DefaultTrigger>
           <Collapsible.DefaultPanel>
             <pre className="max-h-72 overflow-auto rounded-md bg-kumo-recessed p-3 font-mono text-xs whitespace-pre-wrap text-kumo-default">
-              {run.logs ?? 'No output captured.'}
+              {run.lastErrorMessage ?? 'No error recorded.'}
             </pre>
           </Collapsible.DefaultPanel>
         </div>
@@ -384,46 +443,42 @@ function RunRow({ run }: { run: RunRowData }) {
   )
 }
 
-function EditTestCaseDialog({
-  testCase,
+function EditIntentDialog({
+  intent,
   open,
   onOpenChange,
 }: {
-  testCase: { id: string; title: string; prompt: string }
+  intent: { id: string; title: string; description: string }
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog size="lg" className="px-6 py-5">
-        <EditTestCaseForm testCase={testCase} onOpenChange={onOpenChange} />
+        <EditIntentForm intent={intent} onOpenChange={onOpenChange} />
       </Dialog>
     </Dialog.Root>
   )
 }
 
-function EditTestCaseForm({
-  testCase,
+function EditIntentForm({
+  intent,
   onOpenChange,
 }: {
-  testCase: { id: string; title: string; prompt: string }
+  intent: { id: string; title: string; description: string }
   onOpenChange: (open: boolean) => void
 }) {
   const queryClient = useQueryClient()
   const toast = useKumoToastManager()
-  const [title, setTitle] = useState(testCase.title)
-  const [prompt, setPrompt] = useState(testCase.prompt)
+  const [title, setTitle] = useState(intent.title)
+  const [description, setDescription] = useState(intent.description)
 
   const mutation = useMutation({
     mutationFn: () =>
-      updateTestCase({ data: { testCaseId: testCase.id, title: title.trim(), prompt } }),
+      updateIntent({ data: { intentId: intent.id, title: title.trim(), description } }),
     onSuccess: async () => {
       await queryClient.invalidateQueries()
-      toast.add({
-        variant: 'success',
-        title: 'Description updated',
-        description: 'Regenerate to compile the new steps.',
-      })
+      toast.add({ variant: 'success', title: 'Intent updated' })
       onOpenChange(false)
     },
   })
@@ -439,7 +494,7 @@ function EditTestCaseForm({
       <div className="flex items-start justify-between gap-4">
         <Dialog.Title>
           <Text as="span" variant="heading">
-            Edit test case
+            Edit intent
           </Text>
         </Dialog.Title>
         <Dialog.Close
@@ -474,8 +529,8 @@ function EditTestCaseForm({
           minRows={8}
           maxRows={20}
           required
-          value={prompt}
-          onChange={(event) => setPrompt(event.target.value)}
+          value={description}
+          onChange={(event) => setDescription(event.target.value)}
         />
       </div>
 
@@ -491,7 +546,7 @@ function EditTestCaseForm({
           type="submit"
           variant="primary"
           loading={mutation.isPending}
-          disabled={!title.trim() || prompt.trim().length < 10}
+          disabled={!title.trim() || description.trim().length < 10}
         >
           Save changes
         </Button>
@@ -500,13 +555,13 @@ function EditTestCaseForm({
   )
 }
 
-function DeleteTestCaseDialog({
-  testCase,
+function DeleteIntentDialog({
+  intent,
   projectId,
   open,
   onOpenChange,
 }: {
-  testCase: { id: string; title: string }
+  intent: { id: string; title: string }
   projectId: string
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -516,10 +571,10 @@ function DeleteTestCaseDialog({
   const toast = useKumoToastManager()
 
   const mutation = useMutation({
-    mutationFn: () => deleteTestCase({ data: { testCaseId: testCase.id } }),
+    mutationFn: () => deleteIntent({ data: { intentId: intent.id } }),
     onSuccess: async () => {
       await queryClient.invalidateQueries()
-      toast.add({ variant: 'success', title: 'Test case deleted' })
+      toast.add({ variant: 'success', title: 'Intent deleted' })
       onOpenChange(false)
       await navigate({ to: '/projects/$projectId', params: { projectId } })
     },
@@ -532,12 +587,13 @@ function DeleteTestCaseDialog({
           <div className="grid gap-1.5">
             <Dialog.Title>
               <Text as="span" variant="heading">
-                Delete this test case?
+                Delete this intent?
               </Text>
             </Dialog.Title>
             <Dialog.Description>
               <Text as="span" variant="secondary">
-                {testCase.title} and its run history will be removed. This cannot be undone.
+                {intent.title}, its script history and its runs will be removed. This cannot be
+                undone.
               </Text>
             </Dialog.Description>
           </div>
@@ -564,7 +620,7 @@ function DeleteTestCaseDialog({
               loading={mutation.isPending}
               onClick={() => mutation.mutate()}
             >
-              Delete test case
+              Delete intent
             </Button>
           </div>
         </div>
