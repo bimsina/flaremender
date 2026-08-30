@@ -21,6 +21,18 @@ export function createAuth(d1: D1Database, env: Cloudflare.Env) {
     baseURL: env.BETTER_AUTH_URL,
     emailAndPassword: { enabled: true },
     databaseHooks: {
+      user: {
+        create: {
+          // Self-hosted instances have no bootstrap step: whoever signs up
+          // first owns the instance. Everyone after them is a plain user.
+          before: async (newUser) => {
+            const [existing] = await db.select({ id: schema.user.id }).from(schema.user).limit(1)
+            if (existing) return
+
+            return { data: { ...newUser, role: 'admin' } }
+          },
+        },
+      },
       session: {
         create: {
           // Pin the session to an organization up front so every query can

@@ -1,0 +1,24 @@
+# Local development secrets. Copy to `.dev.vars` and fill in.
+#
+# Wrangler loads `.dev.vars` *instead of* `.env` files when it exists, so this
+# file has to carry every secret the Worker needs — including the auth ones.
+
+# Better Auth ------------------------------------------------------------
+BETTER_AUTH_URL=http://localhost:3000
+# Any long random string: `openssl rand -hex 32`.
+BETTER_AUTH_SECRET=
+
+# Secret storage ---------------------------------------------------------
+# Required. Any passphrase; it is SHA-256'd into an AES-256-GCM key that
+# encrypts environment variables and provider API keys at rest. Changing it
+# makes every stored secret unreadable, so set it once per instance.
+# In production: `wrangler secret put ENCRYPTION_KEY`.
+ENCRYPTION_KEY=
+
+# LLM providers ----------------------------------------------------------
+# All optional. A key set here wins over anything saved in the admin console,
+# and the console refuses to manage a provider that a secret already covers.
+# Workers AI needs no key — it runs through the `AI` binding.
+ANTHROPIC_API_KEY=
+OPENAI_API_KEY=
+GOOGLE_API_KEY=

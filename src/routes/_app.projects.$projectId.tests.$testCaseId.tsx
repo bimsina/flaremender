@@ -332,9 +332,9 @@ function TestCaseDetail() {
 
 type RunRowData = {
   id: string
-  status: 'queued' | 'running' | 'passed' | 'failed' | 'error'
+  status: 'queued' | 'running' | 'passed' | 'healed' | 'failed' | 'error'
   attempt: number
-  trigger: 'manual' | 'regenerate' | 'suite'
+  trigger: 'manual' | 'regenerate' | 'schedule'
   durationMs: number | null
   startedAt: Date
   logs: string | null

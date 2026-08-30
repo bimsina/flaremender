@@ -1,7 +1,7 @@
 import { createServerFn } from '@tanstack/react-start'
 import { count, desc, eq, sql } from 'drizzle-orm'
 
-import { member, organization, project, testCase, testRun, user } from '#/db/schema/index.ts'
+import { intent, member, organization, project, run, user } from '#/db/schema/index.ts'
 import { adminMiddleware } from './auth.ts'
 
 /**
@@ -15,8 +15,8 @@ export const getAdminStats = createServerFn({ method: 'GET' })
       context.db.select({ value: count() }).from(user),
       context.db.select({ value: count() }).from(organization),
       context.db.select({ value: count() }).from(project),
-      context.db.select({ value: count() }).from(testCase),
-      context.db.select({ value: count() }).from(testRun),
+      context.db.select({ value: count() }).from(intent),
+      context.db.select({ value: count() }).from(run),
       context.db.select({ value: count() }).from(user).where(eq(user.role, 'admin')),
       context.db.select({ value: count() }).from(user).where(eq(user.banned, true)),
     ])

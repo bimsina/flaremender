@@ -1,7 +1,7 @@
 import { createServerFn } from '@tanstack/react-start'
 import { count, desc, eq, sql } from 'drizzle-orm'
 
-import { project, testCase, testRun } from '#/db/schema/app.ts'
+import { attempt, intent, project, run } from '#/db/schema/app.ts'
 import { orgMiddleware } from './auth.ts'
 
 export const getOrgOverview = createServerFn({ method: 'GET' })
@@ -10,39 +10,41 @@ export const getOrgOverview = createServerFn({ method: 'GET' })
     const [totals] = await context.db
       .select({
         projects: sql<number>`count(distinct ${project.id})`,
-        tests: sql<number>`count(${testCase.id})`,
-        passing: sql<number>`sum(case when ${testCase.status} = 'passing' then 1 else 0 end)`,
-        failing: sql<number>`sum(case when ${testCase.status} = 'failing' then 1 else 0 end)`,
-        pending: sql<number>`sum(case when ${testCase.status} in ('draft','ready','generating') then 1 else 0 end)`,
+        tests: sql<number>`count(${intent.id})`,
+        passing: sql<number>`sum(case when ${intent.status} = 'passing' then 1 else 0 end)`,
+        failing: sql<number>`sum(case when ${intent.status} = 'failing' then 1 else 0 end)`,
+        pending: sql<number>`sum(case when ${intent.status} in ('draft','ready') then 1 else 0 end)`,
       })
       .from(project)
-      .leftJoin(testCase, eq(testCase.projectId, project.id))
+      .leftJoin(intent, eq(intent.projectId, project.id))
       .where(eq(project.organizationId, context.organizationId))
 
+    // M4: `healed` gets its own column here rather than riding with `passed`.
     const recentRuns = await context.db
       .select({
-        id: testRun.id,
-        status: testRun.status,
-        attempt: testRun.attempt,
-        durationMs: testRun.durationMs,
-        startedAt: testRun.startedAt,
-        trigger: testRun.trigger,
-        testCaseId: testRun.testCaseId,
-        testCaseTitle: testCase.title,
+        id: run.id,
+        status: run.status,
+        attempt: attempt.attemptNumber,
+        durationMs: attempt.durationMs,
+        startedAt: run.startedAt,
+        trigger: run.trigger,
+        testCaseId: run.intentId,
+        testCaseTitle: intent.title,
         projectId: project.id,
         projectName: project.name,
       })
-      .from(testRun)
-      .innerJoin(testCase, eq(testCase.id, testRun.testCaseId))
-      .innerJoin(project, eq(project.id, testRun.projectId))
+      .from(run)
+      .innerJoin(intent, eq(intent.id, run.intentId))
+      .innerJoin(project, eq(project.id, run.projectId))
+      .leftJoin(attempt, eq(attempt.runId, run.id))
       .where(eq(project.organizationId, context.organizationId))
-      .orderBy(desc(testRun.startedAt))
+      .orderBy(desc(run.startedAt))
       .limit(8)
 
     const [runTotals] = await context.db
-      .select({ runs: count(testRun.id) })
-      .from(testRun)
-      .innerJoin(project, eq(project.id, testRun.projectId))
+      .select({ runs: count(run.id) })
+      .from(run)
+      .innerJoin(project, eq(project.id, run.projectId))
       .where(eq(project.organizationId, context.organizationId))
 
     return {
@@ -52,6 +54,6 @@ export const getOrgOverview = createServerFn({ method: 'GET' })
       failing: Number(totals?.failing ?? 0),
       pending: Number(totals?.pending ?? 0),
       runs: Number(runTotals?.runs ?? 0),
-      recentRuns,
+      recentRuns: recentRuns.map((row) => ({ ...row, attempt: row.attempt ?? 1 })),
     }
   })
