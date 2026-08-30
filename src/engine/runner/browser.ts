@@ -16,15 +16,19 @@ import {
 } from '@cloudflare/playwright'
 
 /**
- * Idle timeout for the Browser Rendering session (the service accepts
- * 10s–600s; there is no total-lifetime cap — only inactivity kills a session).
- * Maxed out so a script's own long waits never race the platform; the
- * whole-script budget in the harness is what bounds a run, and it fails with a
- * readable timeout instead of a dead session. The cost is a longer reclaim for
- * a session leaked by an isolate crash — rare, and `close()` in the harness's
- * `finally` plus the host's cleanup cover the normal paths.
+ * Idle timeout for the Browser Rendering session. There is no total-lifetime
+ * cap — only inactivity kills a session — so this is set near the maximum so a
+ * script's own long waits never race the platform; the whole-script budget in
+ * the harness is what bounds a run, and it fails with a readable timeout
+ * instead of a dead session. The cost is a longer reclaim for a session leaked
+ * by an isolate crash — rare, and `close()` in the harness's `finally` plus the
+ * host's cleanup cover the normal paths.
+ *
+ * The fork's types document the range as 10_000–600_000ms, but the service
+ * 400s (error 1031) at exactly 600_000 — verified empirically 2026-08-30.
+ * 570_000 is accepted.
  */
-export const KEEP_ALIVE_MS = 600_000
+export const KEEP_ALIVE_MS = 570_000
 
 /** Per-action ceiling. The whole-script budget is enforced separately. */
 export const DEFAULT_ACTION_TIMEOUT_MS = 30_000
