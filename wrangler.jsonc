@@ -1,7 +1,8 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "flaremender",
-  "compatibility_date": "2025-09-02",
+  // Needs a date new enough for workerd's real node:fs (Playwright traces/mkdtemp).
+  "compatibility_date": "2026-08-01",
   "compatibility_flags": ["nodejs_compat"],
   "main": "src/server.ts",
   "account_id": "00000000000000000000000000000000",
