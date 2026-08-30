@@ -14,9 +14,10 @@
       "migrations_dir": "migrations",
     },
   ],
-  // Browser Rendering and Workers AI have no local simulator, so both bindings
-  // run against the real service even under `vite dev`.
-  "browser": { "binding": "BROWSER", "remote": true },
+  // Browser Rendering runs a LOCAL browser under dev (since 2025-07); this also
+  // lets tests reach localhost apps. Set `"remote": true` here to develop
+  // against the real service instead. Production always uses the real service.
+  "browser": { "binding": "BROWSER" },
   "ai": { "binding": "AI", "remote": true },
   "r2_buckets": [
     {
