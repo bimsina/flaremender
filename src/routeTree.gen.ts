@@ -10,42 +10,224 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AppRouteImport } from './routes/_app'
+import { Route as AuthRouteImport } from './routes/_auth'
+import { Route as OnboardingRouteImport } from './routes/onboarding'
+import { Route as AppAdminRouteImport } from './routes/_app.admin'
+import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
+import { Route as AppOrganizationRouteImport } from './routes/_app.organization'
+import { Route as AppSettingsRouteImport } from './routes/_app.settings'
+import { Route as AuthSigninRouteImport } from './routes/_auth.signin'
+import { Route as AuthSignupRouteImport } from './routes/_auth.signup'
+import { Route as AcceptInvitationInvitationIdRouteImport } from './routes/accept-invitation.$invitationId'
+import { Route as AppAdminIndexRouteImport } from './routes/_app.admin.index'
+import { Route as AppAdminOrganizationsRouteImport } from './routes/_app.admin.organizations'
+import { Route as AppProjectsIndexRouteImport } from './routes/_app.projects.index'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as AppProjectsProjectIdIndexRouteImport } from './routes/_app.projects.$projectId.index'
+import { Route as AppProjectsProjectIdTestsTestCaseIdRouteImport } from './routes/_app.projects.$projectId.tests.$testCaseId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppRoute = AppRouteImport.update({
+  id: '/_app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthRoute = AuthRouteImport.update({
+  id: '/_auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OnboardingRoute = OnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AppAdminRoute = AppAdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppDashboardRoute = AppDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppOrganizationRoute = AppOrganizationRouteImport.update({
+  id: '/organization',
+  path: '/organization',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSettingsRoute = AppSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AppRoute,
+} as any)
+const AuthSigninRoute = AuthSigninRouteImport.update({
+  id: '/signin',
+  path: '/signin',
+  getParentRoute: () => AuthRoute,
+} as any)
+const AuthSignupRoute = AuthSignupRouteImport.update({
+  id: '/signup',
+  path: '/signup',
+  getParentRoute: () => AuthRoute,
+} as any)
+const AcceptInvitationInvitationIdRoute =
+  AcceptInvitationInvitationIdRouteImport.update({
+    id: '/accept-invitation/$invitationId',
+    path: '/accept-invitation/$invitationId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const AppAdminIndexRoute = AppAdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppAdminRoute,
+} as any)
+const AppAdminOrganizationsRoute = AppAdminOrganizationsRouteImport.update({
+  id: '/organizations',
+  path: '/organizations',
+  getParentRoute: () => AppAdminRoute,
+} as any)
+const AppProjectsIndexRoute = AppProjectsIndexRouteImport.update({
+  id: '/projects/',
+  path: '/projects/',
+  getParentRoute: () => AppRoute,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppProjectsProjectIdIndexRoute =
+  AppProjectsProjectIdIndexRouteImport.update({
+    id: '/projects/$projectId/',
+    path: '/projects/$projectId/',
+    getParentRoute: () => AppRoute,
+  } as any)
+const AppProjectsProjectIdTestsTestCaseIdRoute =
+  AppProjectsProjectIdTestsTestCaseIdRouteImport.update({
+    id: '/projects/$projectId/tests/$testCaseId',
+    path: '/projects/$projectId/tests/$testCaseId',
+    getParentRoute: () => AppRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/onboarding': typeof OnboardingRoute
+  '/admin': typeof AppAdminRouteWithChildren
+  '/dashboard': typeof AppDashboardRoute
+  '/organization': typeof AppOrganizationRoute
+  '/settings': typeof AppSettingsRoute
+  '/signin': typeof AuthSigninRoute
+  '/signup': typeof AuthSignupRoute
+  '/accept-invitation/$invitationId': typeof AcceptInvitationInvitationIdRoute
+  '/admin/organizations': typeof AppAdminOrganizationsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/admin/': typeof AppAdminIndexRoute
+  '/projects/': typeof AppProjectsIndexRoute
+  '/projects/$projectId/': typeof AppProjectsProjectIdIndexRoute
+  '/projects/$projectId/tests/$testCaseId': typeof AppProjectsProjectIdTestsTestCaseIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/onboarding': typeof OnboardingRoute
+  '/dashboard': typeof AppDashboardRoute
+  '/organization': typeof AppOrganizationRoute
+  '/settings': typeof AppSettingsRoute
+  '/signin': typeof AuthSigninRoute
+  '/signup': typeof AuthSignupRoute
+  '/accept-invitation/$invitationId': typeof AcceptInvitationInvitationIdRoute
+  '/admin/organizations': typeof AppAdminOrganizationsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/admin': typeof AppAdminIndexRoute
+  '/projects': typeof AppProjectsIndexRoute
+  '/projects/$projectId': typeof AppProjectsProjectIdIndexRoute
+  '/projects/$projectId/tests/$testCaseId': typeof AppProjectsProjectIdTestsTestCaseIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/_app': typeof AppRouteWithChildren
+  '/_auth': typeof AuthRouteWithChildren
+  '/onboarding': typeof OnboardingRoute
+  '/_app/admin': typeof AppAdminRouteWithChildren
+  '/_app/dashboard': typeof AppDashboardRoute
+  '/_app/organization': typeof AppOrganizationRoute
+  '/_app/settings': typeof AppSettingsRoute
+  '/_auth/signin': typeof AuthSigninRoute
+  '/_auth/signup': typeof AuthSignupRoute
+  '/accept-invitation/$invitationId': typeof AcceptInvitationInvitationIdRoute
+  '/_app/admin/organizations': typeof AppAdminOrganizationsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/_app/admin/': typeof AppAdminIndexRoute
+  '/_app/projects/': typeof AppProjectsIndexRoute
+  '/_app/projects/$projectId/': typeof AppProjectsProjectIdIndexRoute
+  '/_app/projects/$projectId/tests/$testCaseId': typeof AppProjectsProjectIdTestsTestCaseIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/auth/$'
+  fullPaths:
+    | '/'
+    | '/onboarding'
+    | '/admin'
+    | '/dashboard'
+    | '/organization'
+    | '/settings'
+    | '/signin'
+    | '/signup'
+    | '/accept-invitation/$invitationId'
+    | '/admin/organizations'
+    | '/api/auth/$'
+    | '/admin/'
+    | '/projects/'
+    | '/projects/$projectId/'
+    | '/projects/$projectId/tests/$testCaseId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/auth/$'
-  id: '__root__' | '/' | '/api/auth/$'
+  to:
+    | '/'
+    | '/onboarding'
+    | '/dashboard'
+    | '/organization'
+    | '/settings'
+    | '/signin'
+    | '/signup'
+    | '/accept-invitation/$invitationId'
+    | '/admin/organizations'
+    | '/api/auth/$'
+    | '/admin'
+    | '/projects'
+    | '/projects/$projectId'
+    | '/projects/$projectId/tests/$testCaseId'
+  id:
+    | '__root__'
+    | '/'
+    | '/_app'
+    | '/_auth'
+    | '/onboarding'
+    | '/_app/admin'
+    | '/_app/dashboard'
+    | '/_app/organization'
+    | '/_app/settings'
+    | '/_auth/signin'
+    | '/_auth/signup'
+    | '/accept-invitation/$invitationId'
+    | '/_app/admin/organizations'
+    | '/api/auth/$'
+    | '/_app/admin/'
+    | '/_app/projects/'
+    | '/_app/projects/$projectId/'
+    | '/_app/projects/$projectId/tests/$testCaseId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AppRoute: typeof AppRouteWithChildren
+  AuthRoute: typeof AuthRouteWithChildren
+  OnboardingRoute: typeof OnboardingRoute
+  AcceptInvitationInvitationIdRoute: typeof AcceptInvitationInvitationIdRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
 
@@ -58,6 +240,97 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app': {
+      id: '/_app'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_auth': {
+      id: '/_auth'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/onboarding': {
+      id: '/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof OnboardingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_app/admin': {
+      id: '/_app/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AppAdminRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/dashboard': {
+      id: '/_app/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof AppDashboardRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/organization': {
+      id: '/_app/organization'
+      path: '/organization'
+      fullPath: '/organization'
+      preLoaderRoute: typeof AppOrganizationRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/settings': {
+      id: '/_app/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AppSettingsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_auth/signin': {
+      id: '/_auth/signin'
+      path: '/signin'
+      fullPath: '/signin'
+      preLoaderRoute: typeof AuthSigninRouteImport
+      parentRoute: typeof AuthRoute
+    }
+    '/_auth/signup': {
+      id: '/_auth/signup'
+      path: '/signup'
+      fullPath: '/signup'
+      preLoaderRoute: typeof AuthSignupRouteImport
+      parentRoute: typeof AuthRoute
+    }
+    '/accept-invitation/$invitationId': {
+      id: '/accept-invitation/$invitationId'
+      path: '/accept-invitation/$invitationId'
+      fullPath: '/accept-invitation/$invitationId'
+      preLoaderRoute: typeof AcceptInvitationInvitationIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_app/admin/': {
+      id: '/_app/admin/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AppAdminIndexRouteImport
+      parentRoute: typeof AppAdminRoute
+    }
+    '/_app/admin/organizations': {
+      id: '/_app/admin/organizations'
+      path: '/organizations'
+      fullPath: '/admin/organizations'
+      preLoaderRoute: typeof AppAdminOrganizationsRouteImport
+      parentRoute: typeof AppAdminRoute
+    }
+    '/_app/projects/': {
+      id: '/_app/projects/'
+      path: '/projects'
+      fullPath: '/projects/'
+      preLoaderRoute: typeof AppProjectsIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -65,11 +338,78 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app/projects/$projectId/': {
+      id: '/_app/projects/$projectId/'
+      path: '/projects/$projectId'
+      fullPath: '/projects/$projectId/'
+      preLoaderRoute: typeof AppProjectsProjectIdIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/projects/$projectId/tests/$testCaseId': {
+      id: '/_app/projects/$projectId/tests/$testCaseId'
+      path: '/projects/$projectId/tests/$testCaseId'
+      fullPath: '/projects/$projectId/tests/$testCaseId'
+      preLoaderRoute: typeof AppProjectsProjectIdTestsTestCaseIdRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
+interface AppAdminRouteChildren {
+  AppAdminOrganizationsRoute: typeof AppAdminOrganizationsRoute
+  AppAdminIndexRoute: typeof AppAdminIndexRoute
+}
+
+const AppAdminRouteChildren: AppAdminRouteChildren = {
+  AppAdminOrganizationsRoute: AppAdminOrganizationsRoute,
+  AppAdminIndexRoute: AppAdminIndexRoute,
+}
+
+const AppAdminRouteWithChildren = AppAdminRoute._addFileChildren(
+  AppAdminRouteChildren,
+)
+
+interface AppRouteChildren {
+  AppAdminRoute: typeof AppAdminRouteWithChildren
+  AppDashboardRoute: typeof AppDashboardRoute
+  AppOrganizationRoute: typeof AppOrganizationRoute
+  AppSettingsRoute: typeof AppSettingsRoute
+  AppProjectsIndexRoute: typeof AppProjectsIndexRoute
+  AppProjectsProjectIdIndexRoute: typeof AppProjectsProjectIdIndexRoute
+  AppProjectsProjectIdTestsTestCaseIdRoute: typeof AppProjectsProjectIdTestsTestCaseIdRoute
+}
+
+const AppRouteChildren: AppRouteChildren = {
+  AppAdminRoute: AppAdminRouteWithChildren,
+  AppDashboardRoute: AppDashboardRoute,
+  AppOrganizationRoute: AppOrganizationRoute,
+  AppSettingsRoute: AppSettingsRoute,
+  AppProjectsIndexRoute: AppProjectsIndexRoute,
+  AppProjectsProjectIdIndexRoute: AppProjectsProjectIdIndexRoute,
+  AppProjectsProjectIdTestsTestCaseIdRoute:
+    AppProjectsProjectIdTestsTestCaseIdRoute,
+}
+
+const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
+
+interface AuthRouteChildren {
+  AuthSigninRoute: typeof AuthSigninRoute
+  AuthSignupRoute: typeof AuthSignupRoute
+}
+
+const AuthRouteChildren: AuthRouteChildren = {
+  AuthSigninRoute: AuthSigninRoute,
+  AuthSignupRoute: AuthSignupRoute,
+}
+
+const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AppRoute: AppRouteWithChildren,
+  AuthRoute: AuthRouteWithChildren,
+  OnboardingRoute: OnboardingRoute,
+  AcceptInvitationInvitationIdRoute: AcceptInvitationInvitationIdRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }
 export const routeTree = rootRouteImport

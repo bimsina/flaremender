@@ -9,6 +9,8 @@
     "builtin": true
   },
   "ignorePatterns": [
+    ".claude/**",
+    ".agents/**",
     "**/routeTree.gen.ts",
     "worker-configuration.d.ts",
     "migrations/**",
