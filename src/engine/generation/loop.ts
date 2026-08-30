@@ -39,9 +39,11 @@ import {
 } from '#/engine/generation/prompts.ts'
 import {
   assembleScript,
+  detectNavigationChurn,
   detectReplay,
   hasAssertions,
   rejectFragment,
+  rejectUnsafeInteraction,
   statementsOf,
   wrapFragment,
 } from '#/engine/generation/script.ts'
@@ -75,6 +77,12 @@ export const MAX_CONSECUTIVE_FAILURES = 3
 /** And a ceiling across the whole job, for a model that keeps recovering badly. */
 export const MAX_TOTAL_FAILURES = 10
 
+/**
+ * How many fragments may fail back to back before looking at the page again is
+ * compulsory rather than merely advised.
+ */
+export const OBSERVE_AFTER_FAILURES = 2
+
 /** How many tool results keep their page tree and script listing in full. */
 const OBSERVATIONS_KEPT_IN_FULL = 2
 
@@ -98,6 +106,14 @@ export interface TurnInput {
   /** The project's model choice, or null to fall through the resolution chain. */
   projectModelId: string | null
   baseUrl: string
+  /**
+   * What the script is supposed to prove. Restated after every step, because
+   * the goal is stated once in the opening message and then sits behind a
+   * growing transcript — and a model that has lost the thread starts exploring
+   * the site instead of performing the flow.
+   */
+  intentTitle: string
+  intentDescription: string
   sessionId: string
   /** The whole transcript so far. Accumulated by the workflow, not stored here. */
   messages: Array<ModelMessage>
@@ -115,6 +131,12 @@ export interface TurnInput {
    * stop, and refusing every time would spend the whole turn budget arguing.
    */
   refusedFinish: boolean
+  /**
+   * Whether the page has been looked at since the last fragment failed. Carried
+   * across turns because a turn can end on a failure, and the rule it feeds is
+   * about the *flow*, not about one `generateText` call.
+   */
+  observedSinceFailure: boolean
 }
 
 export interface TurnResult {
@@ -138,6 +160,7 @@ export interface TurnResult {
   notes: string | null
   failures: TurnFailures
   refusedFinish: boolean
+  observedSinceFailure: boolean
   modelId: string
   /**
    * Set when the loop cannot continue at all — a browser that will not come
@@ -251,14 +274,17 @@ function describeSteps(response: ActResponse): Array<string> {
  * failure `detectReplay` exists to catch. Showing it the accumulated statements
  * removes the reason to hedge, so the guard rarely has to fire.
  */
-function describeScript(fragments: Array<string>): string {
+function describeScript(fragments: Array<string>, goal: string): string {
   const statements = fragments.flatMap(statementsOf)
 
-  if (statements.length === 0) return 'The script is still empty.'
+  const listing =
+    statements.length === 0
+      ? 'The script is still empty.'
+      : `The script now contains these statements, in this order, and the browser is in the state they left it in. Do not send any of them again — send only what comes next:\n${statements
+          .map((statement, index) => `${index + 1}. ${statement}`)
+          .join('\n')}`
 
-  return `The script now contains these statements, in this order, and the browser is in the state they left it in. Do not send any of them again — send only what comes next:\n${statements
-    .map((statement, index) => `${index + 1}. ${statement}`)
-    .join('\n')}`
+  return `${listing}\n\nWhat this script has to prove: ${goal}\n\nAsk yourself what a person carrying that out would do next, and send that one step. When the flow is done, the script must end with assertions that would fail if the behaviour broke — then call finish.`
 }
 
 export async function runTurn(env: Cloudflare.Env, input: TurnInput): Promise<TurnResult> {
@@ -276,8 +302,12 @@ export async function runTurn(env: Cloudflare.Env, input: TurnInput): Promise<Tu
     notes: null as string | null,
     failures: { ...input.failures },
     refusedFinish: input.refusedFinish,
+    observedSinceFailure: input.observedSinceFailure,
     fatal: null as string | null,
   }
+
+  /** One line the model is shown after every step, so the target never fades. */
+  const goal = `${input.intentTitle} — ${input.intentDescription}`
 
   const narrate = (line: string) =>
     announceRun(env, input.jobId, {
@@ -377,6 +407,7 @@ export async function runTurn(env: Cloudflare.Env, input: TurnInput): Promise<Tu
           ...browserOptions,
           sessionId: state.sessionId,
         })
+        state.observedSinceFailure = true
         return { page: describePage(retry.observation) }
       }
 
@@ -384,9 +415,26 @@ export async function runTurn(env: Cloudflare.Env, input: TurnInput): Promise<Tu
         return { error: response.errorMessage ?? 'The page could not be read.' }
       }
 
+      state.observedSinceFailure = true
       return { page: formatObservation(response.observation) }
     },
   })
+
+  /**
+   * Makes the model look before guessing again.
+   *
+   * One failed fragment is a wrong locator. Two in a row is almost always a
+   * wrong *page* — the flow is not where the model thinks it is, and every
+   * further attempt written from memory compounds the mistake into the script.
+   * Observing is one cheap call that replaces the assumption with the page, and
+   * requiring it here costs far less than the fragments it prevents.
+   */
+  function mustObserveFirst(): string | null {
+    if (state.failures.consecutive < OBSERVE_AFTER_FAILURES) return null
+    if (state.observedSinceFailure) return null
+
+    return `Two fragments in a row have failed and the page has not been looked at since. That usually means the flow is not on the page you think it is. Call \`observe\` first, then act on what it actually shows.`
+  }
 
   const actTool = tool({
     description:
@@ -413,11 +461,15 @@ export async function runTurn(env: Cloudflare.Env, input: TurnInput): Promise<Tu
 
       const verifiedSoFar = [...input.verified, ...state.fragments]
 
-      // Both are refusals rather than failures of the page, so neither costs a
-      // browser round trip and both come back with enough for the model to fix
-      // itself on the next call.
+      // Refusals rather than failures of the page: none costs a browser round
+      // trip, and each comes back with enough for the model to fix itself on
+      // the next call.
       const complaint =
-        rejectFragment(code, MAX_FRAGMENT_CHARS) ?? detectReplay(code, verifiedSoFar)
+        rejectFragment(code, MAX_FRAGMENT_CHARS) ??
+        rejectUnsafeInteraction(code) ??
+        detectReplay(code, verifiedSoFar) ??
+        detectNavigationChurn(code, verifiedSoFar) ??
+        mustObserveFirst()
 
       if (complaint) {
         state.failures.total += 1
@@ -444,6 +496,9 @@ export async function runTurn(env: Cloudflare.Env, input: TurnInput): Promise<Tu
       if (!response.ok) {
         state.failures.total += 1
         state.failures.consecutive += 1
+        // The page moved, or was never where it was thought to be. Either way
+        // what the model believes about it is now suspect.
+        state.observedSinceFailure = false
 
         const advice =
           state.failures.consecutive >= MAX_CONSECUTIVE_FAILURES
@@ -455,7 +510,7 @@ export async function runTurn(env: Cloudflare.Env, input: TurnInput): Promise<Tu
           error: `${response.errorMessage ?? 'The fragment failed.'}${advice}`,
           steps: describeSteps(response),
           page: describePage(response.observation),
-          script: describeScript(verifiedSoFar),
+          script: describeScript(verifiedSoFar, goal),
         }
       }
 
@@ -466,7 +521,7 @@ export async function runTurn(env: Cloudflare.Env, input: TurnInput): Promise<Tu
         ok: true,
         steps: describeSteps(response),
         page: describePage(response.observation),
-        script: describeScript([...verifiedSoFar, code.trim()]),
+        script: describeScript([...verifiedSoFar, code.trim()], goal),
       }
     },
   })
@@ -534,6 +589,7 @@ export async function runTurn(env: Cloudflare.Env, input: TurnInput): Promise<Tu
     notes: state.notes,
     failures: state.failures,
     refusedFinish: state.refusedFinish,
+    observedSinceFailure: state.observedSinceFailure,
     modelId: resolved.modelId,
     fatal: state.fatal,
     usage: {

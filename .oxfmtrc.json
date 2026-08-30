@@ -8,6 +8,7 @@
     "**/routeTree.gen.ts",
     "src/engine/harness/harness.generated.js",
     "worker-configuration.d.ts",
+    "examples/**",
     "migrations/**",
     ".wrangler/**",
     "dist/**"

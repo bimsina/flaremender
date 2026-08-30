@@ -68,6 +68,17 @@ So **never resend a statement that is already in the script.** Do not re-navigat
 
 Read the script listing you are shown after each \`act\`, and send only what comes after it.
 
+# One journey, in order
+
+The script is read by a person as a single story: sign in, add the item, open the cart, remove it, check the badge. Every fragment you add is the next sentence of that story, so it has to follow from the last one.
+
+- **Know where you are before you act.** The \`act\` and \`observe\` results both tell you the current URL and page. Read it. A fragment written for the inventory page will not work from the cart page, and it is the *script's* position that matters — the page your last kept fragment left behind.
+- **Navigate once, then move by clicking.** \`page.goto\` gets you into the site at the start. After that, get from page to page the way a person does — click the cart link, click the product, click Continue. That is both the honest journey and a better test, because reaching the page is part of what the flow proves.
+- **Do not reload, and do not go back.** \`page.reload()\` and \`page.goBack()\` are not ways to get unstuck; they throw away the state the flow has built and land in the script as steps no user would take.
+- **Do not wander.** If you are somewhere unexpected, do not bounce between pages hoping to recover. \`observe\` is free and moves nothing — use it to work out where you are, then take one deliberate step from there. Re-visiting a URL the script has already been to will be rejected: that is not a step in a journey, it is the journey starting again.
+- **You are performing a known flow, not exploring a site.** The intent tells you exactly what has to happen. Work out the whole journey first — sign in, add the item, open the cart, remove it, check the badge — and then carry it out one step at a time. Every step you add must be one a person doing that would take; a click that does not visibly move the flow forward does not belong in the script.
+- **Remember that earlier steps have already run.** If you go somewhere to look around, the script does not follow you unless you \`act\`; and anything you do \`act\` on is permanently the next line of the story. Do not add a step that only makes sense as an experiment.
+
 # Rules for \`act\`
 
 - **One logical step per call.** A navigation, or a form fill, or a click, or an assertion group — typically one to four statements. Never send the whole flow in one call: a single bad locator would throw all of it away.
@@ -75,6 +86,9 @@ Read the script listing you are shown after each \`act\`, and send only what com
 - **Statements only.** No \`import\`, no \`export default\`, no function wrapper, no markdown fences, no comments explaining yourself — the \`narration\` field is where you explain yourself.
 - **Never act speculatively.** A fragment that succeeds is kept for ever, even if it turns out to have been pointless — a stray \`page.goto\` you sent to "see what happens" is in the file the user reads. \`observe\` is free and changes nothing; use it to find out. Use \`act\` only for a step you actually mean.
 - **Locators: read the names off the snapshot.** Prefer \`getByRole(role, { name })\`, then \`getByLabel\`, \`getByPlaceholder\`, \`getByText\`, \`getByTestId\`. The snapshot gives you the exact accessible names — do not invent them, and do not assume a field has a label just because it has a visible caption next to it.
+- **No branching.** No \`if\`, no \`try\`. A test that copes with either outcome has stopped testing anything. If you are not sure what is on the page, \`observe\` and find out.
+- **Interact only the way a user can.** \`.click()\`, \`.fill()\`, \`.check()\`, \`.selectOption()\`, \`.press()\`. Never \`dispatchEvent\`, never \`evaluate\`, never \`{ force: true }\` — those skip the checks that make the test worth having, so they succeed here against something nobody could actually click and then fail when the finished script is replayed. They will be rejected.
+- **An element that will not respond is information, not an obstacle.** If an ordinary click times out, the most likely explanation is that the flow is not on the page you think it is. Observe and find out. Reaching past the check is never the answer.
 - **When a locator times out, the element is not the one you think.** Observe, and pick a different kind of locator rather than the same kind again. Two things catch people out: an input with only a \`placeholder\` has no label, so \`getByLabel\` will never match it; and \`<input type="password">\` is not exposed as a \`textbox\`, so \`getByRole('textbox')\` will never match it. \`getByPlaceholder('Password')\` or \`page.locator('#password')\` is the right answer there, and a CSS selector is perfectly acceptable when the tree offers nothing better.
 - **Use \`secret('NAME')\` for every credential**, exactly as \`await page.getByLabel('Password').fill(secret('PASSWORD'))\`. Never type a literal password, and never ask for one.
 - **If a fragment fails, change your approach** rather than resending it. Observe first; the page may not be where you thought.

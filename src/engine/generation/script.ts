@@ -132,6 +132,126 @@ export function detectReplay(fragment: string, verified: Array<string>): string 
 }
 
 /**
+ * Ways of touching the page that a real user has no access to.
+ *
+ * Each of these makes a fragment *more* likely to be kept and *less* likely to
+ * survive, which is the worst possible combination for a loop whose whole
+ * premise is "keep only what worked":
+ *
+ * - `dispatchEvent('click')` fires the event straight at the node, skipping
+ *   Playwright's actionability checks — visible, stable, enabled, unobscured.
+ *   So it succeeds against a button that is covered, disabled or on a page the
+ *   flow has already left, the fragment is appended, and the honest `.click()`
+ *   in the replayed script then times out on exactly that element.
+ * - `evaluate` does the same thing with more room: `el => el.click()` inside
+ *   the page bypasses every check there is.
+ * - `force: true` is the option that says "skip the checks" out loud.
+ *
+ * The important part is not that these are unusual — it is that a failure to
+ * click is *information*. An element a user could not interact with means the
+ * flow is on the wrong page or in the wrong state, and the right response is to
+ * look, not to reach past the check and carry on building on a lie.
+ *
+ * Read-only uses of `evaluate` are collateral damage. They are rare in an
+ * end-to-end test, a locator assertion says the same thing better, and the
+ * refusal explains itself — which is much cheaper than the class of silent
+ * failure it prevents.
+ */
+const UNSAFE_INTERACTIONS: Array<{ pattern: RegExp; complaint: string }> = [
+  {
+    pattern: /\.dispatchEvent\s*\(/,
+    complaint:
+      '`dispatchEvent` fires the event directly at the element and skips every actionability check, so it can "work" here against something a real user could not click — and the plain `.click()` in the saved script will then time out on it. Use `.click()`, `.fill()`, `.check()` and friends.',
+  },
+  {
+    pattern: /\.evaluate(?:Handle)?\s*\(/,
+    complaint:
+      'Do not drive the page through `evaluate` — code running inside the page bypasses the actionability checks that make a test meaningful. Interact through locators (`.click()`, `.fill()`, `.selectOption()`) and assert through `expect(locator)`.',
+  },
+  {
+    pattern: /force\s*:\s*true/,
+    complaint:
+      '`force: true` disables the actionability checks. If an element needs forcing, a real user could not have used it, and the test would not have caught the bug you are writing it for.',
+  },
+  {
+    pattern: /^\s*(if|try)\s*[({]/m,
+    complaint:
+      'No `if` or `try` in a test. Branching on what happens to be on the page means the test passes either way, which is the same as not testing it — and it is a sign you are unsure where the flow is rather than a property of the flow. Find out with `observe`, then write the step for the page that is actually there.',
+  },
+]
+
+/**
+ * Refuses the shortcuts that make a fragment pass here and fail on replay.
+ *
+ * Separate from `rejectFragment` because the reasoning is different: those are
+ * fragments that cannot run at all, these are fragments that run *too easily*.
+ */
+export function rejectUnsafeInteraction(fragment: string): string | null {
+  for (const { pattern, complaint } of UNSAFE_INTERACTIONS) {
+    if (pattern.test(fragment)) {
+      return `${complaint}\n\nIf the element genuinely will not respond to an ordinary click, that is the page telling you something: you are probably not where you think you are. Observe, work out which page the flow is actually on, and act from there.`
+    }
+  }
+
+  return null
+}
+
+/** `page.goto('…')` / `page.reload()` / `page.goBack()` and friends. */
+const NAVIGATION = /\bpage\s*\.\s*(goto|reload|goBack|goForward)\s*\(/
+const GOTO_TARGET = /\bpage\s*\.\s*goto\s*\(\s*['"`]([^'"`]*)['"`]/g
+
+/**
+ * Stops the loop from browsing around inside the script it is writing.
+ *
+ * The asymmetry that causes this is real and worth naming: `observe` cannot
+ * move the page, so the *only* way for the model to go and look at somewhere
+ * else is `act` — and every successful `act` is appended for ever. A model that
+ * is unsure where the cart is will therefore go and find out, and the finished
+ * script carries its entire search: `/` → `/inventory.html` → `/cart.html` →
+ * `/inventory.html`, none of which a user would ever do, all of which passed
+ * when they ran, and which together leave the flow somewhere the next fragment
+ * was not written for.
+ *
+ * So a fragment that *only* navigates is held to a much stricter rule than one
+ * that does something: it may go somewhere new, but it may not go back
+ * anywhere, and it may not reload. A test gets in through one navigation and
+ * then moves the way a person does — by clicking the thing that takes them
+ * there. That is also a better test, because the navigation itself is part of
+ * what the flow is supposed to prove.
+ *
+ * Fragments that navigate *and* then do or check something are left alone: that
+ * is a coherent step, not a search.
+ */
+export function detectNavigationChurn(fragment: string, verified: Array<string>): string | null {
+  const statements = statementsOf(fragment)
+  if (statements.length === 0) return null
+
+  // Only pure movement is suspect. A navigation that comes with work attached
+  // is the model going somewhere on purpose.
+  if (!statements.every((statement) => NAVIGATION.test(statement))) return null
+
+  if (/\bpage\s*\.\s*(reload|goBack|goForward)\s*\(/.test(fragment)) {
+    return 'Do not reload or go back to get your bearings — it throws away the state the flow has built up, and it lands in the saved script as a step no user would take. If you need to see where you are, `observe`. If the flow genuinely needs to be somewhere else, click the link that takes a person there.'
+  }
+
+  const visited = new Set(
+    verified.flatMap((entry) => [...entry.matchAll(GOTO_TARGET)].map((match) => match[1])),
+  )
+
+  const revisits = [...fragment.matchAll(GOTO_TARGET)]
+    .map((match) => match[1])
+    .filter((target) => visited.has(target!))
+
+  if (revisits.length === 0) return null
+
+  return `The script has already navigated to ${revisits
+    .map((target) => `\`${target}\``)
+    .join(
+      ', ',
+    )}, so going back there is not a step in the journey — it is the flow starting over, and it will leave the browser somewhere the steps after it are not written for. Move the way a user would: click the link or button that goes there. Use \`observe\` if you only want to see where you are.`
+}
+
+/**
  * Rejects a fragment before it costs a browser round trip.
  *
  * Only the two shapes that cannot possibly work are refused: a module wrapper

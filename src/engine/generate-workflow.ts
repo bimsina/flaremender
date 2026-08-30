@@ -120,6 +120,7 @@ export class GenerateWorkflow extends WorkflowEntrypoint<Cloudflare.Env, Generat
       const fragments: Array<string> = []
       let failures = { total: 0, consecutive: 0 }
       let refusedFinish = false
+      let observedSinceFailure = true
       let stepIndexOffset = 0
       let modelId: string | null = null
       let notes: string | null = null
@@ -133,6 +134,8 @@ export class GenerateWorkflow extends WorkflowEntrypoint<Cloudflare.Env, Generat
             environmentId: loaded.environmentId,
             projectModelId: loaded.projectModelId,
             baseUrl: loaded.baseUrl,
+            intentTitle: loaded.intentTitle,
+            intentDescription: loaded.intentDescription,
             sessionId: sessionId!,
             messages: [
               { role: 'user', content: opening.prompt },
@@ -142,6 +145,7 @@ export class GenerateWorkflow extends WorkflowEntrypoint<Cloudflare.Env, Generat
             stepIndexOffset,
             failures,
             refusedFinish,
+            observedSinceFailure,
           }),
         )
 
@@ -152,6 +156,7 @@ export class GenerateWorkflow extends WorkflowEntrypoint<Cloudflare.Env, Generat
         stepIndexOffset = result.stepIndexOffset
         failures = result.failures
         refusedFinish = result.refusedFinish
+        observedSinceFailure = result.observedSinceFailure
         modelId = result.modelId
         notes = result.notes ?? notes
         fatal = result.fatal
