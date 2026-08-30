@@ -17,11 +17,14 @@ import {
 
 /**
  * Idle timeout for the Browser Rendering session (the service accepts
- * 10s–600s). Deliberately short: it is the only thing that reclaims a session
- * whose run died before `close()`, and concurrent sessions are a hard quota —
- * a leaked one costs the next run a `429`.
+ * 10s–600s; there is no total-lifetime cap — only inactivity kills a session).
+ * Maxed out so a script's own long waits never race the platform; the
+ * whole-script budget in the harness is what bounds a run, and it fails with a
+ * readable timeout instead of a dead session. The cost is a longer reclaim for
+ * a session leaked by an isolate crash — rare, and `close()` in the harness's
+ * `finally` plus the host's cleanup cover the normal paths.
  */
-export const KEEP_ALIVE_MS = 120_000
+export const KEEP_ALIVE_MS = 600_000
 
 /** Per-action ceiling. The whole-script budget is enforced separately. */
 export const DEFAULT_ACTION_TIMEOUT_MS = 30_000

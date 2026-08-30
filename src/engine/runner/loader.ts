@@ -26,8 +26,13 @@ const HARNESS_COMPATIBILITY_DATE = '2026-08-01'
 const HARNESS_MODULE = 'harness.js'
 const SCRIPT_MODULE = 'user-script.js'
 
-/** Whole-script budget. Workflow steps have no wall-clock limit; runs need one. */
-export const DEFAULT_SCRIPT_TIMEOUT_MS = 180_000
+/**
+ * Whole-script budget. Workflow steps have no wall-clock limit; runs need one.
+ * Must stay below the session keep-alive (so the budget fires before idle
+ * death) and the workflow's execute-step timeout (so the failure is a result,
+ * not a step error). Fixed for now; a per-intent override is a later add.
+ */
+export const DEFAULT_SCRIPT_TIMEOUT_MS = 300_000
 
 /** The subset of the harness entrypoint the host calls. */
 interface HarnessStub {
