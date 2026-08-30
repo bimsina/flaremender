@@ -31,6 +31,7 @@ import { Route as AppProjectsProjectIdIndexRouteImport } from './routes/_app.pro
 import { Route as ApiSpikeLoaderIndexRouteImport } from './routes/api/spike/loader/index'
 import { Route as AppProjectsProjectIdIntentsIntentIdRouteImport } from './routes/_app.projects.$projectId.intents.$intentId'
 import { Route as AppProjectsProjectIdRunsRunIdRouteImport } from './routes/_app.projects.$projectId.runs.$runId'
+import { Route as AppProjectsProjectIdRunsRunIdTraceRouteImport } from './routes/_app.projects.$projectId.runs.$runId_.trace'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -144,6 +145,12 @@ const AppProjectsProjectIdRunsRunIdRoute =
     path: '/projects/$projectId/runs/$runId',
     getParentRoute: () => AppRoute,
   } as any)
+const AppProjectsProjectIdRunsRunIdTraceRoute =
+  AppProjectsProjectIdRunsRunIdTraceRouteImport.update({
+    id: '/projects/$projectId/runs/$runId_/trace',
+    path: '/projects/$projectId/runs/$runId/trace',
+    getParentRoute: () => AppRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -166,6 +173,7 @@ export interface FileRoutesByFullPath {
   '/api/spike/loader/': typeof ApiSpikeLoaderIndexRoute
   '/projects/$projectId/intents/$intentId': typeof AppProjectsProjectIdIntentsIntentIdRoute
   '/projects/$projectId/runs/$runId': typeof AppProjectsProjectIdRunsRunIdRoute
+  '/projects/$projectId/runs/$runId/trace': typeof AppProjectsProjectIdRunsRunIdTraceRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -187,6 +195,7 @@ export interface FileRoutesByTo {
   '/api/spike/loader': typeof ApiSpikeLoaderIndexRoute
   '/projects/$projectId/intents/$intentId': typeof AppProjectsProjectIdIntentsIntentIdRoute
   '/projects/$projectId/runs/$runId': typeof AppProjectsProjectIdRunsRunIdRoute
+  '/projects/$projectId/runs/$runId/trace': typeof AppProjectsProjectIdRunsRunIdTraceRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -212,6 +221,7 @@ export interface FileRoutesById {
   '/api/spike/loader/': typeof ApiSpikeLoaderIndexRoute
   '/_app/projects/$projectId/intents/$intentId': typeof AppProjectsProjectIdIntentsIntentIdRoute
   '/_app/projects/$projectId/runs/$runId': typeof AppProjectsProjectIdRunsRunIdRoute
+  '/_app/projects/$projectId/runs/$runId_/trace': typeof AppProjectsProjectIdRunsRunIdTraceRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -236,6 +246,7 @@ export interface FileRouteTypes {
     | '/api/spike/loader/'
     | '/projects/$projectId/intents/$intentId'
     | '/projects/$projectId/runs/$runId'
+    | '/projects/$projectId/runs/$runId/trace'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -257,6 +268,7 @@ export interface FileRouteTypes {
     | '/api/spike/loader'
     | '/projects/$projectId/intents/$intentId'
     | '/projects/$projectId/runs/$runId'
+    | '/projects/$projectId/runs/$runId/trace'
   id:
     | '__root__'
     | '/'
@@ -281,6 +293,7 @@ export interface FileRouteTypes {
     | '/api/spike/loader/'
     | '/_app/projects/$projectId/intents/$intentId'
     | '/_app/projects/$projectId/runs/$runId'
+    | '/_app/projects/$projectId/runs/$runId_/trace'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -452,6 +465,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProjectsProjectIdRunsRunIdRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/projects/$projectId/runs/$runId_/trace': {
+      id: '/_app/projects/$projectId/runs/$runId_/trace'
+      path: '/projects/$projectId/runs/$runId/trace'
+      fullPath: '/projects/$projectId/runs/$runId/trace'
+      preLoaderRoute: typeof AppProjectsProjectIdRunsRunIdTraceRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
@@ -478,6 +498,7 @@ interface AppRouteChildren {
   AppProjectsProjectIdIndexRoute: typeof AppProjectsProjectIdIndexRoute
   AppProjectsProjectIdIntentsIntentIdRoute: typeof AppProjectsProjectIdIntentsIntentIdRoute
   AppProjectsProjectIdRunsRunIdRoute: typeof AppProjectsProjectIdRunsRunIdRoute
+  AppProjectsProjectIdRunsRunIdTraceRoute: typeof AppProjectsProjectIdRunsRunIdTraceRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
@@ -490,6 +511,8 @@ const AppRouteChildren: AppRouteChildren = {
   AppProjectsProjectIdIntentsIntentIdRoute:
     AppProjectsProjectIdIntentsIntentIdRoute,
   AppProjectsProjectIdRunsRunIdRoute: AppProjectsProjectIdRunsRunIdRoute,
+  AppProjectsProjectIdRunsRunIdTraceRoute:
+    AppProjectsProjectIdRunsRunIdTraceRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)

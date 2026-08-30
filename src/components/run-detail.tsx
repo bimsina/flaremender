@@ -33,7 +33,6 @@ import { SummaryStrip } from '#/components/summary-strip.tsx'
 import type { ArtifactKeys, RunStatus, RunTrigger } from '#/db/schema/app.ts'
 import { runQuery } from '#/lib/queries.ts'
 import { parseTranscript } from '#/lib/transcript.ts'
-import { getSignedArtifactUrl } from '#/server/runs.ts'
 
 export interface RunDetailAttempt {
   id: string
@@ -136,6 +135,7 @@ export function RunDetail({
         <AttemptDetail
           key={attempt.id}
           runId={data.run.id}
+          projectId={projectId}
           attempt={attempt}
           environmentName={data.environment.name}
           showAttemptNumber={data.attempts.length > 1}
@@ -251,12 +251,14 @@ const OUTCOME_BADGE = {
 
 function AttemptDetail({
   runId,
+  projectId,
   attempt,
   environmentName,
   showAttemptNumber,
   showSummary,
 }: {
   runId: string
+  projectId: string
   attempt: RunDetailAttempt
   environmentName: string
   /** Only worth a row of its own once the healing loop retries within a run. */
@@ -370,7 +372,7 @@ function AttemptDetail({
         ) : (
           artifacts.map(([kind, key]) =>
             kind === 'trace' ? (
-              <TraceActions key={kind} runId={runId} artifactKey={key} />
+              <TraceActions key={kind} runId={runId} projectId={projectId} artifactKey={key} />
             ) : (
               <a key={kind} href={artifactHref(key)} target="_blank" rel="noreferrer">
                 <Button variant="secondary" size="sm" icon={ARTIFACT_LABELS[kind].icon}>
@@ -400,43 +402,19 @@ function AttemptDetail({
 /**
  * The two things anyone does with a trace: keep it, or look at it.
  *
- * "Open in Trace Viewer" hands trace.playwright.dev a signed, ten-minute URL to
- * this app and lets it fetch the zip itself. Nothing is uploaded anywhere — the
- * viewer is a static page and the request goes browser → this app — so this
- * works from a laptop on localhost and from a private deployment behind a VPN
- * alike, as long as the browser looking at the viewer can also reach this app.
+ * "Open in Trace Viewer" goes to the run's trace page, which embeds
+ * Playwright's own viewer self-hosted under `/pw-trace` — full page, linkable,
+ * and nothing about the trace leaves this app.
  */
-function TraceActions({ runId, artifactKey }: { runId: string; artifactKey: string }) {
-  const [opening, setOpening] = useState(false)
-  const [failed, setFailed] = useState(false)
-
-  async function openViewer() {
-    // Opened before the await, while the click is still the reason a window is
-    // appearing: a popup blocker judges by what started the task, not by what
-    // finished it.
-    const tab = window.open('', '_blank')
-    setOpening(true)
-    setFailed(false)
-
-    try {
-      const { url } = await getSignedArtifactUrl({ data: { runId, key: artifactKey } })
-      const absolute = new URL(url, window.location.origin).toString()
-      const viewer = `https://trace.playwright.dev/?trace=${encodeURIComponent(absolute)}`
-
-      if (tab) {
-        tab.opener = null
-        tab.location.replace(viewer)
-      } else {
-        window.open(viewer, '_blank', 'noopener,noreferrer')
-      }
-    } catch {
-      tab?.close()
-      setFailed(true)
-    } finally {
-      setOpening(false)
-    }
-  }
-
+function TraceActions({
+  runId,
+  projectId,
+  artifactKey,
+}: {
+  runId: string
+  projectId: string
+  artifactKey: string
+}) {
   return (
     <>
       <a href={artifactHref(artifactKey)} target="_blank" rel="noreferrer">
@@ -444,18 +422,15 @@ function TraceActions({ runId, artifactKey }: { runId: string; artifactKey: stri
           Download trace
         </Button>
       </a>
-      <Button
-        variant="secondary"
-        size="sm"
-        loading={opening}
-        icon={<WaveformIcon size={14} />}
-        onClick={() => void openViewer()}
+      <Link
+        to="/projects/$projectId/runs/$runId/trace"
+        params={{ projectId, runId }}
+        search={{ key: artifactKey }}
       >
-        Open in Trace Viewer
-      </Button>
-      {failed ? (
-        <span className="text-xs text-kumo-danger">Could not sign that link — try again.</span>
-      ) : null}
+        <Button variant="secondary" size="sm" icon={<WaveformIcon size={14} />}>
+          Open in Trace Viewer
+        </Button>
+      </Link>
     </>
   )
 }

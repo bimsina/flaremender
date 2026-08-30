@@ -6,10 +6,11 @@
     "#/*": "./src/*"
   },
   "scripts": {
-    "dev": "pnpm run harness && vite dev --port 3000",
+    "dev": "pnpm run harness && pnpm run trace-viewer && vite dev --port 3000",
     "harness": "node scripts/build-harness.mjs",
+    "trace-viewer": "node scripts/sync-trace-viewer.mjs",
     "generate-routes": "tsr generate",
-    "build": "pnpm run harness && vite build",
+    "build": "pnpm run harness && pnpm run trace-viewer && vite build",
     "preview": "vite preview",
     "deploy": "pnpm run build && wrangler deploy",
     "cf-typegen": "wrangler types",
@@ -67,6 +68,7 @@
     "esbuild": "0.28.2",
     "oxfmt": "0.65.0",
     "oxlint": "1.80.0",
+    "playwright-core": "1.58.2",
     "tsx": "4.23.12",
     "typescript": "6.0.3",
     "vite": "8.2.2",
