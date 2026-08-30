@@ -46,6 +46,7 @@
     "better-auth": "1.7.2",
     "drizzle-kit": "0.31.10",
     "drizzle-orm": "0.45.2",
+    "echarts": "^6.1.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "tailwindcss": "4.3.3"

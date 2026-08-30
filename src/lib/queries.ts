@@ -30,11 +30,18 @@ export const overviewQuery = () =>
     queryFn: () => getOrgOverview(),
   })
 
-/** The last fortnight of runs, one row per UTC day, for the dashboard strip. */
-export const runTrendQuery = () =>
+/**
+ * The last fortnight of runs, one row per UTC day, for the trend charts.
+ *
+ * With a project id it is the same window narrowed to that project, which is a
+ * different cache entry rather than a filter over the org-wide one — the server
+ * groups either shape in a single query, and a fortnight of one project cannot
+ * be recovered from a fortnight of all of them.
+ */
+export const runTrendQuery = (projectId?: string) =>
   queryOptions({
-    queryKey: ['run-trend'] as const,
-    queryFn: () => getDailyRunCounts(),
+    queryKey: ['run-trend', projectId ?? null] as const,
+    queryFn: () => getDailyRunCounts({ data: projectId ? { projectId } : {} }),
   })
 
 export const projectsQuery = () =>

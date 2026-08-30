@@ -35,6 +35,7 @@ import { Fragment, useMemo, useState } from 'react'
 
 import { CodeEditor } from '#/components/code-editor.tsx'
 import { Duration } from '#/components/duration.tsx'
+import { DurationTrend } from '#/components/duration-trend.tsx'
 import { ListRow, Section } from '#/components/list.tsx'
 import { PageBody, PageHeader } from '#/components/page.tsx'
 import { RelativeTime } from '#/components/relative-time.tsx'
@@ -578,6 +579,8 @@ function RunsTab({ projectId, runs }: { projectId: string; runs: Array<RunRowDat
     <Section title="Runs" description="Newest first. Open one for its steps and artifacts.">
       <div className="grid gap-4">
         <RunStatusSummary runs={runs} />
+
+        <DurationTrend runs={runs} />
 
         <LayerCard className="p-0">
           <div className="overflow-x-auto">

@@ -42,6 +42,7 @@ import {
   intentsQuery,
   projectQuery,
   projectRunsQuery,
+  runTrendQuery,
   suiteRunsQuery,
 } from '#/lib/queries.ts'
 import { createIntent, deleteIntent, runIntent } from '#/server/intents.ts'
@@ -80,6 +81,10 @@ export const Route = createFileRoute('/_app/projects/$projectId/')({
       }),
       context.queryClient.ensureQueryData({
         ...projectRunsQuery(params.projectId),
+        revalidateIfStale: true,
+      }),
+      context.queryClient.ensureQueryData({
+        ...runTrendQuery(params.projectId),
         revalidateIfStale: true,
       }),
     ])

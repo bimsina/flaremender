@@ -24,11 +24,12 @@ import { InlineEmpty, Section } from '#/components/list.tsx'
 import { RelativeTime } from '#/components/relative-time.tsx'
 import { RunDetailPanel } from '#/components/run-detail.tsx'
 import { RunStatusSummary } from '#/components/run-status-summary.tsx'
+import { RunTrend } from '#/components/run-trend.tsx'
 import { RunStatusBadge, SuiteRunStatusBadge } from '#/components/status-badge.tsx'
 import { SuiteProgress } from '#/components/suite-progress.tsx'
 import type { RunStatus, RunTrigger, SuiteRunStatus, SuiteTrigger } from '#/db/schema/app.ts'
 import { shortId } from '#/lib/ids.ts'
-import { projectRunsQuery, suiteRunQuery, suiteRunsQuery } from '#/lib/queries.ts'
+import { projectRunsQuery, runTrendQuery, suiteRunQuery, suiteRunsQuery } from '#/lib/queries.ts'
 
 const STATUS_FILTERS = {
   all: 'Any status',
@@ -121,6 +122,11 @@ export function ProjectRunsTab({
   const { data: recent } = useSuspenseQuery(projectRunsQuery(projectId))
   const { data: suiteRuns } = useSuspenseQuery(suiteRunsQuery(projectId))
 
+  // The trend is the project's own fortnight, counted server-side — not a
+  // roll-up of the window above, which is the newest fifty runs and could be
+  // an afternoon.
+  const { data: trend } = useSuspenseQuery(runTrendQuery(projectId))
+
   const { data: runs, isPending } = useQuery(
     projectRunsQuery(projectId, {
       status: status === 'all' || status === 'running' ? null : status,
@@ -180,6 +186,8 @@ export function ProjectRunsTab({
         ) : null}
 
         <RunStatusSummary runs={recent} />
+
+        <RunTrend days={trend} compact />
 
         <div className="flex flex-wrap items-center gap-2">
           <Select
