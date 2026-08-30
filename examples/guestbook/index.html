@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Guestbook</title>
+<style>
+  :root { color-scheme: light; font-family: system-ui, sans-serif; }
+  body { margin: 0; background: #f7f6f3; color: #21201c; display: grid; place-items: start center; min-height: 100svh; padding-top: 6vh; }
+  .card { background: #fff; border: 1px solid #e3e1da; border-radius: 10px; padding: 26px; width: min(460px, 92vw); }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p.sub { margin: 0 0 18px; color: #6b675e; font-size: 14px; }
+  label { display: block; font-size: 13px; font-weight: 600; margin: 10px 0 4px; }
+  input, textarea { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid #cfccc2; border-radius: 7px; font: inherit; font-size: 14px; }
+  textarea { resize: vertical; min-height: 60px; }
+  button { font: inherit; border-radius: 7px; border: 1px solid transparent; padding: 8px 14px; cursor: pointer; }
+  .primary { background: #7c5cff; color: #fff; font-weight: 600; margin-top: 14px; }
+  .ghost { background: none; border-color: #cfccc2; font-size: 13px; padding: 4px 9px; }
+  .error { color: #9b1c1c; font-size: 13px; margin-top: 8px; display: none; }
+  .error.show { display: block; }
+  ul { list-style: none; padding: 0; margin: 18px 0 0; }
+  li { border-top: 1px solid #eeece6; padding: 10px 2px; }
+  li .who { font-weight: 600; font-size: 13px; }
+  li .msg { font-size: 14px; margin: 3px 0 6px; }
+  .count { color: #6b675e; font-size: 13px; margin-top: 14px; }
+  .empty { color: #a09a8c; font-size: 14px; padding: 18px 0 6px; text-align: center; }
+</style>
+</head>
+<body>
+  <main class="card">
+    <h1>Guestbook</h1>
+    <p class="sub">Leave a note for the team.</p>
+    <form id="post-form">
+      <label for="name">Name</label>
+      <input id="name" type="text" placeholder="Ada Lovelace" />
+      <label for="message">Message</label>
+      <textarea id="message" placeholder="Say something nice"></textarea>
+      <div class="error" id="form-error" role="alert">Both a name and a message are required.</div>
+      <button class="primary" type="submit">Post message</button>
+    </form>
+    <ul id="entries" aria-label="Messages"></ul>
+    <div class="empty" id="empty">No messages yet. Be the first.</div>
+    <p class="count"><span id="msg-count">0</span> messages</p>
+  </main>
+<script>
+  let entries = []
+  const $ = (id) => document.getElementById(id)
+
+  function render() {
+    const ul = $('entries')
+    ul.innerHTML = ''
+    for (const e of entries) {
+      const li = document.createElement('li')
+      const who = document.createElement('div'); who.className = 'who'; who.textContent = e.name
+      const msg = document.createElement('div'); msg.className = 'msg'; msg.textContent = e.message
+      const del = document.createElement('button'); del.className = 'ghost'; del.textContent = 'Remove'
+      del.setAttribute('aria-label', 'Remove message from ' + e.name)
+      del.addEventListener('click', () => { entries = entries.filter((x) => x !== e); render() })
+      li.append(who, msg, del)
+      ul.append(li)
+    }
+    $('empty').style.display = entries.length ? 'none' : 'block'
+    $('msg-count').textContent = String(entries.length)
+  }
+
+  $('post-form').addEventListener('submit', (e) => {
+    e.preventDefault()
+    const name = $('name').value.trim()
+    const message = $('message').value.trim()
+    if (!name || !message) { $('form-error').classList.add('show'); return }
+    $('form-error').classList.remove('show')
+    entries.unshift({ name, message })
+    $('name').value = ''
+    $('message').value = ''
+    render()
+  })
+</script>
+</body>
+</html>
