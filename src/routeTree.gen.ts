@@ -24,7 +24,11 @@ import { Route as AppAdminIndexRouteImport } from './routes/_app.admin.index'
 import { Route as AppAdminOrganizationsRouteImport } from './routes/_app.admin.organizations'
 import { Route as AppProjectsIndexRouteImport } from './routes/_app.projects.index'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiSpikeBrowserRouteImport } from './routes/api/spike/browser'
+import { Route as ApiSpikeWorkflowRouteImport } from './routes/api/spike/workflow'
+import { Route as ApiSpikeWorkflowStatusRouteImport } from './routes/api/spike/workflow-status'
 import { Route as AppProjectsProjectIdIndexRouteImport } from './routes/_app.projects.$projectId.index'
+import { Route as ApiSpikeLoaderIndexRouteImport } from './routes/api/spike/loader/index'
 import { Route as AppProjectsProjectIdTestsTestCaseIdRouteImport } from './routes/_app.projects.$projectId.tests.$testCaseId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -101,12 +105,32 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSpikeBrowserRoute = ApiSpikeBrowserRouteImport.update({
+  id: '/api/spike/browser',
+  path: '/api/spike/browser',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSpikeWorkflowRoute = ApiSpikeWorkflowRouteImport.update({
+  id: '/api/spike/workflow',
+  path: '/api/spike/workflow',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSpikeWorkflowStatusRoute = ApiSpikeWorkflowStatusRouteImport.update({
+  id: '/api/spike/workflow-status',
+  path: '/api/spike/workflow-status',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppProjectsProjectIdIndexRoute =
   AppProjectsProjectIdIndexRouteImport.update({
     id: '/projects/$projectId/',
     path: '/projects/$projectId/',
     getParentRoute: () => AppRoute,
   } as any)
+const ApiSpikeLoaderIndexRoute = ApiSpikeLoaderIndexRouteImport.update({
+  id: '/api/spike/loader/',
+  path: '/api/spike/loader/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppProjectsProjectIdTestsTestCaseIdRoute =
   AppProjectsProjectIdTestsTestCaseIdRouteImport.update({
     id: '/projects/$projectId/tests/$testCaseId',
@@ -126,9 +150,13 @@ export interface FileRoutesByFullPath {
   '/accept-invitation/$invitationId': typeof AcceptInvitationInvitationIdRoute
   '/admin/organizations': typeof AppAdminOrganizationsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/spike/browser': typeof ApiSpikeBrowserRoute
+  '/api/spike/workflow': typeof ApiSpikeWorkflowRoute
+  '/api/spike/workflow-status': typeof ApiSpikeWorkflowStatusRoute
   '/admin/': typeof AppAdminIndexRoute
   '/projects/': typeof AppProjectsIndexRoute
   '/projects/$projectId/': typeof AppProjectsProjectIdIndexRoute
+  '/api/spike/loader/': typeof ApiSpikeLoaderIndexRoute
   '/projects/$projectId/tests/$testCaseId': typeof AppProjectsProjectIdTestsTestCaseIdRoute
 }
 export interface FileRoutesByTo {
@@ -142,9 +170,13 @@ export interface FileRoutesByTo {
   '/accept-invitation/$invitationId': typeof AcceptInvitationInvitationIdRoute
   '/admin/organizations': typeof AppAdminOrganizationsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/spike/browser': typeof ApiSpikeBrowserRoute
+  '/api/spike/workflow': typeof ApiSpikeWorkflowRoute
+  '/api/spike/workflow-status': typeof ApiSpikeWorkflowStatusRoute
   '/admin': typeof AppAdminIndexRoute
   '/projects': typeof AppProjectsIndexRoute
   '/projects/$projectId': typeof AppProjectsProjectIdIndexRoute
+  '/api/spike/loader': typeof ApiSpikeLoaderIndexRoute
   '/projects/$projectId/tests/$testCaseId': typeof AppProjectsProjectIdTestsTestCaseIdRoute
 }
 export interface FileRoutesById {
@@ -162,9 +194,13 @@ export interface FileRoutesById {
   '/accept-invitation/$invitationId': typeof AcceptInvitationInvitationIdRoute
   '/_app/admin/organizations': typeof AppAdminOrganizationsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/spike/browser': typeof ApiSpikeBrowserRoute
+  '/api/spike/workflow': typeof ApiSpikeWorkflowRoute
+  '/api/spike/workflow-status': typeof ApiSpikeWorkflowStatusRoute
   '/_app/admin/': typeof AppAdminIndexRoute
   '/_app/projects/': typeof AppProjectsIndexRoute
   '/_app/projects/$projectId/': typeof AppProjectsProjectIdIndexRoute
+  '/api/spike/loader/': typeof ApiSpikeLoaderIndexRoute
   '/_app/projects/$projectId/tests/$testCaseId': typeof AppProjectsProjectIdTestsTestCaseIdRoute
 }
 export interface FileRouteTypes {
@@ -181,9 +217,13 @@ export interface FileRouteTypes {
     | '/accept-invitation/$invitationId'
     | '/admin/organizations'
     | '/api/auth/$'
+    | '/api/spike/browser'
+    | '/api/spike/workflow'
+    | '/api/spike/workflow-status'
     | '/admin/'
     | '/projects/'
     | '/projects/$projectId/'
+    | '/api/spike/loader/'
     | '/projects/$projectId/tests/$testCaseId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -197,9 +237,13 @@ export interface FileRouteTypes {
     | '/accept-invitation/$invitationId'
     | '/admin/organizations'
     | '/api/auth/$'
+    | '/api/spike/browser'
+    | '/api/spike/workflow'
+    | '/api/spike/workflow-status'
     | '/admin'
     | '/projects'
     | '/projects/$projectId'
+    | '/api/spike/loader'
     | '/projects/$projectId/tests/$testCaseId'
   id:
     | '__root__'
@@ -216,9 +260,13 @@ export interface FileRouteTypes {
     | '/accept-invitation/$invitationId'
     | '/_app/admin/organizations'
     | '/api/auth/$'
+    | '/api/spike/browser'
+    | '/api/spike/workflow'
+    | '/api/spike/workflow-status'
     | '/_app/admin/'
     | '/_app/projects/'
     | '/_app/projects/$projectId/'
+    | '/api/spike/loader/'
     | '/_app/projects/$projectId/tests/$testCaseId'
   fileRoutesById: FileRoutesById
 }
@@ -229,6 +277,10 @@ export interface RootRouteChildren {
   OnboardingRoute: typeof OnboardingRoute
   AcceptInvitationInvitationIdRoute: typeof AcceptInvitationInvitationIdRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiSpikeBrowserRoute: typeof ApiSpikeBrowserRoute
+  ApiSpikeWorkflowRoute: typeof ApiSpikeWorkflowRoute
+  ApiSpikeWorkflowStatusRoute: typeof ApiSpikeWorkflowStatusRoute
+  ApiSpikeLoaderIndexRoute: typeof ApiSpikeLoaderIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -338,12 +390,40 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/spike/browser': {
+      id: '/api/spike/browser'
+      path: '/api/spike/browser'
+      fullPath: '/api/spike/browser'
+      preLoaderRoute: typeof ApiSpikeBrowserRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/spike/workflow': {
+      id: '/api/spike/workflow'
+      path: '/api/spike/workflow'
+      fullPath: '/api/spike/workflow'
+      preLoaderRoute: typeof ApiSpikeWorkflowRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/spike/workflow-status': {
+      id: '/api/spike/workflow-status'
+      path: '/api/spike/workflow-status'
+      fullPath: '/api/spike/workflow-status'
+      preLoaderRoute: typeof ApiSpikeWorkflowStatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_app/projects/$projectId/': {
       id: '/_app/projects/$projectId/'
       path: '/projects/$projectId'
       fullPath: '/projects/$projectId/'
       preLoaderRoute: typeof AppProjectsProjectIdIndexRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/api/spike/loader/': {
+      id: '/api/spike/loader/'
+      path: '/api/spike/loader'
+      fullPath: '/api/spike/loader/'
+      preLoaderRoute: typeof ApiSpikeLoaderIndexRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_app/projects/$projectId/tests/$testCaseId': {
       id: '/_app/projects/$projectId/tests/$testCaseId'
@@ -411,6 +491,10 @@ const rootRouteChildren: RootRouteChildren = {
   OnboardingRoute: OnboardingRoute,
   AcceptInvitationInvitationIdRoute: AcceptInvitationInvitationIdRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiSpikeBrowserRoute: ApiSpikeBrowserRoute,
+  ApiSpikeWorkflowRoute: ApiSpikeWorkflowRoute,
+  ApiSpikeWorkflowStatusRoute: ApiSpikeWorkflowStatusRoute,
+  ApiSpikeLoaderIndexRoute: ApiSpikeLoaderIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

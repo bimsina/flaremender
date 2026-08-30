@@ -3,7 +3,7 @@
   "name": "flaremender",
   "compatibility_date": "2025-09-02",
   "compatibility_flags": ["nodejs_compat"],
-  "main": "@tanstack/react-start/server-entry",
+  "main": "src/server.ts",
   "account_id": "00000000000000000000000000000000",
   "d1_databases": [
     {
@@ -13,4 +13,26 @@
       "migrations_dir": "migrations",
     },
   ],
+  // Browser Rendering and Workers AI have no local simulator, so both bindings
+  // run against the real service even under `vite dev`.
+  "browser": { "binding": "BROWSER", "remote": true },
+  "ai": { "binding": "AI", "remote": true },
+  "r2_buckets": [
+    {
+      "binding": "ARTIFACTS",
+      "bucket_name": "flaremender-artifacts",
+    },
+  ],
+  "worker_loaders": [{ "binding": "LOADER" }],
+  "workflows": [
+    {
+      "name": "flaremender-run",
+      "binding": "RUN_WORKFLOW",
+      "class_name": "RunWorkflow",
+    },
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "RUN_CHANNEL", "class_name": "RunChannel" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RunChannel"] }],
 }
