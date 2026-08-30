@@ -31,6 +31,7 @@ import type { Db } from '#/db/index.ts'
 import { createDb } from '#/db/index.ts'
 import { environment, intent, project, run, suiteRun } from '#/db/schema/app.ts'
 import { matchesCron } from '#/lib/cron.ts'
+import { isAdoptedIntent } from '#/server/actions.ts'
 
 /** Non-terminal on both tables: work that is still expected to produce a verdict. */
 const UNFINISHED = ['queued', 'running'] as const
@@ -104,7 +105,10 @@ export async function dispatchSchedules(
     })
     .from(intent)
     .innerJoin(project, eq(project.id, intent.projectId))
-    .where(and(isNotNull(intent.schedule), isNotNull(intent.currentVersionId)))
+    // A proposal cannot have a schedule or a script today, so both of the other
+    // conditions already exclude one — but the clock is the last place that
+    // should be relying on an implication rather than saying what it means.
+    .where(and(isNotNull(intent.schedule), isNotNull(intent.currentVersionId), isAdoptedIntent))
 
   const dueByProject = new Map<string, { organizationId: string; intentIds: Array<string> }>()
 

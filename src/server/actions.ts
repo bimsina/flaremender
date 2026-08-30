@@ -22,15 +22,17 @@
  *   a Workflow instance named after it, then a return.
  */
 import { env } from 'cloudflare:workers'
-import { and, desc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, ne, notInArray, sql } from 'drizzle-orm'
 
 import type { Db } from '#/db/index.ts'
-import type { IntentStatus, ScriptAuthor } from '#/db/schema/app.ts'
+import type { GenerationJobKind, IntentStatus, ScriptAuthor } from '#/db/schema/app.ts'
 import {
+  UNADOPTED_INTENT_STATUSES,
   environment,
   environmentVariable,
   generationJob,
   intent,
+  project,
   run,
   scriptVersion,
   suiteRun,
@@ -39,6 +41,16 @@ import { createId } from '#/lib/ids.ts'
 import { encryptSecret, maskSecret } from './crypto.ts'
 import { loadDefaultEnvironment } from './scope.ts'
 import { ValidationError } from './validate.ts'
+
+/**
+ * The filter every "this project as a suite" query wears.
+ *
+ * A proposed intent is a suggestion nobody has agreed to yet, so it must not be
+ * run, scheduled, or counted among the project's tests. Written once, here,
+ * because the failure mode of forgetting it in one query is a "run all" that
+ * quietly executes a test the user never approved.
+ */
+export const isAdoptedIntent = notInArray(intent.status, [...UNADOPTED_INTENT_STATUSES])
 
 /** The row every "run this somewhere" path needs, resolved the same way twice. */
 export type TargetEnvironment = typeof environment.$inferSelect
@@ -144,20 +156,63 @@ export async function appendScriptVersion(
 
 export async function createIntentRecord(
   db: Db,
-  input: { projectId: string; title: string; description: string; createdBy: string },
+  input: {
+    projectId: string
+    title: string
+    description: string
+    createdBy: string
+    /**
+     * `'draft'` unless the explorer is writing it, in which case `'proposed'`:
+     * a real row, in the project, excluded from everything that runs until
+     * somebody approves it.
+     */
+    status?: IntentStatus
+  },
 ) {
   // Deliberately no script: an intent starts as a description, and the first
   // save — by hand, or by the generator — is what makes it runnable.
+  const status = input.status ?? 'draft'
+
   const row = {
     id: createId('int'),
     projectId: input.projectId,
     title: input.title,
     description: input.description,
+    status,
     createdBy: input.createdBy,
   }
 
   await db.insert(intent).values(row)
-  return { id: row.id, title: row.title, status: 'draft' as const }
+  return { id: row.id, title: row.title, status }
+}
+
+/**
+ * Approval: proposed intents become ordinary ones.
+ *
+ * Guarded on the status rather than blindly setting it, so approving a list
+ * that has already been approved — a double-clicked button, a retried step —
+ * cannot drag an intent that has since passed back to `'draft'`.
+ */
+export async function adoptProposedIntents(
+  db: Db,
+  projectId: string,
+  intentIds: Array<string>,
+): Promise<number> {
+  if (intentIds.length === 0) return 0
+
+  const adopted = await db
+    .update(intent)
+    .set({ status: 'draft' })
+    .where(
+      and(
+        eq(intent.projectId, projectId),
+        inArray(intent.id, intentIds),
+        eq(intent.status, 'proposed'),
+      ),
+    )
+    .returning({ id: intent.id })
+
+  return adopted.length
 }
 
 /** Absent keys are left alone; `schedule: null` clears the cron expression. */
@@ -276,6 +331,7 @@ export async function queueGeneration(
 ) {
   const row = {
     id: createId('gen'),
+    kind: 'generate' as GenerationJobKind,
     intentId: input.intentId,
     projectId: input.projectId,
     environmentId: input.environment.id,
@@ -300,14 +356,244 @@ export async function queueGeneration(
   return { jobId: row.id, environmentId: input.environment.id }
 }
 
+/* ------------------------------------------------------------ Project context */
+
+/**
+ * How much standing knowledge about an app is worth carrying.
+ *
+ * Four kilobytes is roughly a page of prose, and it is prepended to every chat
+ * turn and every generation's opening message — so the cost of a larger cap is
+ * paid on every model call this project ever makes, for text that is by
+ * definition background rather than the task.
+ */
+export const MAX_PROJECT_CONTEXT_CHARS = 4000
+
+/**
+ * Replaces what the project knows about itself.
+ *
+ * The caller redacts. That is not a detail: the first paragraph of a project's
+ * context is very often the sentence a user typed a password into, and the value
+ * has to be `***` by the time it reaches this function — which is why the chat
+ * tool runs it through the turn's scrubber and the explorer through the run
+ * engine's, rather than either being trusted to have been careful.
+ */
+export async function setProjectContextRecord(
+  db: Db,
+  projectId: string,
+  text: string | null,
+): Promise<{ length: number }> {
+  const value = text === null ? null : text.slice(0, MAX_PROJECT_CONTEXT_CHARS)
+
+  await db.update(project).set({ context: value }).where(eq(project.id, projectId))
+  return { length: value?.length ?? 0 }
+}
+
+/**
+ * Adds a section to it, oldest first, and drops the front when it will not fit.
+ *
+ * Appending rather than replacing is what makes a second exploration worth
+ * running: the first one's notes about how to sign in are still true. Trimming
+ * from the front rather than refusing to write is the same judgement in the
+ * other direction — the newest thing anyone learned about the app is the part
+ * worth keeping.
+ */
+export async function appendProjectContext(
+  db: Db,
+  projectId: string,
+  section: string,
+): Promise<{ length: number }> {
+  const [row] = await db
+    .select({ context: project.context })
+    .from(project)
+    .where(eq(project.id, projectId))
+    .limit(1)
+
+  const existing = row?.context?.trim() ?? ''
+  const merged = existing.length > 0 ? `${existing}\n\n${section.trim()}` : section.trim()
+
+  const trimmed =
+    merged.length <= MAX_PROJECT_CONTEXT_CHARS
+      ? merged
+      : merged.slice(merged.length - MAX_PROJECT_CONTEXT_CHARS).replace(/^[^\n]*\n/, '')
+
+  return setProjectContextRecord(db, projectId, trimmed)
+}
+
+/* --------------------------------------------------------------- Exploration */
+
+/** One exploration at a time per project — they would fight over the browser. */
+export async function assertNoExplorationInFlight(db: Db, projectId: string): Promise<void> {
+  const [inFlight] = await db
+    .select({ id: generationJob.id })
+    .from(generationJob)
+    .where(
+      and(
+        eq(generationJob.projectId, projectId),
+        eq(generationJob.kind, 'explore'),
+        inArray(generationJob.status, ['queued', 'running']),
+      ),
+    )
+    .limit(1)
+
+  if (inFlight) {
+    throw new ValidationError('This project is already being explored. Wait for that to finish.')
+  }
+}
+
+/**
+ * Queues an exploration. Enqueue-only, exactly like every other job here.
+ *
+ * The row is a `generation_job` with no `intentId`, because an exploration is
+ * about the project rather than about one test — and it is what authorizes the
+ * live socket, so it has to exist before the workflow does.
+ */
+export async function queueExploration(
+  db: Db,
+  input: {
+    projectId: string
+    organizationId: string
+    environment: TargetEnvironment
+    createdBy: string
+    /** What the user asked it to concentrate on, when they said. */
+    focus: string | null
+  },
+) {
+  await assertNoExplorationInFlight(db, input.projectId)
+
+  const row = {
+    id: createId('exp'),
+    kind: 'explore' as const,
+    projectId: input.projectId,
+    environmentId: input.environment.id,
+    organizationId: input.organizationId,
+    status: 'queued' as const,
+    createdBy: input.createdBy,
+  }
+
+  await db.insert(generationJob).values(row)
+
+  await env.EXPLORE_WORKFLOW.create({
+    id: row.id,
+    params: {
+      jobId: row.id,
+      projectId: input.projectId,
+      environmentId: input.environment.id,
+      organizationId: input.organizationId,
+      userId: input.createdBy,
+      focus: input.focus,
+    },
+  })
+
+  return { jobId: row.id, environmentId: input.environment.id }
+}
+
+/* ---------------------------------------------------------- Batch generation */
+
+/**
+ * How many tests one approval may generate.
+ *
+ * Bounded by Workflows' 1,024 steps per instance rather than by taste: a
+ * generation costs about thirty steps, so fifteen members and the batch's own
+ * bookkeeping sit comfortably inside it. It also matches the ceiling the
+ * explorer proposes under, so approving a whole plan always fits.
+ */
+export const MAX_BATCH_INTENTS = 15
+
+/**
+ * Approves a plan and starts writing its scripts.
+ *
+ * Two things in one call because they are one decision: the intents stop being
+ * proposals and the machine that turns them into tests starts. Sequential from
+ * there — see `BatchGenerateWorkflow` — because Browser Rendering allows very
+ * few concurrent sessions and a fan-out would spend its time collecting 429s.
+ */
+export async function queueBatchGeneration(
+  db: Db,
+  input: {
+    projectId: string
+    organizationId: string
+    environment: TargetEnvironment
+    createdBy: string
+    intentIds: Array<string>
+  },
+) {
+  if (input.intentIds.length === 0) {
+    throw new ValidationError('Choose at least one test to generate.')
+  }
+  if (input.intentIds.length > MAX_BATCH_INTENTS) {
+    throw new ValidationError(
+      `That is ${input.intentIds.length} tests; generate at most ${MAX_BATCH_INTENTS} at a time.`,
+    )
+  }
+
+  const members = await db
+    .select({ id: intent.id, title: intent.title, status: intent.status })
+    .from(intent)
+    .where(and(eq(intent.projectId, input.projectId), inArray(intent.id, input.intentIds)))
+
+  if (members.length === 0) {
+    throw new ValidationError('None of those tests exist in this project.')
+  }
+
+  const busy = members.find((member) => member.status === 'generating')
+  if (busy) {
+    throw new ValidationError(`A script is already being generated for “${busy.title}”.`)
+  }
+
+  await adoptProposedIntents(
+    db,
+    input.projectId,
+    members.map((member) => member.id),
+  )
+
+  const row = {
+    id: createId('bat'),
+    kind: 'batch' as const,
+    projectId: input.projectId,
+    environmentId: input.environment.id,
+    organizationId: input.organizationId,
+    status: 'queued' as const,
+    createdBy: input.createdBy,
+  }
+
+  await db.insert(generationJob).values(row)
+
+  await env.BATCH_WORKFLOW.create({
+    id: row.id,
+    params: {
+      jobId: row.id,
+      environmentId: input.environment.id,
+      organizationId: input.organizationId,
+      userId: input.createdBy,
+      intentIds: members.map((member) => member.id),
+    },
+  })
+
+  return {
+    jobId: row.id,
+    environmentId: input.environment.id,
+    intentIds: members.map((member) => member.id),
+    total: members.length,
+  }
+}
+
 /* ------------------------------------------------------------------- Suites */
 
-/** How many intents in a project a "run all" would actually execute. */
+/**
+ * How many intents in a project a "run all" would actually execute.
+ *
+ * `isAdoptedIntent` is belt and braces here — a proposed intent has no script,
+ * so the version check already excludes it — but the two conditions mean
+ * different things and the suite's own membership query needs both, so they are
+ * stated together in both places rather than one being left implied.
+ */
 export async function countRunnableIntents(db: Db, projectId: string): Promise<number> {
   const [row] = await db
     .select({ count: sql<number>`count(*)` })
     .from(intent)
-    .where(and(eq(intent.projectId, projectId), isNotNull(intent.currentVersionId)))
+    .where(
+      and(eq(intent.projectId, projectId), isNotNull(intent.currentVersionId), isAdoptedIntent),
+    )
 
   return Number(row?.count ?? 0)
 }

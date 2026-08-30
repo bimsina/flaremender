@@ -45,6 +45,12 @@ export interface LoadedGeneration {
   organizationId: string
   userId: string
   projectName: string
+  /**
+   * What the project knows about this app that is not in this intent — how one
+   * signs in, what the docs said, what the explorer found. Redacted before it
+   * was ever written; see `project.context`.
+   */
+  projectContext: string | null
   /** The project's model choice; null falls through the resolution chain. */
   projectModelId: string | null
   environmentName: string
@@ -146,6 +152,7 @@ export async function loadGeneration(
     organizationId: params.organizationId,
     userId: row.job.createdBy,
     projectName: row.project.name,
+    projectContext: row.project.context,
     projectModelId: row.project.modelId,
     environmentName: row.environment.name,
     baseUrl: row.environment.baseUrl,

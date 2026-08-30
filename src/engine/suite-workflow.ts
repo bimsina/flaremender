@@ -47,6 +47,7 @@ import {
   persistRunError,
   releaseRunSession,
 } from '#/engine/run-steps.ts'
+import { isAdoptedIntent } from '#/server/actions.ts'
 
 export interface SuiteWorkflowParams {
   suiteRunId: string
@@ -202,6 +203,9 @@ export class SuiteWorkflow extends WorkflowEntrypoint<Cloudflare.Env, SuiteWorkf
         and(
           eq(intent.projectId, row.suiteRun.projectId),
           isNotNull(intent.currentVersionId),
+          // A proposal is not part of the suite until somebody approves it —
+          // and an explicit `intentIds` filter must not be a way round that.
+          isAdoptedIntent,
           // An empty array would compile to `false` and produce a suite with no
           // members, which is not what "no filter" means.
           intentIds && intentIds.length > 0 ? inArray(intent.id, intentIds) : undefined,

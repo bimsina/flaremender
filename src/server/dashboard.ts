@@ -12,12 +12,17 @@ export const getOrgOverview = createServerFn({ method: 'GET' })
     const [totals] = await context.db
       .select({
         projects: sql<number>`count(distinct ${project.id})`,
-        intents: sql<number>`count(${intent.id})`,
+        // Proposals are excluded from every one of these on purpose: they are
+        // suggestions nobody has agreed to, and counting them here would make
+        // an exploration look like the organization suddenly grew twelve tests.
+        intents: sql<number>`sum(case when ${intent.id} is not null and ${intent.status} <> 'proposed' then 1 else 0 end)`,
         passing: sql<number>`sum(case when ${intent.status} = 'passing' then 1 else 0 end)`,
         failing: sql<number>`sum(case when ${intent.status} = 'failing' then 1 else 0 end)`,
         // Everything that has not yet been decided by a run, which is what
         // `'generating'` is too — an intent mid-generation has no verdict.
         pending: sql<number>`sum(case when ${intent.status} in ('draft','generating','ready') then 1 else 0 end)`,
+        /** Awaiting review. Reported separately, never folded into the total. */
+        proposed: sql<number>`sum(case when ${intent.status} = 'proposed' then 1 else 0 end)`,
       })
       .from(project)
       .leftJoin(intent, eq(intent.projectId, project.id))
@@ -67,6 +72,7 @@ export const getOrgOverview = createServerFn({ method: 'GET' })
       passing: Number(totals?.passing ?? 0),
       failing: Number(totals?.failing ?? 0),
       pending: Number(totals?.pending ?? 0),
+      proposed: Number(totals?.proposed ?? 0),
       runs: Number(runTotals?.runs ?? 0),
       passedRuns: Number(runTotals?.passed ?? 0),
       healedRuns: Number(runTotals?.healed ?? 0),

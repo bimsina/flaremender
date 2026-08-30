@@ -85,9 +85,31 @@ export interface EnvironmentCard {
 }
 
 /**
- * Reserved for M9c: a proposed test plan, rendered as a reviewable checklist
- * with a "generate all" action. Declared now so a transcript written today
- * still parses when the explorer starts producing them.
+ * An exploration. Live through its own `RunChannel`, exactly like a generation:
+ * the same narration lines and step events, from the same harness.
+ *
+ * It carries no result, on purpose. What an exploration produces is a *plan*,
+ * and a plan is a separate message the workflow posts when it finishes — so
+ * this card describes the looking, and the card below describes what was found.
+ */
+export interface ExploreCard {
+  kind: 'explore'
+  jobId: string
+  environmentName: string
+  /** What the user asked it to concentrate on, when they said. */
+  focus: string | null
+}
+
+/**
+ * A proposed test plan: the reviewable checklist, with a "generate" action.
+ *
+ * Every item names a real `intent` row in `'proposed'` — the card is a *view* of
+ * those rows, not a record of them, which is what lets it be ticked, edited and
+ * approved and still be the same objects the Intents tab is showing. `intentId`
+ * is nullable only for transcripts written before the explorer existed.
+ *
+ * The title and description are snapshots so a three-day-old transcript renders
+ * without a query per item; the live rows win wherever they still exist.
  */
 export interface PlanCard {
   kind: 'plan'
@@ -96,13 +118,30 @@ export interface PlanCard {
   items: Array<{ intentId: string | null; title: string; description: string }>
 }
 
+/**
+ * An approved plan being generated, one test at a time.
+ *
+ * Live in two ways at once, because the two halves answer different questions:
+ * the channel says what the batch is doing *now*, and the intent rows the card
+ * names say what each member ended up as. Neither is derivable from the other.
+ */
+export interface BatchCard {
+  kind: 'batch'
+  jobId: string
+  environmentName: string
+  /** In approval order, which is the order they will be generated. */
+  intentIds: Array<string>
+}
+
 export type ChatCard =
   | IntentCard
   | GenerationCard
   | RunCard
   | SuiteCard
   | EnvironmentCard
+  | ExploreCard
   | PlanCard
+  | BatchCard
 
 export type ChatPart = { type: 'text'; text: string } | { type: 'card'; card: ChatCard }
 
@@ -181,6 +220,20 @@ export interface ChatTurnRequest {
   userId: string
   userName: string
   text: string
+}
+
+/**
+ * A message the assistant speaks without having been asked — the one case being
+ * a long job finishing minutes after the turn that started it ended.
+ *
+ * The parts are built by the caller because only the caller knows what happened;
+ * the Durable Object still redacts them, since it is the only thing that holds
+ * the project's decrypted variables and the caller may not.
+ */
+export interface ChatAnnouncement {
+  projectId: string
+  organizationId: string
+  parts: Array<ChatPart>
 }
 
 export interface ChatTurnAck {

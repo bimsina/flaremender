@@ -30,6 +30,7 @@ import { eq } from 'drizzle-orm'
 
 import { createDb } from '#/db/index.ts'
 import { environmentVariable } from '#/db/schema/app.ts'
+import { pruneToolResults } from '#/engine/agent-transcript.ts'
 import type { ActResponse, PageObservation } from '#/engine/contract.ts'
 import { resolveModel } from '#/engine/generation/llm.ts'
 import {
@@ -85,9 +86,6 @@ export const OBSERVE_AFTER_FAILURES = 2
 
 /** How many tool results keep their page tree and script listing in full. */
 const OBSERVATIONS_KEPT_IN_FULL = 2
-
-/** Anything shorter than this is too small to be worth pruning. */
-const PRUNE_THRESHOLD = 400
 
 /** Tool-result fields that restate the present and go stale immediately. */
 const PRUNED_FIELDS: Record<string, string> = {
@@ -209,48 +207,6 @@ export async function loadCredentialNames(
     .where(eq(environmentVariable.environmentId, environmentId))
 
   return rows.map((row) => row.name)
-}
-
-/**
- * Keeps the transcript from becoming mostly old page trees.
- *
- * Every tool result carries ten kilobytes of page tree and a listing of the
- * script so far. Both were decisive when they arrived and are noise two turns
- * later, because both describe a present that has moved on — the model needs
- * the page as it is now and the script as it stands now, and the newest copy of
- * each is always the one immediately above it. Older ones are replaced in the
- * *in-memory* copy only: what the workflow stored is untouched, so a replayed
- * instance rebuilds exactly this.
- */
-function pruneObservations(messages: Array<ModelMessage>): Array<ModelMessage> {
-  let remaining = OBSERVATIONS_KEPT_IN_FULL
-
-  const prune = (value: unknown): unknown => {
-    if (Array.isArray(value)) return value.map(prune)
-    if (typeof value !== 'object' || value === null) return value
-
-    const entries = Object.entries(value as Record<string, unknown>).map(([key, item]) => {
-      const replacement = PRUNED_FIELDS[key]
-      if (replacement && typeof item === 'string' && item.length > PRUNE_THRESHOLD) {
-        return [key, replacement] as const
-      }
-      return [key, prune(item)] as const
-    })
-
-    return Object.fromEntries(entries)
-  }
-
-  // Newest first, so the two most recent observations are the ones kept.
-  const reversed = [...messages].reverse().map((message) => {
-    if (message.role !== 'tool') return message
-    if (remaining > 0) {
-      remaining -= 1
-      return message
-    }
-    return { ...message, content: prune(message.content) } as ModelMessage
-  })
-
-  return reversed.reverse()
 }
 
 /** What a tool hands back to the model about the page it is now looking at. */
@@ -568,7 +524,10 @@ export async function runTurn(env: Cloudflare.Env, input: TurnInput): Promise<Tu
   const result = await generateText({
     model: resolved.model,
     system: SYSTEM_PROMPT,
-    messages: pruneObservations(input.messages),
+    messages: pruneToolResults(input.messages, {
+      keep: OBSERVATIONS_KEPT_IN_FULL,
+      replacements: PRUNED_FIELDS,
+    }),
     tools: { observe: observeTool, act: actTool, finish: finishTool },
     stopWhen: [stepCountIs(MAX_TOOL_STEPS), hasToolCall('finish')],
   })

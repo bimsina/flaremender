@@ -17,6 +17,8 @@ import { sweepRetention } from '#/engine/retention.ts'
 import { dispatchSchedules } from '#/engine/schedule-dispatch.ts'
 import { createAuth } from '#/lib/auth.ts'
 
+export { BatchGenerateWorkflow } from '#/engine/batch-workflow.ts'
+export { ExploreWorkflow } from '#/engine/explore-workflow.ts'
 export { GenerateWorkflow } from '#/engine/generate-workflow.ts'
 export { ProjectChat } from '#/engine/project-chat.ts'
 export { RunChannel } from '#/engine/run-channel.ts'
@@ -29,12 +31,13 @@ const LIVE_PATH = /^\/api\/runs\/([^/]+)\/live\/?$/
 const CHAT_PATH = /^\/api\/projects\/([^/]+)\/chat\/?$/
 
 /**
- * Generation jobs stream through the same path as runs, and are told apart by
- * their id. One socket route, one client, one Durable Object class: the only
- * thing that differs between watching a run and watching a script being written
- * is which table proves the caller is allowed to.
+ * Agent jobs stream through the same path as runs, and are told apart by their
+ * id: `gen_` writes one script, `exp_` explores the app, `bat_` generates an
+ * approved plan. One socket route, one client, one Durable Object class — the
+ * only thing that differs between watching a run and watching an agent work is
+ * which table proves the caller is allowed to.
  */
-const GENERATION_ID = /^gen_/
+const JOB_ID = /^(gen|exp|bat)_/
 
 /**
  * The nightly branch of `triggers.crons`. Every other cron this Worker is given
@@ -74,7 +77,7 @@ async function serveLive(
 
   const db = drizzle(env.DB)
 
-  const [row] = GENERATION_ID.test(channelId)
+  const [row] = JOB_ID.test(channelId)
     ? await db
         .select({ id: generationJob.id })
         .from(generationJob)

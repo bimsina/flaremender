@@ -15,10 +15,13 @@ import {
   useKumoToastManager,
 } from '@cloudflare/kumo'
 import {
+  BinocularsIcon,
   ClockIcon,
   DotsThreeIcon,
+  ListChecksIcon,
   PlayIcon,
   PlusIcon,
+  SparkleIcon,
   TestTubeIcon,
   TrashIcon,
   WarningCircleIcon,
@@ -48,6 +51,12 @@ import {
   runTrendQuery,
   suiteRunsQuery,
 } from '#/lib/queries.ts'
+import {
+  approveProposedIntents,
+  dismissProposedIntent,
+  exploreProject,
+  setProjectContext,
+} from '#/server/explore.ts'
 import { createIntent, deleteIntent, runIntent } from '#/server/intents.ts'
 import { deleteProject, setProjectModel, updateProject } from '#/server/projects.ts'
 import { runSuite } from '#/server/suites.ts'
@@ -300,13 +309,16 @@ type IntentRow = {
 }
 
 /**
- * Ordered as an intent moves through them, not alphabetically — `'generating'`
- * sits between having nothing and having something for the same reason it does
- * in the enum. Transient, but a project with twenty intents mid-generation is
- * exactly when someone wants to filter for them.
+ * Ordered as an intent moves through them, not alphabetically — `'proposed'`
+ * first because it is the state before anyone has agreed to anything, and
+ * `'generating'` between having nothing and having something, for the same
+ * reason both sit where they do in the enum. Transient states are still worth
+ * filtering for: a project with twenty intents mid-generation is exactly when
+ * someone wants to see only those.
  */
 const STATUS_FILTERS = {
   all: 'Any status',
+  proposed: 'Proposed',
   draft: 'Draft',
   generating: 'Generating',
   ready: 'Ready to run',
@@ -347,20 +359,39 @@ function IntentsTab({
       <Empty
         icon={<TestTubeIcon size={48} className="text-kumo-inactive" />}
         title="No intents found"
-        description="Describe what a user should be able to do, then write the script that proves it."
+        description="Describe what a user should be able to do — or let the assistant go round your app and suggest what is worth testing."
         contents={
-          <Button variant="primary" icon={<PlusIcon size={16} />} onClick={onCreate}>
-            Describe an intent
-          </Button>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <Button variant="primary" icon={<PlusIcon size={16} />} onClick={onCreate}>
+              Describe an intent
+            </Button>
+            <ExploreButton projectId={projectId} />
+          </div>
         }
       />
     )
   }
 
+  const proposedCount = intents.filter((row) => row.status === 'proposed').length
+
   return (
     <div className="grid gap-4">
       {liveSuiteRunId ? (
         <SuiteProgress key={liveSuiteRunId} suiteRunId={liveSuiteRunId} projectId={projectId} />
+      ) : null}
+
+      {/* Proposals sit in this list looking like tests until somebody decides
+          about them, and nothing else on the page says they are waiting. The
+          banner only appears while they are mixed in with everything else —
+          once the filter is on them, the list is the message. */}
+      {proposedCount > 0 && status !== 'proposed' ? (
+        <Banner
+          variant="default"
+          icon={<ListChecksIcon weight="fill" />}
+          title={`${proposedCount} proposed test${proposedCount === 1 ? '' : 's'} to review`}
+          description="Proposals do not run and are not counted until you approve them."
+          action={<Banner.Action onClick={() => setStatus('proposed')}>Review them</Banner.Action>}
+        />
       ) : null}
 
       <ListToolbar
@@ -438,6 +469,44 @@ function IntentsTab({
 }
 
 /**
+ * Starts an exploration and takes you to where you can watch it.
+ *
+ * The navigation is the point rather than a nicety: the exploration streams
+ * into the chat and posts its plan there, so a button that started one and left
+ * you on an empty list would look like it had done nothing for four minutes.
+ */
+function ExploreButton({ projectId }: { projectId: string }) {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const toast = useKumoToastManager()
+
+  const explore = useMutation({
+    mutationFn: () => exploreProject({ data: { projectId } }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries()
+      await navigate({
+        to: '/projects/$projectId',
+        params: { projectId },
+        search: { tab: 'chat' },
+      })
+    },
+    onError: (error: Error) =>
+      toast.add({ variant: 'error', title: 'Could not explore', description: error.message }),
+  })
+
+  return (
+    <Button
+      variant="secondary"
+      icon={<BinocularsIcon size={16} />}
+      loading={explore.isPending}
+      onClick={() => explore.mutate()}
+    >
+      Explore my app
+    </Button>
+  )
+}
+
+/**
  * That an intent runs on a clock is worth one glance, not a column: the listing
  * is about what the intents *are*, and the schedule itself is a detail-page
  * concern. The tooltip carries the description so the icon does not have to.
@@ -486,8 +555,64 @@ function IntentActions({
     },
   })
 
+  const approve = useMutation({
+    mutationFn: () => approveProposedIntents({ data: { projectId, intentIds: [intent.id] } }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries()
+      toast.add({
+        variant: 'info',
+        title: 'Generating',
+        description: `Writing the script for “${intent.title}”.`,
+      })
+    },
+    onError: (error: Error) => {
+      toast.add({ variant: 'error', title: 'Could not approve', description: error.message })
+    },
+  })
+
+  const dismiss = useMutation({
+    mutationFn: () => dismissProposedIntent({ data: { intentId: intent.id } }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries()
+      toast.add({ variant: 'success', title: 'Proposal dismissed', description: intent.title })
+    },
+    onError: (error: Error) => {
+      toast.add({ variant: 'error', title: 'Could not dismiss', description: error.message })
+    },
+  })
+
+  const proposed = intent.status === 'proposed'
+
   return (
     <>
+      {/* A proposal's whole purpose is to be accepted or thrown away, so both
+          are one click rather than two inside a menu. Dismissing needs no
+          confirmation because nothing is lost: it is a suggestion, and the next
+          exploration will make it again if it was a good one. */}
+      {proposed ? (
+        <>
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={<SparkleIcon size={14} />}
+            loading={approve.isPending}
+            onClick={() => approve.mutate()}
+          >
+            Approve
+          </Button>
+          <Button
+            variant="ghost"
+            shape="square"
+            size="sm"
+            aria-label={`Dismiss ${intent.title}`}
+            loading={dismiss.isPending}
+            onClick={() => dismiss.mutate()}
+          >
+            <XIcon size={16} />
+          </Button>
+        </>
+      ) : null}
+
       <DropdownMenu>
         <DropdownMenu.Trigger
           render={
@@ -510,7 +635,7 @@ function IntentActions({
           </DropdownMenu.LinkItem>
           <DropdownMenu.Item
             icon={PlayIcon}
-            disabled={!runnable || run.isPending}
+            disabled={!runnable || proposed || run.isPending}
             onClick={() => run.mutate()}
           >
             Run
@@ -576,6 +701,7 @@ type ProjectRow = {
   name: string
   slug: string
   description: string | null
+  context: string | null
   modelId: string | null
   effectiveModel: { modelId: string; displayName: string; origin: string }
   defaultEnvironment: { id: string; name: string; baseUrl: string } | null
@@ -586,6 +712,13 @@ function SettingsTab({ project }: { project: ProjectRow }) {
     <div className="grid max-w-3xl gap-8">
       <Section title="Project details" description="How this project is named and described.">
         <ProjectDetailsCard project={project} />
+      </Section>
+
+      <Section
+        title="What the assistant knows"
+        description="Background about this app, read by every exploration and every generated script."
+      >
+        <ProjectContextCard project={project} />
       </Section>
 
       <Section
@@ -674,6 +807,83 @@ function ProjectDetailsCard({ project }: { project: ProjectRow }) {
             disabled={!name.trim() || !dirty}
           >
             Save changes
+          </Button>
+        </div>
+      </form>
+    </LayerCard>
+  )
+}
+
+/**
+ * The standing brief the agents work from.
+ *
+ * Written mostly by them — the chat stores what you tell it, an exploration
+ * appends what it found — and editable here because a column that steers every
+ * future generation must not be one only a machine can reach. An exploration
+ * that concluded something wrong about the app would otherwise keep telling
+ * every script it writes so, with nowhere for a person to say otherwise.
+ *
+ * Credentials are named here, never valued: everything that writes this field
+ * redacts first, and anything typed in by hand should follow the same rule.
+ */
+function ProjectContextCard({ project }: { project: ProjectRow }) {
+  const queryClient = useQueryClient()
+  const toast = useKumoToastManager()
+
+  const [context, setContext] = useState(project.context ?? '')
+
+  // Reset when the row changes underneath — an exploration finishing while this
+  // tab is open would otherwise leave a stale draft in the box.
+  const [seen, setSeen] = useState(project.context ?? '')
+  if (seen !== (project.context ?? '')) {
+    setSeen(project.context ?? '')
+    setContext(project.context ?? '')
+  }
+
+  const dirty = context !== (project.context ?? '')
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      setProjectContext({ data: { projectId: project.id, context: context.trim() || null } }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: projectQuery(project.id).queryKey })
+      toast.add({ variant: 'success', title: 'Saved' })
+    },
+    onError: (error: Error) =>
+      toast.add({ variant: 'error', title: 'Could not save', description: error.message }),
+  })
+
+  return (
+    <LayerCard className="px-5 py-4">
+      <form
+        className="grid gap-4"
+        onSubmit={(event) => {
+          event.preventDefault()
+          mutation.mutate()
+        }}
+      >
+        <InputArea
+          label="Context"
+          description="What this app is, how to sign in, anything a test author would need. Refer to credentials by variable name — never paste a value."
+          placeholder="Taskbox is a task manager. Sign in from the landing page with TASKBOX_EMAIL and TASKBOX_PASSWORD."
+          autoResize
+          minRows={4}
+          maxRows={16}
+          value={context}
+          onChange={(event) => setContext(event.target.value)}
+        />
+
+        <div className="flex items-center justify-between gap-3">
+          {/* The cap itself is deliberately not quoted here: it lives beside
+              the write in `server/actions.ts`, and importing it would drag
+              `cloudflare:workers` into the client bundle. Text that is too
+              long is refused by the validator, with the number in the
+              message. */}
+          <Text variant="secondary" size="xs">
+            {context.length} characters
+          </Text>
+          <Button type="submit" variant="primary" loading={mutation.isPending} disabled={!dirty}>
+            Save context
           </Button>
         </div>
       </form>

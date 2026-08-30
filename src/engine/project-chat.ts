@@ -37,6 +37,7 @@ import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 import { type Db, createDb } from '#/db/index.ts'
 import { chatMessage, environment, environmentVariable, intent, project } from '#/db/schema/app.ts'
 import type {
+  ChatAnnouncement,
   ChatCard,
   ChatEvent,
   ChatEventEnvelope,
@@ -99,8 +100,18 @@ function describeCard(card: ChatCard): string {
       return `[environment ${card.environmentId} — "${card.name}" — ${card.baseUrl}${
         card.variableNames.length > 0 ? ` — variables: ${card.variableNames.join(', ')}` : ''
       }]`
+    case 'explore':
+      return `[exploration ${card.jobId} running on ${card.environmentName}${
+        card.focus ? ` — focus: ${card.focus}` : ''
+      }]`
+    // The ids are spelled out because approving a subset is the obvious next
+    // request, and this is where the model has to read them from.
     case 'plan':
-      return `[plan ${card.planId} — "${card.title}" — ${card.items.length} proposed tests]`
+      return `[plan ${card.planId} — "${card.title}" — proposed tests: ${card.items
+        .map((item) => `${item.intentId ?? 'unknown'} "${item.title}"`)
+        .join('; ')}]`
+    case 'batch':
+      return `[batch generation ${card.jobId} running for ${card.intentIds.length} tests on ${card.environmentName}]`
   }
 }
 
@@ -124,6 +135,10 @@ function scrubCard(card: ChatCard, scrubber: Scrubber): ChatCard {
       return card
     case 'environment':
       return { ...card, name: scrubber.text(card.name), baseUrl: scrubber.text(card.baseUrl) }
+    case 'explore':
+      return { ...card, focus: scrubber.nullable(card.focus) }
+    case 'batch':
+      return card
     case 'plan':
       return {
         ...card,
@@ -263,6 +278,81 @@ export class ProjectChat extends DurableObject<Cloudflare.Env> {
   }
 
   /**
+   * Say something nobody asked for.
+   *
+   * The one caller is a workflow that finished long after the turn that started
+   * it: an exploration takes minutes, and the plan it produces belongs in the
+   * conversation that asked for it rather than only on the Intents tab. So the
+   * workflow speaks here, through the object that owns the transcript.
+   *
+   * Two rules make that safe. It **redacts** — the parts were built by a
+   * workflow, and this object is the only thing holding the project's decrypted
+   * variables, so they go through a scrubber built here whatever the caller
+   * already did. And it **yields to a live turn**: broadcasting a finished
+   * message while the assistant is mid-answer would make every watching client
+   * discard the answer being written, so a busy object persists the message and
+   * says nothing, and the clients pick it up from the history — which the
+   * exploration card asks for the moment it sees the job finish.
+   */
+  async announce(request: ChatAnnouncement): Promise<{ messageId: string }> {
+    const db = createDb(this.env.DB)
+
+    const [row] = await db
+      .select({ id: project.id })
+      .from(project)
+      .where(
+        and(eq(project.id, request.projectId), eq(project.organizationId, request.organizationId)),
+      )
+      .limit(1)
+
+    if (!row) throw new Error('Project not found.')
+
+    const environments = await db
+      .select({ id: environment.id })
+      .from(environment)
+      .where(eq(environment.projectId, request.projectId))
+
+    const scrubber = createScrubber(
+      await this.#loadSecrets(
+        db,
+        environments.map((item) => item.id),
+      ),
+    )
+
+    const parts = scrubParts(tidyParts(request.parts), scrubber)
+    const messageId = createId('msg')
+    const createdAt = Date.now()
+
+    await db.insert(chatMessage).values({
+      id: messageId,
+      projectId: request.projectId,
+      role: 'assistant',
+      parts,
+      status: 'complete',
+      createdBy: null,
+      createdAt: new Date(createdAt),
+    })
+
+    if (!this.#busy) {
+      await this.#emit({
+        type: 'message.finished',
+        message: {
+          id: messageId,
+          role: 'assistant',
+          parts,
+          status: 'complete',
+          createdBy: null,
+          createdByName: null,
+          createdAt,
+        },
+        at: createdAt,
+      })
+    }
+
+    return { messageId }
+  }
+
+  /**
    * The WebSocket upgrade, reached only through `src/server.ts` — which has
    * already established that the caller is signed in and that the project
    * belongs to their organization. Nothing here re-checks that, so nothing else
@@ -328,6 +418,7 @@ export class ProjectChat extends DurableObject<Cloudflare.Env> {
       .select({
         name: project.name,
         description: project.description,
+        context: project.context,
         modelId: project.modelId,
       })
       .from(project)
@@ -355,13 +446,15 @@ export class ProjectChat extends DurableObject<Cloudflare.Env> {
     )
     const scrubber = createScrubber(secrets)
 
-    const intentCount = await this.#countIntents(db, request.projectId)
+    const counts = await this.#countIntents(db, request.projectId)
 
     const systemPrompt = `${CHAT_SYSTEM_PROMPT}\n\n${buildChatContext({
       projectName: row.name,
       projectDescription: row.description,
+      projectContext: row.context,
       environments,
-      intentCount,
+      intentCount: counts.total,
+      proposedCount: counts.proposed,
     })}`
 
     const userMessage: ChatMessageWire = {
@@ -429,6 +522,10 @@ export class ProjectChat extends DurableObject<Cloudflare.Env> {
         )
       },
       liftSecret: (value) => this.#liftSecret(session, value),
+      // Read through the session rather than captured, so a tool that redacts
+      // after `liftSecret` has run uses the rebuilt scrubber and not the one
+      // that existed when the turn started.
+      redact: (text) => session.scrubber.text(text),
     }
 
     let failure: string | null = null
@@ -623,13 +720,23 @@ export class ProjectChat extends DurableObject<Cloudflare.Env> {
     return values
   }
 
-  async #countIntents(db: Db, projectId: string): Promise<number> {
+  /**
+   * How many tests the project has, and how many of those are still only
+   * proposals — which the assistant needs kept apart, because "you have four
+   * tests" and "you have four suggestions nobody has approved" are different
+   * answers to the same question.
+   */
+  async #countIntents(db: Db, projectId: string): Promise<{ total: number; proposed: number }> {
     const [row] = await db
-      .select({ count: sql<number>`count(*)` })
+      .select({
+        count: sql<number>`count(*)`,
+        proposed: sql<number>`sum(case when ${intent.status} = 'proposed' then 1 else 0 end)`,
+      })
       .from(intent)
       .where(eq(intent.projectId, projectId))
 
-    return Number(row?.count ?? 0)
+    const proposed = Number(row?.proposed ?? 0)
+    return { total: Number(row?.count ?? 0) - proposed, proposed }
   }
 
   #appendText(session: TurnSession, text: string): void {

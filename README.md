@@ -168,6 +168,61 @@ else sees the redacted row when the turn ends. The residual risk is inherent and
 documented: the value reached the configured model provider once, in that message
 and in the tool call that stored it.
 
+### Explore, propose, generate
+
+The chat's other half. Rather than being told what to test, the assistant can go
+and find out: `explore_project` starts an **ExploreWorkflow** that drives a real
+browser round the app — signing in with the stored credentials, reading any docs
+URL it is given — and ends by proposing tests. Those proposals are **real intent
+rows** in a new `'proposed'` status, rendered in the conversation as a checklist
+you tick, edit and approve; approving starts a **BatchGenerateWorkflow** that
+writes each script with the same turn loop a single Generate does.
+
+```
+src/engine/
+  explore/prompts.ts    what the explorer is told, and the context it writes back
+  explore/loop.ts       one explore turn: observe, navigate, interact, read_docs
+  explore/docs.ts       fetch a docs page, strip it to text, cap it twice
+  explore/steps.ts      claim the job, write the intents, post the plan
+  explore-workflow.ts   the ExploreWorkflow
+  generation/job.ts     one generation, shared by Generate and the batch
+  batch-workflow.ts     an approved plan, one test at a time
+  agent-transcript.ts   pruning stale page trees, shared by both loops
+src/server/
+  explore.ts            explore / approve / dismiss / edit the context
+```
+
+The explorer is the generator's opposite twin, and deliberately so. A generation
+is building a file, so every fragment it keeps is permanently a line somebody
+reads and wandering is a defect — hence `detectReplay` and the navigation-churn
+guard. An exploration is building an _opinion_, so nothing it does is kept and
+wandering is the job: it may navigate freely and abandon what it tries. Only
+`rejectUnsafeInteraction` still applies, because `evaluate` and `force: true` are
+how an agent breaks somebody's real app.
+
+**`'proposed'` is not a test yet.** A proposed intent is excluded from "run all",
+from the scheduler, and from every count that answers "how many tests does this
+project have" — `isAdoptedIntent` in `server/actions.ts` is the one filter all of
+them wear. Approving flips it to `'draft'` and generates; dismissing deletes it,
+because a rejected suggestion is not a state worth keeping and the next
+exploration will propose it again if it was a good idea.
+
+**`project.context`** is what the agents know about the app beyond any one
+intent: the chat writes it with `set_project_context`, an exploration appends
+what it found, and it is read into every chat turn and every generation's opening
+message. Always redacted before it is written — a user pasting "log in with
+ada@example.com / hunter2" is the _expected_ way this field gets its first
+paragraph, and the value goes to an encrypted environment variable while the
+sentence around it lands here with `***` in the middle. Editable on the project's
+Settings tab, because a column that steers every future generation must not be
+one only a machine can reach.
+
+**Long jobs speak into the conversation.** An exploration finishes minutes after
+the turn that started it ended, so the workflow posts its plan through
+`ProjectChat.announce()` — which redacts what it is given and declines to
+broadcast over a turn that is mid-answer, leaving the card in the transcript to
+re-read the history when it sees the job finish.
+
 ### Schedules and retention
 
 Two cron triggers reach `scheduled` in `src/server.ts`, told apart by the

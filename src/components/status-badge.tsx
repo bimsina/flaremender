@@ -5,6 +5,10 @@ import type { IntentStatus, RunStatus, ScriptAuthor, SuiteRunStatus } from '#/db
 type BadgeVariant = React.ComponentProps<typeof Badge>['variant']
 
 const INTENT: Record<IntentStatus, { label: string; variant: BadgeVariant }> = {
+  // Not yet a test: something the explorer suggested and nobody has agreed to.
+  // Its own colour rather than a shade of draft, because the two ask different
+  // things of the reader — a draft wants finishing, a proposal wants a verdict.
+  proposed: { label: 'Proposed', variant: 'purple' },
   draft: { label: 'Draft', variant: 'neutral' },
   // Transient, and only ever set by a running `GenerateWorkflow`.
   generating: { label: 'Generating', variant: 'info' },

@@ -195,6 +195,15 @@ function Projects() {
                                 {project.failingCount} failing
                               </Badge>
                             ) : null}
+                            {/* Deliberately last and deliberately not counted
+                                in the badge before it: a proposal is work
+                                waiting for a person, not a test this project
+                                has. */}
+                            {project.proposedCount > 0 ? (
+                              <Badge variant="purple" appearance="dot">
+                                {project.proposedCount} proposed
+                              </Badge>
+                            ) : null}
                           </div>
                         </div>
                       }

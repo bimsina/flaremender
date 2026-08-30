@@ -34,25 +34,32 @@ import {
   scriptVersion,
 } from '#/db/schema/app.ts'
 import type {
+  BatchCard,
   ChatCard,
   EnvironmentCard,
+  ExploreCard,
   GenerationCard,
   IntentCard,
   RunCard,
 } from '#/engine/chat/contract.ts'
 import { describeCron } from '#/lib/cron.ts'
 import {
+  MAX_BATCH_INTENTS,
+  MAX_PROJECT_CONTEXT_CHARS,
   assertNoGenerationInFlight,
   assertVariableName,
   createEnvironmentRecord,
   createIntentRecord,
   deleteIntentRecord,
   loadCurrentVersion,
+  queueBatchGeneration,
+  queueExploration,
   queueGeneration,
   queueIntentRun,
   queueSuiteRun,
   resolveTargetEnvironment,
   setEnvironmentVariableRecord,
+  setProjectContextRecord,
   updateEnvironmentRecord,
   updateIntentRecord,
 } from '#/server/actions.ts'
@@ -93,6 +100,15 @@ export interface ChatToolBus {
    * that carried it into the conversation.
    */
   liftSecret(value: string): Promise<void>
+  /**
+   * Runs text through the turn's current redactor.
+   *
+   * For the one tool whose argument is prose the *user* wrote and that is about
+   * to be persisted outside the transcript: a project's context is very often
+   * the sentence a credential arrived in, and the sentence is worth keeping
+   * once the value in it is `***`.
+   */
+  redact(text: string): string
 }
 
 interface ToolOutcome {
@@ -469,6 +485,139 @@ export function buildChatTools(context: ChatToolContext, bus: ChatToolBus) {
           note: 'Generation is running in the background. The user is watching it live; do not poll.',
         },
         cards: [card],
+      }
+    },
+  })
+
+  /* ------------------------------------------------------- Explore & plans */
+
+  const exploreProject = define<{ focus?: string | null }>({
+    name: 'explore_project',
+    description:
+      'Send an agent round this app in a real browser — signing in if credentials are stored, reading any docs it is pointed at — to work out what the app does and propose the tests worth having. Takes minutes. Returns immediately with a card that streams what it is looking at; when it finishes, a reviewable plan appears in this conversation on its own. Do not wait for it, and do not call it twice.',
+    schema: {
+      type: 'object',
+      properties: {
+        focus: {
+          type: ['string', 'null'],
+          description:
+            'What the user asked it to concentrate on, in their words — e.g. "checkout and refunds". Omit if they did not say.',
+        },
+      },
+      additionalProperties: false,
+    },
+    summary: () => 'Exploring the app',
+    async run(input) {
+      const target = await targetEnvironment(null, 'explore')
+
+      const queued = await queueExploration(db, {
+        projectId,
+        organizationId: context.organizationId,
+        environment: target,
+        createdBy: context.userId,
+        focus: input.focus ? str(input, 'focus', { max: 500 }) : null,
+      })
+
+      const card: ExploreCard = {
+        kind: 'explore',
+        jobId: queued.jobId,
+        environmentName: target.name,
+        focus: input.focus ?? null,
+      }
+
+      return {
+        result: {
+          jobId: queued.jobId,
+          started: true,
+          note: 'The exploration is running in the background and will post its plan here when it is done. Say so in one sentence and stop — do not poll, and do not describe what it might find.',
+        },
+        cards: [card],
+      }
+    },
+  })
+
+  const approvePlan = define<{ intentIds: Array<string> }>({
+    name: 'approve_plan',
+    description:
+      'Approve proposed tests and write their scripts. Each one stops being a proposal and becomes a real test, then the agent generates and verifies them one after another. Takes several minutes for a few tests. Returns immediately with a card that reports progress.',
+    schema: {
+      type: 'object',
+      properties: {
+        intentIds: {
+          type: 'array',
+          minItems: 1,
+          maxItems: MAX_BATCH_INTENTS,
+          items: { type: 'string' },
+          description: 'The proposed tests to approve, in the order they should be generated.',
+        },
+      },
+      required: ['intentIds'],
+      additionalProperties: false,
+    },
+    summary: (input) =>
+      `Approving ${input.intentIds?.length ?? 0} test${input.intentIds?.length === 1 ? '' : 's'}`,
+    async run(input) {
+      const ids = Array.isArray(input.intentIds) ? input.intentIds : []
+      // Resolved one at a time so an id from another project is a complaint the
+      // model can act on rather than a silently shorter batch.
+      for (const intentId of ids) await requireIntent(intentId)
+
+      const target = await targetEnvironment(null, 'generate')
+
+      const queued = await queueBatchGeneration(db, {
+        projectId,
+        organizationId: context.organizationId,
+        environment: target,
+        createdBy: context.userId,
+        intentIds: ids,
+      })
+
+      const card: BatchCard = {
+        kind: 'batch',
+        jobId: queued.jobId,
+        environmentName: target.name,
+        intentIds: queued.intentIds,
+      }
+
+      return {
+        result: {
+          jobId: queued.jobId,
+          approved: queued.total,
+          note: 'Generating in the background, one test at a time. The user is watching it live; do not poll.',
+        },
+        cards: [card],
+      }
+    },
+  })
+
+  const setProjectContext = define<{ text: string }>({
+    name: 'set_project_context',
+    description:
+      'Store what you have been told about this app — what it does, how one signs in, what its documentation says, anything a test author would need. Replaces whatever is there. Every future exploration and every generated script starts from it, so keep it factual and short. Never include a credential value; name the variable instead.',
+    schema: {
+      type: 'object',
+      properties: {
+        text: {
+          type: 'string',
+          description:
+            'A short paragraph or a few bullets. Facts about the app, not instructions to yourself.',
+        },
+      },
+      required: ['text'],
+      additionalProperties: false,
+    },
+    summary: () => 'Saving what I know about this app',
+    async run(input) {
+      // Redacted before it is stored, not after: this is the one argument that
+      // leaves the transcript for a durable column every later prompt reads, so
+      // a credential that reached it would be read back out for ever.
+      const text = bus.redact(str(input, 'text', { min: 10, max: MAX_PROJECT_CONTEXT_CHARS }))
+
+      const stored = await setProjectContextRecord(db, projectId, text)
+
+      return {
+        result: { ok: true, characters: stored.length },
+        detail: 'Saved what I know about this app.',
       }
     },
   })
@@ -883,6 +1032,9 @@ export function buildChatTools(context: ChatToolContext, bus: ChatToolBus) {
     update_intent: updateIntent,
     delete_intent: deleteIntent,
     set_schedule: setSchedule,
+    explore_project: exploreProject,
+    approve_plan: approvePlan,
+    set_project_context: setProjectContext,
     generate_test: generateTest,
     run_test: runTest,
     run_all: runAll,

@@ -8,13 +8,38 @@ import { organization, user } from './auth.ts'
 const now = sql`(cast(unixepoch('subsecond') * 1000 as integer))`
 
 /**
- * Lifecycle of an intent. A hand-written script goes straight from `'draft'` to
- * `'ready'` on first save; `'generating'` is the transient state an intent sits
- * in while a `GenerateWorkflow` is driving a browser on its behalf, and is
- * always replaced by whatever the verification run decided.
+ * Lifecycle of an intent, in the order one moves through it.
+ *
+ * `'proposed'` comes first and is the only status that means *nobody has agreed
+ * to this yet*: it is what the explorer writes when it has been round the site
+ * and has an opinion about what ought to be tested. A proposed intent is a real
+ * row — it can be read, edited and deleted like any other — but it is not part
+ * of the suite: it is excluded from "run all", from the scheduler, and from the
+ * counts that answer "how many tests does this project have". Approving it flips
+ * it to `'draft'`, at which point it is an ordinary intent waiting for a script.
+ *
+ * A hand-written script goes straight from `'draft'` to `'ready'` on first save;
+ * `'generating'` is the transient state an intent sits in while a
+ * `GenerateWorkflow` is driving a browser on its behalf, and is always replaced
+ * by whatever the verification run decided.
  */
-export const INTENT_STATUSES = ['draft', 'generating', 'ready', 'passing', 'failing'] as const
+export const INTENT_STATUSES = [
+  'proposed',
+  'draft',
+  'generating',
+  'ready',
+  'passing',
+  'failing',
+] as const
 export type IntentStatus = (typeof INTENT_STATUSES)[number]
+
+/**
+ * Statuses that are not yet a test anyone asked for. Everything that treats a
+ * project as a suite — "run all", the scheduler, the dashboard's counts — reads
+ * this rather than spelling out the exclusion, so a future status of the same
+ * kind only has to be added here.
+ */
+export const UNADOPTED_INTENT_STATUSES = ['proposed'] as const
 
 /**
  * How a generation job ended. Deliberately coarser than a run's statuses: a job
@@ -23,6 +48,26 @@ export type IntentStatus = (typeof INTENT_STATUSES)[number]
  */
 export const GENERATION_JOB_STATUSES = ['queued', 'running', 'succeeded', 'failed'] as const
 export type GenerationJobStatus = (typeof GENERATION_JOB_STATUSES)[number]
+
+/**
+ * What a job on the `generation_job` table is actually doing.
+ *
+ * Three kinds of work, one table, because all three are the same *object*: a
+ * long-running agent job, owned by an organization, streaming through a
+ * `RunChannel` named after its id, that a socket has to be authorized against
+ * before anyone may watch it. Splitting them into three tables would have
+ * duplicated that row three times and forced `src/server.ts` to ask three
+ * questions where it asks one.
+ *
+ * - `'generate'` — one intent's script. Has an `intentId`, and ends in a
+ *   verified version and a run.
+ * - `'explore'` — a browse of the site that ends in proposed intents. Has no
+ *   `intentId`: it is about the project, not about one test.
+ * - `'batch'` — the umbrella over the `'generate'` jobs an approved plan
+ *   started. Also has no `intentId`, and owns no browser of its own.
+ */
+export const GENERATION_JOB_KINDS = ['generate', 'explore', 'batch'] as const
+export type GenerationJobKind = (typeof GENERATION_JOB_KINDS)[number]
 
 /** `'healed'` is deliberately not collapsed into `'passed'` — it reads differently. */
 export const RUN_STATUSES = ['queued', 'running', 'passed', 'healed', 'failed', 'error'] as const
@@ -101,6 +146,21 @@ export const project = sqliteTable(
     name: text('name').notNull(),
     slug: text('slug').notNull(),
     description: text('description'),
+    /**
+     * What the agents know about this app that is not in any one intent: what it
+     * is for, how to sign in, what the docs said, what the explorer found when
+     * it went and looked. Written by `set_project_context` and appended to by
+     * `ExploreWorkflow`; read by the chat's system prompt and by every
+     * generation's opening message.
+     *
+     * Always redacted before it is written — a user pasting "log in with
+     * ada@example.com / hunter2" is the *expected* way this column gets its
+     * first paragraph, and the value goes to an environment variable while the
+     * sentence around it goes here with `***` in the middle. Capped in
+     * `server/actions.ts` rather than by the column, because the cap is about
+     * what a prompt can afford, not what SQLite can hold.
+     */
+    context: text('context'),
     /** `"{provider}:{slug}"`; null falls through to the instance default. */
     modelId: text('model_id'),
     createdBy: text('created_by')
@@ -353,7 +413,8 @@ export const attempt = sqliteTable(
 )
 
 /**
- * Prefix `gen_`. One attempt at writing a script from an intent's description.
+ * One long-running agent job: `gen_` writes a script, `exp_` explores the site
+ * and proposes tests, `bat_` runs a plan's generations one after another.
  *
  * The row exists for three reasons, and the first is the load-bearing one:
  *
@@ -374,9 +435,19 @@ export const generationJob = sqliteTable(
   'generation_job',
   {
     id: text('id').primaryKey(),
-    intentId: text('intent_id')
-      .notNull()
-      .references(() => intent.id, { onDelete: 'cascade' }),
+    /**
+     * Which of the three jobs this is. Defaulted rather than backfilled: every
+     * row that predates the column was a script generation, which is exactly
+     * what the default says.
+     */
+    kind: text('kind').$type<GenerationJobKind>().default('generate').notNull(),
+    /**
+     * Nullable since M9c. A `'generate'` job always has one — it is the whole
+     * subject of the job — but an exploration is about the project and a batch
+     * is about a list, and pointing either at some arbitrary member would be a
+     * lie the UI would then have to unpick.
+     */
+    intentId: text('intent_id').references(() => intent.id, { onDelete: 'cascade' }),
     projectId: text('project_id')
       .notNull()
       .references(() => project.id, { onDelete: 'cascade' }),
@@ -554,6 +625,7 @@ export const intentRelations = relations(intent, ({ one, many }) => ({
 }))
 
 export const generationJobRelations = relations(generationJob, ({ one }) => ({
+  /** Null for `'explore'` and `'batch'` jobs, which are not about one test. */
   intent: one(intent, { fields: [generationJob.intentId], references: [intent.id] }),
   project: one(project, { fields: [generationJob.projectId], references: [project.id] }),
   environment: one(environment, {

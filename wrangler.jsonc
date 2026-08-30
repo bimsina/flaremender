@@ -42,6 +42,18 @@
       "binding": "GENERATE_WORKFLOW",
       "class_name": "GenerateWorkflow",
     },
+    // Browses the app and proposes tests; ends in `'proposed'` intent rows.
+    {
+      "name": "flaremender-explore",
+      "binding": "EXPLORE_WORKFLOW",
+      "class_name": "ExploreWorkflow",
+    },
+    // An approved plan, generated one test at a time by the same turn loop.
+    {
+      "name": "flaremender-batch",
+      "binding": "BATCH_WORKFLOW",
+      "class_name": "BatchGenerateWorkflow",
+    },
   ],
   // The minute tick dispatches due intent schedules; 03:30 UTC sweeps history.
   // Both land on `scheduled` in src/server.ts, which tells them apart by

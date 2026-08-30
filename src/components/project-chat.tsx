@@ -30,11 +30,14 @@ import { type LiveToolCall, type PendingMessage, useProjectChat } from '#/lib/us
 
 /**
  * What an empty chat suggests. Deliberately three different *kinds* of thing —
- * set the project up, describe a test, use what is already there — because the
- * point of the empty state is to say what this surface is for.
+ * let it find the tests, describe one yourself, use what is already there —
+ * because the point of the empty state is to say what this surface is for.
+ *
+ * Exploring leads, because it is the answer to the question an empty project
+ * actually poses: not "how do I write a test" but "what should I even test?"
  */
 const SUGGESTIONS = [
-  'Here is my app URL and a test login — set it up.',
+  'Explore my app and propose tests.',
   'Describe a flow to test: a visitor signs in and sees their dashboard.',
   'Run all tests',
 ]
@@ -283,7 +286,17 @@ function PartView({ part, projectId }: { part: ChatPart; projectId: string }) {
  * Everything else — headings, tables, links — is deliberately left as written.
  * The chat is not where long-form output belongs; that is what cards are for.
  */
-const INLINE = /(`[^`]+`|\*\*[^*]+\*\*)/g
+/**
+ * `\*\*\*` comes first and is load-bearing.
+ *
+ * It is the redaction marker, and without its own alternative the emphasis rule
+ * claims it: `Login is *** password ***` contains `** password **`, so the two
+ * markers lose an asterisk each and the sentence renders as "Login is * password
+ * *" with the middle in bold. That is the one string in this component that has
+ * to be unambiguous — a reader looking at a message a credential was lifted out
+ * of needs to see that it was redacted, not a stray asterisk.
+ */
+const INLINE = /(\*\*\*|`[^`]+`|\*\*[^*]+\*\*)/g
 
 function MarkdownLite({ text }: { text: string }) {
   const lines = text.split('\n')
