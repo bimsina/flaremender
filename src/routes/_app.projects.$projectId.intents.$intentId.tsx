@@ -22,14 +22,11 @@ import {
   ClockCounterClockwiseIcon,
   ClockIcon,
   DotsThreeIcon,
-  FileTextIcon,
   FloppyDiskIcon,
-  ImageIcon,
   PencilSimpleIcon,
   PlayIcon,
   TrashIcon,
   WarningCircleIcon,
-  WaveformIcon,
   XIcon,
 } from '@phosphor-icons/react'
 import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
@@ -37,27 +34,24 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Fragment, useMemo, useState } from 'react'
 
 import { Duration } from '#/components/duration.tsx'
-import { InlineEmpty, ListRow, Section } from '#/components/list.tsx'
-import { MonoPanel } from '#/components/mono-panel.tsx'
+import { ListRow, Section } from '#/components/list.tsx'
 import { PageBody, PageHeader } from '#/components/page.tsx'
 import { RelativeTime } from '#/components/relative-time.tsx'
+import { RunDetailPanel } from '#/components/run-detail.tsx'
 import { RunLivePanel } from '#/components/run-live-panel.tsx'
+import { RunStatusSummary } from '#/components/run-status-summary.tsx'
 import { IntentStatusBadge, RunStatusBadge, ScriptAuthorBadge } from '#/components/status-badge.tsx'
-import { StepList } from '#/components/step-list.tsx'
-import { SummaryStrip } from '#/components/summary-strip.tsx'
-import type { ArtifactKeys } from '#/db/schema/app.ts'
 import type { RunStatus, ScriptAuthor } from '#/db/schema/app.ts'
 import { describeCron, isValidCron } from '#/lib/cron.ts'
+import { shortId } from '#/lib/ids.ts'
 import {
   environmentsQuery,
   intentQuery,
-  runQuery,
   runsQuery,
   scriptVersionQuery,
   scriptVersionsQuery,
 } from '#/lib/queries.ts'
 import { DEFAULT_SCRIPT_TEMPLATE } from '#/lib/script-template.ts'
-import { parseTranscript } from '#/lib/transcript.ts'
 import {
   deleteIntent,
   restoreScriptVersion,
@@ -271,7 +265,7 @@ function IntentDetail() {
           />
         ) : null}
 
-        {tab === 'runs' ? <RunsTab runs={runs} /> : null}
+        {tab === 'runs' ? <RunsTab projectId={projectId} runs={runs} /> : null}
 
         {tab === 'history' ? (
           <HistoryTab versions={versions} currentVersionId={currentVersion?.id ?? null} />
@@ -568,56 +562,8 @@ type RunRowData = {
   lastErrorMessage: string | null
 }
 
-/** A run id is 24 characters of entropy; the tail is what people compare. */
-function shortRunId(runId: string): string {
-  return runId.slice(-8)
-}
-
-const STATUS_SUMMARY = [
-  { key: 'passed', label: 'Passed', match: (status: RunStatus) => status === 'passed' },
-  { key: 'healed', label: 'Healed', match: (status: RunStatus) => status === 'healed' },
-  { key: 'failed', label: 'Failed', match: (status: RunStatus) => status === 'failed' },
-  { key: 'error', label: 'Error', match: (status: RunStatus) => status === 'error' },
-  {
-    key: 'active',
-    label: 'Running',
-    match: (status: RunStatus) => status === 'running' || status === 'queued',
-  },
-] as const
-
-const SUMMARY_DOT: Record<string, string> = {
-  passed: 'bg-kumo-success',
-  healed: 'bg-kumo-info',
-  failed: 'bg-kumo-danger',
-  error: 'bg-kumo-warning',
-  active: 'bg-kumo-interact',
-}
-
-function RunsTab({ runs }: { runs: Array<RunRowData> }) {
+function RunsTab({ projectId, runs }: { projectId: string; runs: Array<RunRowData> }) {
   const [expanded, setExpanded] = useState<string | null>(null)
-
-  const summary = useMemo(
-    () =>
-      STATUS_SUMMARY.map((entry) => {
-        const count = runs.filter((row) => entry.match(row.status)).length
-        return {
-          key: entry.key,
-          dim: count === 0,
-          label: (
-            <>
-              <span className={`size-2 rounded-full ${SUMMARY_DOT[entry.key]}`} />
-              {entry.label}
-            </>
-          ),
-          value: (
-            <Text as="span" variant="heading">
-              {count}
-            </Text>
-          ),
-        }
-      }),
-    [runs],
-  )
 
   if (runs.length === 0) {
     return (
@@ -632,7 +578,7 @@ function RunsTab({ runs }: { runs: Array<RunRowData> }) {
   return (
     <Section title="Runs" description="Newest first. Open one for its steps and artifacts.">
       <div className="grid gap-4">
-        <SummaryStrip items={summary} />
+        <RunStatusSummary runs={runs} />
 
         <LayerCard className="p-0">
           <div className="overflow-x-auto">
@@ -677,7 +623,7 @@ function RunsTab({ runs }: { runs: Array<RunRowData> }) {
                         <Table.Cell>
                           <span className="flex items-center gap-1.5">
                             <Text as="span" variant="mono-secondary">
-                              {shortRunId(row.id)}
+                              {shortId(row.id)}
                             </Text>
                             {/* Who started it, but only when it was not a
                                 person — "manual" is the unremarkable case and
@@ -705,7 +651,7 @@ function RunsTab({ runs }: { runs: Array<RunRowData> }) {
                       {open ? (
                         <Table.Row>
                           <Table.Cell colSpan={7} className="bg-kumo-recessed">
-                            <RunDetail runId={row.id} />
+                            <RunDetailPanel runId={row.id} projectId={projectId} />
                           </Table.Cell>
                         </Table.Row>
                       ) : null}
@@ -718,215 +664,6 @@ function RunsTab({ runs }: { runs: Array<RunRowData> }) {
         </LayerCard>
       </div>
     </Section>
-  )
-}
-
-const ARTIFACT_LABELS: Record<keyof ArtifactKeys, { label: string; icon: React.ReactNode }> = {
-  screenshot: { label: 'Screenshot', icon: <ImageIcon size={14} /> },
-  trace: { label: 'Trace', icon: <WaveformIcon size={14} /> },
-  logs: { label: 'Logs', icon: <FileTextIcon size={14} /> },
-  video: { label: 'Video', icon: <WaveformIcon size={14} /> },
-}
-
-/** `/api/artifacts/*` re-checks the caller before it streams a byte. */
-function artifactHref(key: string): string {
-  return `/api/artifacts/${key.split('/').map(encodeURIComponent).join('/')}`
-}
-
-function RunDetail({ runId }: { runId: string }) {
-  const { data, isPending, error } = useQuery(runQuery(runId))
-
-  if (isPending) {
-    return (
-      <div className="flex items-center gap-2 py-2">
-        <Loader size="sm" />
-        <Text as="span" variant="secondary" size="xs">
-          Loading the attempt…
-        </Text>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <Banner
-        variant="error"
-        icon={<WarningCircleIcon weight="fill" />}
-        title="Could not load this run"
-        description={error.message}
-      />
-    )
-  }
-
-  if (data.attempts.length === 0) {
-    return <InlineEmpty message="This run has not recorded an attempt yet." />
-  }
-
-  return (
-    <div className="grid gap-6 py-2">
-      {data.attempts.map((attempt) => (
-        <AttemptDetail
-          key={attempt.id}
-          attempt={attempt}
-          environmentName={data.environment.name}
-          showAttemptNumber={data.attempts.length > 1}
-        />
-      ))}
-    </div>
-  )
-}
-
-type AttemptData = {
-  id: string
-  attemptNumber: number
-  outcome: 'passed' | 'failed' | 'error'
-  diagnosis: string | null
-  artifactKeys: ArtifactKeys | null
-  logs: string | null
-  errorMessage: string | null
-  durationMs: number | null
-  scriptUsed: string
-}
-
-const OUTCOME_BADGE = {
-  passed: { label: 'Passed', variant: 'success' },
-  failed: { label: 'Failed', variant: 'error' },
-  error: { label: 'Errored', variant: 'warning' },
-} as const
-
-function AttemptDetail({
-  attempt,
-  environmentName,
-  showAttemptNumber,
-}: {
-  attempt: AttemptData
-  environmentName: string
-  /** Only worth a row of its own once the healing loop retries within a run. */
-  showAttemptNumber: boolean
-}) {
-  const [showScript, setShowScript] = useState(false)
-  const transcript = useMemo(() => parseTranscript(attempt.logs), [attempt.logs])
-
-  const artifacts = Object.entries(attempt.artifactKeys ?? {}).filter(
-    (entry): entry is [keyof ArtifactKeys, string] => typeof entry[1] === 'string',
-  )
-
-  const outcome = OUTCOME_BADGE[attempt.outcome] ?? OUTCOME_BADGE.error
-  const completed = transcript.steps.filter((step) => step.ok).length
-
-  // Transcripts written before errors were fully indented leave the tail of the
-  // error stranded among the logs, where it is already shown in full above.
-  // Repeating it twice under two different headings is worse than dropping it.
-  const output = useMemo(() => {
-    if (transcript.logs.length === 0) return null
-    const joined = transcript.logs.join('\n')
-    const message = attempt.errorMessage
-    if (!message) return joined
-    const remaining = transcript.logs.filter((line) => !message.includes(line))
-    return remaining.length === 0 ? null : remaining.join('\n')
-  }, [transcript.logs, attempt.errorMessage])
-
-  return (
-    <div className="grid gap-4">
-      <SummaryStrip
-        items={[
-          ...(showAttemptNumber
-            ? [
-                {
-                  key: 'attempt',
-                  label: 'Attempt',
-                  value: (
-                    <Text as="span" variant="heading">
-                      {attempt.attemptNumber}
-                    </Text>
-                  ),
-                },
-              ]
-            : []),
-          {
-            key: 'status',
-            label: 'Status',
-            value: (
-              <Badge variant={outcome.variant} appearance="dot">
-                {outcome.label}
-              </Badge>
-            ),
-          },
-          {
-            key: 'steps',
-            label: 'Steps completed',
-            value: (
-              <Text as="span" variant="heading">
-                {completed}
-                <span className="text-kumo-subtle">/{transcript.steps.length}</span>
-              </Text>
-            ),
-          },
-          {
-            key: 'duration',
-            label: 'Duration',
-            value: <Duration ms={attempt.durationMs} />,
-          },
-          {
-            key: 'environment',
-            label: 'Environment',
-            value: <Text as="span">{environmentName}</Text>,
-          },
-          ...(attempt.diagnosis
-            ? [
-                {
-                  key: 'diagnosis',
-                  label: 'Diagnosis',
-                  value: <Badge variant="neutral">{attempt.diagnosis}</Badge>,
-                },
-              ]
-            : []),
-        ]}
-      />
-
-      <div className="grid gap-2">
-        <Text as="h3" variant="heading">
-          Step history
-        </Text>
-        {transcript.steps.length === 0 ? (
-          <InlineEmpty message="No step transcript was recorded for this attempt." />
-        ) : (
-          <StepList steps={transcript.steps} showOffset />
-        )}
-      </div>
-
-      {attempt.errorMessage ? (
-        <MonoPanel label="Error message" text={attempt.errorMessage} tone="danger" />
-      ) : null}
-
-      {output === null ? null : <MonoPanel label="Output" text={output} />}
-
-      <div className="flex flex-wrap items-center gap-2">
-        {artifacts.length === 0 ? (
-          <Text as="span" variant="secondary" size="xs">
-            No artifacts.
-          </Text>
-        ) : (
-          artifacts.map(([kind, key]) => (
-            <a key={kind} href={artifactHref(key)} target="_blank" rel="noreferrer">
-              <Button variant="secondary" size="sm" icon={ARTIFACT_LABELS[kind].icon}>
-                {ARTIFACT_LABELS[kind].label}
-              </Button>
-            </a>
-          ))
-        )}
-        <Button
-          variant="ghost"
-          size="sm"
-          icon={<CaretDownIcon size={14} className={showScript ? 'rotate-180' : '-rotate-90'} />}
-          onClick={() => setShowScript((previous) => !previous)}
-        >
-          {showScript ? 'Hide the script that ran' : 'Show the script that ran'}
-        </Button>
-      </div>
-
-      {showScript ? <MonoPanel label="Script that ran" text={attempt.scriptUsed} /> : null}
-    </div>
   )
 }
 

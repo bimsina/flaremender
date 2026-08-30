@@ -1,5 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
-import { count, desc, eq, sql } from 'drizzle-orm'
+import { and, count, desc, eq, gte, sql } from 'drizzle-orm'
 
 import { attempt, environment, intent, project, run } from '#/db/schema/app.ts'
 import { orgMiddleware } from './auth.ts'
@@ -73,4 +73,66 @@ export const getOrgOverview = createServerFn({ method: 'GET' })
         durationMs: row.durationMs === null ? null : Number(row.durationMs),
       })),
     }
+  })
+
+/** Two weeks including today — enough to see a regression start, short enough to read. */
+const TREND_DAYS = 14
+
+/** `2026-08-30`, in UTC, for a timestamp in milliseconds. */
+function utcDay(ms: number): string {
+  return new Date(ms).toISOString().slice(0, 10)
+}
+
+/**
+ * Runs per UTC day for the last fortnight, split into green and not.
+ *
+ * Grouped in SQLite rather than in JavaScript — `date(started_at/1000,
+ * 'unixepoch')` turns the stored epoch-milliseconds column into the same day
+ * string the client renders, so a fortnight of runs costs one row per day
+ * instead of one row per run.
+ *
+ * Days nothing ran are filled in here rather than left out. A trend with holes
+ * in it is not a trend, and the component should not have to do calendar
+ * arithmetic to find out which days are missing.
+ */
+export const getDailyRunCounts = createServerFn({ method: 'GET' })
+  .middleware([orgMiddleware])
+  .handler(async ({ context }) => {
+    // Midnight UTC, today, minus thirteen days: the first day of the window.
+    const startOfToday = Date.parse(`${utcDay(Date.now())}T00:00:00.000Z`)
+    const since = startOfToday - (TREND_DAYS - 1) * 86_400_000
+
+    const rows = await context.db
+      .select({
+        day: sql<string>`date(${run.startedAt} / 1000, 'unixepoch')`,
+        // `healed` is green — it went green in the end — but it is counted
+        // apart so the tooltip can say which kind of green it was.
+        passed: sql<number>`sum(case when ${run.status} = 'passed' then 1 else 0 end)`,
+        healed: sql<number>`sum(case when ${run.status} = 'healed' then 1 else 0 end)`,
+        failed: sql<number>`sum(case when ${run.status} in ('failed','error') then 1 else 0 end)`,
+        total: count(run.id),
+      })
+      .from(run)
+      .innerJoin(project, eq(project.id, run.projectId))
+      .where(
+        and(
+          eq(project.organizationId, context.organizationId),
+          gte(run.startedAt, new Date(since)),
+        ),
+      )
+      .groupBy(sql`date(${run.startedAt} / 1000, 'unixepoch')`)
+
+    const byDay = new Map(rows.map((row) => [row.day, row]))
+
+    return Array.from({ length: TREND_DAYS }, (_unused, index) => {
+      const day = utcDay(since + index * 86_400_000)
+      const row = byDay.get(day)
+      return {
+        day,
+        passed: Number(row?.passed ?? 0),
+        healed: Number(row?.healed ?? 0),
+        failed: Number(row?.failed ?? 0),
+        total: Number(row?.total ?? 0),
+      }
+    })
   })

@@ -6,13 +6,22 @@
  * already aggregates so the healing loop can append attempts without a rewrite.
  */
 import { createServerFn } from '@tanstack/react-start'
-import { asc, desc, eq, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, sql } from 'drizzle-orm'
 
-import { attempt, environment, intent, run, scriptVersion } from '#/db/schema/app.ts'
+import {
+  RUN_STATUSES,
+  RUN_TRIGGERS,
+  attempt,
+  environment,
+  intent,
+  run,
+  scriptVersion,
+} from '#/db/schema/app.ts'
 import { runIdFromKey } from '#/engine/runner/artifacts.ts'
 import { orgMiddleware } from './auth.ts'
-import { loadIntent, loadRun } from './scope.ts'
-import { ValidationError, has, str } from './validate.ts'
+import { assertProject, loadIntent, loadRun } from './scope.ts'
+import { SIGNATURE_TTL_SECONDS, signArtifactKey } from './sign.ts'
+import { ValidationError, has, oneOf, str } from './validate.ts'
 
 const DEFAULT_LIMIT = 25
 const MAX_LIMIT = 100
@@ -61,6 +70,72 @@ export const listRuns = createServerFn({ method: 'GET' })
       .innerJoin(scriptVersion, eq(scriptVersion.id, run.scriptVersionId))
       .leftJoin(attempt, eq(attempt.runId, run.id))
       .where(eq(run.intentId, data.intentId))
+      .groupBy(run.id)
+      .orderBy(desc(run.startedAt))
+      .limit(data.limit)
+
+    return rows.map((row) => ({
+      ...row,
+      attemptCount: Number(row.attemptCount ?? 0),
+      durationMs: row.durationMs === null ? null : Number(row.durationMs),
+    }))
+  })
+
+/**
+ * Every run in a project, whichever intent produced it.
+ *
+ * The filters are optional and additive; each one absent means "no opinion"
+ * rather than "null", which is why they go through `has` before they are read.
+ * Suite membership is not a filter here — the project Runs tab draws suites
+ * from `listSuiteRuns` and interleaves them with the standalone runs this
+ * returns, so a member run is exposed under the suite it belongs to rather than
+ * twice.
+ */
+export const listProjectRuns = createServerFn({ method: 'GET' })
+  .middleware([orgMiddleware])
+  .validator((data: unknown) => ({
+    projectId: str(data, 'projectId'),
+    status: has(data, 'status') ? oneOf(data, 'status', RUN_STATUSES) : null,
+    environmentId: has(data, 'environmentId') ? str(data, 'environmentId') : null,
+    trigger: has(data, 'trigger') ? oneOf(data, 'trigger', RUN_TRIGGERS) : null,
+    limit: limit(data),
+  }))
+  .handler(async ({ data, context }) => {
+    await assertProject(context.db, context.organizationId, data.projectId)
+
+    const filters = [eq(run.projectId, data.projectId)]
+    if (data.status) filters.push(eq(run.status, data.status))
+    if (data.environmentId) filters.push(eq(run.environmentId, data.environmentId))
+    if (data.trigger) filters.push(eq(run.trigger, data.trigger))
+
+    const rows = await context.db
+      .select({
+        id: run.id,
+        status: run.status,
+        trigger: run.trigger,
+        suiteRunId: run.suiteRunId,
+        startedAt: run.startedAt,
+        finishedAt: run.finishedAt,
+        intentId: run.intentId,
+        intentTitle: intent.title,
+        environmentId: run.environmentId,
+        environmentName: environment.name,
+        scriptVersionId: run.scriptVersionId,
+        version: scriptVersion.version,
+        attemptCount: sql<number>`count(${attempt.id})`,
+        durationMs: sql<number | null>`sum(${attempt.durationMs})`,
+        // SQLite pairs bare columns with the row that produced `max()`, so
+        // these describe the *latest* attempt of the run, not an arbitrary one.
+        lastAttemptNumber: sql<number | null>`max(${attempt.attemptNumber})`,
+        lastOutcome: attempt.outcome,
+        lastErrorMessage: attempt.errorMessage,
+      })
+      .from(run)
+      .innerJoin(intent, eq(intent.id, run.intentId))
+      .innerJoin(environment, eq(environment.id, run.environmentId))
+      .innerJoin(scriptVersion, eq(scriptVersion.id, run.scriptVersionId))
+      .leftJoin(attempt, eq(attempt.runId, run.id))
+      .where(and(...filters))
       .groupBy(run.id)
       .orderBy(desc(run.startedAt))
       .limit(data.limit)
@@ -130,6 +205,28 @@ export const getRun = createServerFn({ method: 'GET' })
   })
 
 /**
+ * The key has to belong to *this* run, not merely to a run in this
+ * organization — otherwise a run id the caller can see would unlock every
+ * artifact the organization has ever produced.
+ */
+function assertArtifactBelongsToRun(
+  scopedRun: { id: string; artifactPrefix: string | null },
+  key: string,
+): void {
+  if (
+    !scopedRun.artifactPrefix ||
+    !key.startsWith(scopedRun.artifactPrefix) ||
+    runIdFromKey(key) !== scopedRun.id
+  ) {
+    throw new ValidationError('That artifact does not belong to this run.')
+  }
+}
+
+function artifactPath(key: string): string {
+  return `/api/artifacts/${key.split('/').map(encodeURIComponent).join('/')}`
+}
+
+/**
  * Where to fetch one of a run's artifacts.
  *
  * Returns a URL rather than bytes: an image belongs in an `<img>` tag and a
@@ -145,17 +242,38 @@ export const getArtifactUrl = createServerFn({ method: 'GET' })
   }))
   .handler(async ({ data, context }) => {
     const scoped = await loadRun(context.db, context.organizationId, data.runId)
+    assertArtifactBelongsToRun(scoped.run, data.key)
 
-    // The key has to belong to *this* run, not merely to a run in this
-    // organization — otherwise a run id the caller can see would unlock every
-    // artifact the organization has ever produced.
-    if (
-      !scoped.run.artifactPrefix ||
-      !data.key.startsWith(scoped.run.artifactPrefix) ||
-      runIdFromKey(data.key) !== scoped.run.id
-    ) {
-      throw new ValidationError('That artifact does not belong to this run.')
+    return { url: artifactPath(data.key) }
+  })
+
+/**
+ * The same artifact, but readable without a session for the next ten minutes.
+ *
+ * This is what the Playwright trace viewer needs: it runs on trace.playwright.dev
+ * and fetches the zip cross-origin, where our cookie does not travel. The
+ * authorisation therefore has to be *in* the URL, which is what makes the
+ * expiry and the narrowness matter — the signature covers one exact key and
+ * nothing about the caller, so a leaked link is one trace for ten minutes and
+ * never a way into the organization.
+ *
+ * The org check is unchanged: it happens here, once, before anything is signed.
+ */
+export const getSignedArtifactUrl = createServerFn({ method: 'GET' })
+  .middleware([orgMiddleware])
+  .validator((data: unknown) => ({
+    runId: str(data, 'runId'),
+    key: str(data, 'key', { max: 512 }),
+  }))
+  .handler(async ({ data, context }) => {
+    const scoped = await loadRun(context.db, context.organizationId, data.runId)
+    assertArtifactBelongsToRun(scoped.run, data.key)
+
+    const exp = Math.floor(Date.now() / 1000) + SIGNATURE_TTL_SECONDS
+    const sig = await signArtifactKey(data.key, exp)
+
+    return {
+      url: `${artifactPath(data.key)}?exp=${exp}&sig=${encodeURIComponent(sig)}`,
+      expiresAt: exp * 1000,
     }
-
-    return { url: `/api/artifacts/${data.key.split('/').map(encodeURIComponent).join('/')}` }
   })

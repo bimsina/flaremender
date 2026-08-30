@@ -4,20 +4,26 @@ import { useSuspenseQuery } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
 
 import { PageBody, PageHeader, StatTile } from '#/components/page.tsx'
+import { RunTrend } from '#/components/run-trend.tsx'
 import { RunStatusBadge } from '#/components/status-badge.tsx'
 import { formatDuration } from '#/lib/format.ts'
 import { RelativeTime } from '#/components/relative-time.tsx'
-import { overviewQuery } from '#/lib/queries.ts'
+import { overviewQuery, runTrendQuery } from '#/lib/queries.ts'
 
 export const Route = createFileRoute('/_app/dashboard')({
-  loader: ({ context }) =>
-    context.queryClient.ensureQueryData({ ...overviewQuery(), revalidateIfStale: true }),
+  loader: async ({ context }) => {
+    await Promise.all([
+      context.queryClient.ensureQueryData({ ...overviewQuery(), revalidateIfStale: true }),
+      context.queryClient.ensureQueryData({ ...runTrendQuery(), revalidateIfStale: true }),
+    ])
+  },
   component: Dashboard,
 })
 
 function Dashboard() {
   const { session } = Route.useRouteContext()
   const { data } = useSuspenseQuery(overviewQuery())
+  const { data: trend } = useSuspenseQuery(runTrendQuery())
 
   const activeOrg = session.organizations.find((org) => org.id === session.activeOrganizationId)
 
@@ -70,6 +76,8 @@ function Dashboard() {
             }
           />
         </section>
+
+        <RunTrend days={trend} />
 
         <section className="grid gap-3">
           <div className="flex items-end justify-between gap-4">

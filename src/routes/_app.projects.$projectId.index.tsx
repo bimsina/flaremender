@@ -31,17 +31,24 @@ import { useMemo, useState } from 'react'
 import { EnvironmentsPanel } from '#/components/environments-panel.tsx'
 import { InlineEmpty, ListRow, ListToolbar, Section } from '#/components/list.tsx'
 import { PageBody, PageHeader } from '#/components/page.tsx'
+import { ProjectRunsTab } from '#/components/project-runs.tsx'
 import { RelativeTime } from '#/components/relative-time.tsx'
 import { IntentStatusBadge } from '#/components/status-badge.tsx'
 import { SuiteProgress } from '#/components/suite-progress.tsx'
 import type { IntentStatus } from '#/db/schema/app.ts'
 import { describeCron } from '#/lib/cron.ts'
-import { environmentsQuery, intentsQuery, projectQuery, suiteRunsQuery } from '#/lib/queries.ts'
+import {
+  environmentsQuery,
+  intentsQuery,
+  projectQuery,
+  projectRunsQuery,
+  suiteRunsQuery,
+} from '#/lib/queries.ts'
 import { createIntent, deleteIntent, runIntent } from '#/server/intents.ts'
 import { deleteProject, updateProject } from '#/server/projects.ts'
 import { runSuite } from '#/server/suites.ts'
 
-const TABS = ['intents', 'environments', 'settings'] as const
+const TABS = ['intents', 'runs', 'environments', 'settings'] as const
 type Tab = (typeof TABS)[number]
 
 function isTab(value: unknown): value is Tab {
@@ -69,6 +76,10 @@ export const Route = createFileRoute('/_app/projects/$projectId/')({
       }),
       context.queryClient.ensureQueryData({
         ...suiteRunsQuery(params.projectId),
+        revalidateIfStale: true,
+      }),
+      context.queryClient.ensureQueryData({
+        ...projectRunsQuery(params.projectId),
         revalidateIfStale: true,
       }),
     ])
@@ -174,6 +185,7 @@ function ProjectDetail() {
             variant="underline"
             tabs={[
               { value: 'intents', label: 'Intents' },
+              { value: 'runs', label: 'Runs' },
               { value: 'environments', label: 'Environments' },
               { value: 'settings', label: 'Settings' },
             ]}
@@ -232,6 +244,13 @@ function ProjectDetail() {
             intents={intents}
             liveSuiteRunId={liveSuiteRunId}
             onCreate={() => setAddingIntent(true)}
+          />
+        ) : null}
+        {tab === 'runs' ? (
+          <ProjectRunsTab
+            projectId={projectId}
+            environments={environments}
+            liveSuiteRunId={liveSuiteRunId}
           />
         ) : null}
         {tab === 'environments' ? <EnvironmentsPanel projectId={projectId} /> : null}

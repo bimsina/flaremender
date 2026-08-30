@@ -1,11 +1,12 @@
 import { queryOptions } from '@tanstack/react-query'
 
+import type { RunStatus, RunTrigger } from '#/db/schema/app.ts'
 import { getAdminStats, listAllMemberships, listAllOrganizations } from '#/server/admin.ts'
-import { getOrgOverview } from '#/server/dashboard.ts'
+import { getDailyRunCounts, getOrgOverview } from '#/server/dashboard.ts'
 import { listEnvironments } from '#/server/environments.ts'
 import { getIntent, getScriptVersion, listIntents, listScriptVersions } from '#/server/intents.ts'
 import { getProject, listProjects } from '#/server/projects.ts'
-import { getRun, listRuns } from '#/server/runs.ts'
+import { getRun, listProjectRuns, listRuns } from '#/server/runs.ts'
 import { fetchSession, fetchThemePreference } from '#/server/session.ts'
 import { getSuiteRun, listSuiteRuns } from '#/server/suites.ts'
 
@@ -27,6 +28,13 @@ export const overviewQuery = () =>
   queryOptions({
     queryKey: ['overview'] as const,
     queryFn: () => getOrgOverview(),
+  })
+
+/** The last fortnight of runs, one row per UTC day, for the dashboard strip. */
+export const runTrendQuery = () =>
+  queryOptions({
+    queryKey: ['run-trend'] as const,
+    queryFn: () => getDailyRunCounts(),
   })
 
 export const projectsQuery = () =>
@@ -79,6 +87,44 @@ export const runsQuery = (intentId: string) =>
     queryKey: ['runs', intentId] as const,
     queryFn: () => listRuns({ data: { intentId } }),
   })
+
+/**
+ * Every run in a project, filtered server-side.
+ *
+ * The filters are normalised to an all-null object so that "no filters" is one
+ * cache key rather than several: the project Runs tab asks for the unfiltered
+ * window to compute its summary and for the filtered window to fill its table,
+ * and while nothing is filtered those are the same request.
+ */
+export interface ProjectRunFilters {
+  status?: RunStatus | null
+  environmentId?: string | null
+  trigger?: RunTrigger | null
+}
+
+const PROJECT_RUNS_LIMIT = 50
+
+export const projectRunsQuery = (projectId: string, filters: ProjectRunFilters = {}) => {
+  const status = filters.status ?? null
+  const environmentId = filters.environmentId ?? null
+  const trigger = filters.trigger ?? null
+
+  return queryOptions({
+    queryKey: ['project-runs', projectId, { status, environmentId, trigger }] as const,
+    queryFn: () =>
+      listProjectRuns({
+        data: {
+          projectId,
+          limit: PROJECT_RUNS_LIMIT,
+          // Absent rather than null: the validator reads a present key as an
+          // opinion, and `null` is not one of the values it accepts.
+          ...(status ? { status } : {}),
+          ...(environmentId ? { environmentId } : {}),
+          ...(trigger ? { trigger } : {}),
+        },
+      }),
+  })
+}
 
 export const runQuery = (runId: string) =>
   queryOptions({

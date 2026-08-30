@@ -25,7 +25,13 @@ const IV_BYTES = 12
  */
 const keys = new Map<string, Promise<CryptoKey>>()
 
-function readEncryptionKey(): string {
+/**
+ * The operator's passphrase, or a clear complaint that there isn't one.
+ *
+ * Exported because signing (`sign.ts`) derives from the same secret: one thing
+ * for the operator to set, one message when they haven't.
+ */
+export function readEncryptionKey(): string {
   const secret = env.ENCRYPTION_KEY
   if (typeof secret !== 'string' || secret.length === 0) {
     throw new CryptoError(
