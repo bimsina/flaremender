@@ -6,9 +6,10 @@
     "#/*": "./src/*"
   },
   "scripts": {
-    "dev": "vite dev --port 3000",
+    "dev": "pnpm run harness && vite dev --port 3000",
+    "harness": "node scripts/build-harness.mjs",
     "generate-routes": "tsr generate",
-    "build": "vite build",
+    "build": "pnpm run harness && vite build",
     "preview": "vite preview",
     "deploy": "pnpm run build && wrangler deploy",
     "cf-typegen": "wrangler types",
@@ -56,6 +57,7 @@
     "babel-plugin-react-compiler": "1.0.0",
     "better-sqlite3": "13.0.3",
     "dotenv": "17.4.2",
+    "esbuild": "0.28.2",
     "oxfmt": "0.65.0",
     "oxlint": "1.80.0",
     "tsx": "4.23.12",

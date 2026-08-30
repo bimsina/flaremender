@@ -51,13 +51,14 @@ Sign out and back in, and the Administration section appears in the sidebar.
 
 ```
 src/
-  db/schema/      app.ts (projects, test cases, runs) + auth.ts (generated)
+  db/schema/      app.ts (projects, intents, runs) + auth.ts (generated)
   lib/            auth client, theme, query options, formatting
   server/         server functions, split by resource
     auth.ts       session middleware and the organization tenant boundary
-    engine.ts     generate → run → repair, behind a swappable seam
+  engine/         the run engine — Workflow, harness, artifacts (see below)
   components/     shared UI
-  routes/         _auth.* (signed out), _app.* (signed in), api/auth/$
+  routes/         _auth.* (signed out), _app.* (signed in), api/auth/$,
+                  api/artifacts/$ (org-checked R2 reads)
 ```
 
 Route groups carry the guards: `_auth` redirects signed-in users away,
@@ -66,18 +67,62 @@ Route groups carry the guards: `_auth` redirects signed-in users away,
 `orgMiddleware`, which reads the organization id from the session and never
 from the client.
 
-### The engine is a stub
+### The run engine
 
-`src/server/engine.ts` currently pattern-matches the prompt into Playwright
-calls and simulates the run — deterministically, so a given attempt always
-replays the same way. Nothing above that file knows the difference. To make it
-real:
+Nothing executes in a request handler. `runIntent` inserts a `queued` run and
+creates a `RunWorkflow` instance named after it, then returns; the Workflow
+loads, executes and persists in three durable steps.
 
-1. Add `ai` and `browser` bindings to `wrangler.jsonc`.
-2. Replace `generateSpec` with a Workers AI call.
-3. Replace `executeSpec` with a Browser Rendering session that executes the spec.
+```
+src/engine/
+  contract.ts          result and event types shared by all three sides
+  harness/runtime.ts   the Dynamic Worker entrypoint (bundled, not imported)
+  harness/instrument.ts proxies that turn Playwright calls into step records
+  runner/loader.ts     LOADER.load() wiring
+  runner/browser.ts    browser lifecycle (compiled into the harness)
+  runner/artifacts.ts  R2 writes under runs/{orgId}/{projectId}/{runId}/
+  runner/scrub.ts      secret redaction
+  run-workflow.ts      load → execute → persist
+```
 
-The signatures in that file are the contract.
+A script runs inside a **Dynamic Worker**, an isolate built from two modules:
+the pre-bundled harness and the saved script. Its only bindings are the browser,
+the environment's decrypted variables and a base URL — no D1, no R2, no ambient
+network — so an untrusted script has nothing to reach for. Artifacts travel back
+to the host as bytes and are written to R2 from there.
+
+Dynamic Workers require **Workers Paid** in production. They are free locally.
+
+#### The harness bundle
+
+`@cloudflare/playwright` cannot be imported by the host Worker and handed
+across the loader boundary — the loader takes module _source_. `pnpm harness`
+(run automatically by `pnpm dev` and `pnpm build`) uses esbuild to bundle
+`src/engine/harness/runtime.ts` plus all of Playwright into
+`src/engine/harness/harness.generated.js`, which the host imports as a string.
+The file is generated, not committed.
+
+Two things about that build are load-bearing: `keepNames` must stay on, because
+Playwright dispatches on `constructor.name`, and `./user-script.js` must stay
+external, because that import is the slot the loader fills with the saved
+script.
+
+#### What a script looks like
+
+```js
+export default async function ({ page, expect, secret }) {
+  await page.goto('/') // relative URLs resolve against the environment base URL
+  await page.getByLabel('Email').fill(secret('EMAIL'))
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible()
+}
+```
+
+`page` and `expect` are the real Playwright objects behind an instrumenting
+proxy, so anything in the Playwright docs works. The proxy records each call as
+a step. `secret()` reads an environment variable; its value — raw,
+URL-encoded or base64 — is replaced with `***` in every log, label and error
+message before anything is stored. Screenshots and traces can still _show_ a
+secret: that is a visual leak no string replacement can fix.
 
 ## Theming
 
@@ -89,8 +134,9 @@ blocking script in `<head>` so there is no flash before hydration.
 ## Commands
 
 ```bash
-pnpm dev             # dev server on :3000
-pnpm build           # production build
+pnpm dev             # build the harness, then dev server on :3000
+pnpm build           # build the harness, then production build
+pnpm harness         # rebuild src/engine/harness/harness.generated.js only
 pnpm deploy          # build and deploy to Cloudflare
 pnpm lint            # oxlint
 pnpm format          # oxfmt

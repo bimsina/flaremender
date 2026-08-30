@@ -9,6 +9,7 @@ import { createServerFn } from '@tanstack/react-start'
 import { asc, desc, eq, sql } from 'drizzle-orm'
 
 import { attempt, environment, intent, run, scriptVersion } from '#/db/schema/app.ts'
+import { runIdFromKey } from '#/engine/runner/artifacts.ts'
 import { orgMiddleware } from './auth.ts'
 import { loadIntent, loadRun } from './scope.ts'
 import { ValidationError, has, str } from './validate.ts'
@@ -120,4 +121,35 @@ export const getRun = createServerFn({ method: 'GET' })
       project: { id: scoped.project.id, name: scoped.project.name },
       attempts,
     }
+  })
+
+/**
+ * Where to fetch one of a run's artifacts.
+ *
+ * Returns a URL rather than bytes: an image belongs in an `<img>` tag and a
+ * trace belongs in a download, neither of which a JSON server function can
+ * provide. `/api/artifacts/*` re-runs this exact check before it streams
+ * anything, so the URL is a convenience and not the authorisation.
+ */
+export const getArtifactUrl = createServerFn({ method: 'GET' })
+  .middleware([orgMiddleware])
+  .validator((data: unknown) => ({
+    runId: str(data, 'runId'),
+    key: str(data, 'key', { max: 512 }),
+  }))
+  .handler(async ({ data, context }) => {
+    const scoped = await loadRun(context.db, context.organizationId, data.runId)
+
+    // The key has to belong to *this* run, not merely to a run in this
+    // organization — otherwise a run id the caller can see would unlock every
+    // artifact the organization has ever produced.
+    if (
+      !scoped.run.artifactPrefix ||
+      !data.key.startsWith(scoped.run.artifactPrefix) ||
+      runIdFromKey(data.key) !== scoped.run.id
+    ) {
+      throw new ValidationError('That artifact does not belong to this run.')
+    }
+
+    return { url: `/api/artifacts/${data.key.split('/').map(encodeURIComponent).join('/')}` }
   })

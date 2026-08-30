@@ -7,15 +7,15 @@
  * is just another save that copies old code forward.
  */
 import { createServerFn } from '@tanstack/react-start'
+import { env } from 'cloudflare:workers'
 import { desc, eq, sql } from 'drizzle-orm'
 
 import type { Db } from '#/db/index.ts'
 import type { IntentStatus, ScriptAuthor } from '#/db/schema/app.ts'
-import { attempt, intent, run, scriptVersion } from '#/db/schema/app.ts'
+import { intent, run, scriptVersion } from '#/db/schema/app.ts'
 import { user } from '#/db/schema/auth.ts'
 import { createId } from '#/lib/ids.ts'
 import { orgMiddleware } from './auth.ts'
-import { executeSpec } from './engine.ts'
 import {
   assertProject,
   loadDefaultEnvironment,
@@ -278,63 +278,13 @@ export const restoreScriptVersion = createServerFn({ method: 'POST' })
   })
 
 /**
- * Runs the script and records the outcome, synchronously, against the stub
- * engine.
+ * Queues a run. Nothing executes in the request handler.
  *
- * M5: replace with `env.RUN_WORKFLOW.create()`. The run row is already `queued`
- * by the time this is called, so the swap is exactly this call site — the
- * workflow takes the run from `queued` onwards and this function goes away.
+ * The row is inserted first and the Workflow instance is named after it, so the
+ * run id is the only handle anyone needs: the client polls it, the engine
+ * writes to it, and creating the same run twice is a no-op rather than a second
+ * browser session.
  */
-async function executeRunInline(
-  db: Db,
-  input: {
-    runId: string
-    intentId: string
-    scriptVersionId: string
-    code: string
-    baseUrl: string
-    title: string
-  },
-) {
-  // One attempt per run until the healing loop appends more; `attemptNumber` is
-  // 1-based *within a run*, not a per-intent counter.
-  const attemptNumber = 1
-  const result = executeSpec({
-    code: input.code,
-    baseUrl: input.baseUrl,
-    title: input.title,
-    seed: input.runId,
-    attempt: attemptNumber,
-  })
-
-  await db.batch([
-    db.insert(attempt).values({
-      id: createId('att'),
-      runId: input.runId,
-      attemptNumber,
-      outcome: result.status,
-      scriptVersionId: input.scriptVersionId,
-      scriptUsed: input.code,
-      logs: result.logs,
-      errorMessage: result.errorMessage,
-      durationMs: result.durationMs,
-    }),
-    db
-      .update(run)
-      .set({ status: result.status, finishedAt: new Date() })
-      .where(eq(run.id, input.runId)),
-    db
-      .update(intent)
-      .set({
-        status: result.status === 'passed' ? 'passing' : 'failing',
-        lastRunId: input.runId,
-      })
-      .where(eq(intent.id, input.intentId)),
-  ])
-
-  return { status: result.status, attemptNumber, durationMs: result.durationMs }
-}
-
 export const runIntent = createServerFn({ method: 'POST' })
   .middleware([orgMiddleware])
   .validator((data: unknown) => ({
@@ -372,20 +322,13 @@ export const runIntent = createServerFn({ method: 'POST' })
 
     await context.db.insert(run).values(runRow)
 
-    const executed = await executeRunInline(context.db, {
-      runId: runRow.id,
-      intentId: row.intent.id,
-      scriptVersionId: version.id,
-      code: version.code,
-      baseUrl: environment.baseUrl,
-      title: row.intent.title,
+    // The organization comes from the session, not from the run row: the
+    // Workflow re-checks it, and a value the client could influence would make
+    // that check meaningless.
+    await env.RUN_WORKFLOW.create({
+      id: runRow.id,
+      params: { runId: runRow.id, organizationId: context.organizationId },
     })
 
-    return {
-      runId: runRow.id,
-      environmentId: environment.id,
-      status: executed.status,
-      attemptNumber: executed.attemptNumber,
-      durationMs: executed.durationMs,
-    }
+    return { runId: runRow.id, environmentId: environment.id, status: runRow.status }
   })

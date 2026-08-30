@@ -12,6 +12,7 @@
     ".claude/**",
     ".agents/**",
     "**/routeTree.gen.ts",
+    "src/engine/harness/harness.generated.js",
     "worker-configuration.d.ts",
     "migrations/**",
     ".wrangler/**",

@@ -46,10 +46,19 @@ export interface HealApplied {
   asserts: Array<string>
 }
 
-/** R2 object keys written for one attempt. */
+/**
+ * R2 object keys written for one attempt, each a full key under the run's
+ * `artifactPrefix`. Served only through `/api/artifacts/*`, which re-checks the
+ * organization before streaming anything back.
+ */
 export interface ArtifactKeys {
+  /** Page at the moment of failure. Absent when the attempt passed. */
   screenshot?: string
+  /** Playwright trace zip, viewable in trace.playwright.dev. */
   trace?: string
+  /** Scrubbed step + log transcript, for downloading a run in one piece. */
+  logs?: string
+  /** Reserved: the Cloudflare fork records no video. */
   video?: string
 }
 

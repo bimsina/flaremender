@@ -23,9 +23,9 @@ import { Route as AcceptInvitationInvitationIdRouteImport } from './routes/accep
 import { Route as AppAdminIndexRouteImport } from './routes/_app.admin.index'
 import { Route as AppAdminOrganizationsRouteImport } from './routes/_app.admin.organizations'
 import { Route as AppProjectsIndexRouteImport } from './routes/_app.projects.index'
+import { Route as ApiArtifactsSplatRouteImport } from './routes/api/artifacts.$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiSpikeBrowserRouteImport } from './routes/api/spike/browser'
-import { Route as ApiSpikeWorkflowRouteImport } from './routes/api/spike/workflow'
 import { Route as ApiSpikeWorkflowStatusRouteImport } from './routes/api/spike/workflow-status'
 import { Route as AppProjectsProjectIdIndexRouteImport } from './routes/_app.projects.$projectId.index'
 import { Route as ApiSpikeLoaderIndexRouteImport } from './routes/api/spike/loader/index'
@@ -100,6 +100,11 @@ const AppProjectsIndexRoute = AppProjectsIndexRouteImport.update({
   path: '/projects/',
   getParentRoute: () => AppRoute,
 } as any)
+const ApiArtifactsSplatRoute = ApiArtifactsSplatRouteImport.update({
+  id: '/api/artifacts/$',
+  path: '/api/artifacts/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -108,11 +113,6 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
 const ApiSpikeBrowserRoute = ApiSpikeBrowserRouteImport.update({
   id: '/api/spike/browser',
   path: '/api/spike/browser',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiSpikeWorkflowRoute = ApiSpikeWorkflowRouteImport.update({
-  id: '/api/spike/workflow',
-  path: '/api/spike/workflow',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiSpikeWorkflowStatusRoute = ApiSpikeWorkflowStatusRouteImport.update({
@@ -149,9 +149,9 @@ export interface FileRoutesByFullPath {
   '/signup': typeof AuthSignupRoute
   '/accept-invitation/$invitationId': typeof AcceptInvitationInvitationIdRoute
   '/admin/organizations': typeof AppAdminOrganizationsRoute
+  '/api/artifacts/$': typeof ApiArtifactsSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/spike/browser': typeof ApiSpikeBrowserRoute
-  '/api/spike/workflow': typeof ApiSpikeWorkflowRoute
   '/api/spike/workflow-status': typeof ApiSpikeWorkflowStatusRoute
   '/admin/': typeof AppAdminIndexRoute
   '/projects/': typeof AppProjectsIndexRoute
@@ -169,9 +169,9 @@ export interface FileRoutesByTo {
   '/signup': typeof AuthSignupRoute
   '/accept-invitation/$invitationId': typeof AcceptInvitationInvitationIdRoute
   '/admin/organizations': typeof AppAdminOrganizationsRoute
+  '/api/artifacts/$': typeof ApiArtifactsSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/spike/browser': typeof ApiSpikeBrowserRoute
-  '/api/spike/workflow': typeof ApiSpikeWorkflowRoute
   '/api/spike/workflow-status': typeof ApiSpikeWorkflowStatusRoute
   '/admin': typeof AppAdminIndexRoute
   '/projects': typeof AppProjectsIndexRoute
@@ -193,9 +193,9 @@ export interface FileRoutesById {
   '/_auth/signup': typeof AuthSignupRoute
   '/accept-invitation/$invitationId': typeof AcceptInvitationInvitationIdRoute
   '/_app/admin/organizations': typeof AppAdminOrganizationsRoute
+  '/api/artifacts/$': typeof ApiArtifactsSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/spike/browser': typeof ApiSpikeBrowserRoute
-  '/api/spike/workflow': typeof ApiSpikeWorkflowRoute
   '/api/spike/workflow-status': typeof ApiSpikeWorkflowStatusRoute
   '/_app/admin/': typeof AppAdminIndexRoute
   '/_app/projects/': typeof AppProjectsIndexRoute
@@ -216,9 +216,9 @@ export interface FileRouteTypes {
     | '/signup'
     | '/accept-invitation/$invitationId'
     | '/admin/organizations'
+    | '/api/artifacts/$'
     | '/api/auth/$'
     | '/api/spike/browser'
-    | '/api/spike/workflow'
     | '/api/spike/workflow-status'
     | '/admin/'
     | '/projects/'
@@ -236,9 +236,9 @@ export interface FileRouteTypes {
     | '/signup'
     | '/accept-invitation/$invitationId'
     | '/admin/organizations'
+    | '/api/artifacts/$'
     | '/api/auth/$'
     | '/api/spike/browser'
-    | '/api/spike/workflow'
     | '/api/spike/workflow-status'
     | '/admin'
     | '/projects'
@@ -259,9 +259,9 @@ export interface FileRouteTypes {
     | '/_auth/signup'
     | '/accept-invitation/$invitationId'
     | '/_app/admin/organizations'
+    | '/api/artifacts/$'
     | '/api/auth/$'
     | '/api/spike/browser'
-    | '/api/spike/workflow'
     | '/api/spike/workflow-status'
     | '/_app/admin/'
     | '/_app/projects/'
@@ -276,9 +276,9 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRouteWithChildren
   OnboardingRoute: typeof OnboardingRoute
   AcceptInvitationInvitationIdRoute: typeof AcceptInvitationInvitationIdRoute
+  ApiArtifactsSplatRoute: typeof ApiArtifactsSplatRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiSpikeBrowserRoute: typeof ApiSpikeBrowserRoute
-  ApiSpikeWorkflowRoute: typeof ApiSpikeWorkflowRoute
   ApiSpikeWorkflowStatusRoute: typeof ApiSpikeWorkflowStatusRoute
   ApiSpikeLoaderIndexRoute: typeof ApiSpikeLoaderIndexRoute
 }
@@ -383,6 +383,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProjectsIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/api/artifacts/$': {
+      id: '/api/artifacts/$'
+      path: '/api/artifacts/$'
+      fullPath: '/api/artifacts/$'
+      preLoaderRoute: typeof ApiArtifactsSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -395,13 +402,6 @@ declare module '@tanstack/react-router' {
       path: '/api/spike/browser'
       fullPath: '/api/spike/browser'
       preLoaderRoute: typeof ApiSpikeBrowserRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/spike/workflow': {
-      id: '/api/spike/workflow'
-      path: '/api/spike/workflow'
-      fullPath: '/api/spike/workflow'
-      preLoaderRoute: typeof ApiSpikeWorkflowRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/spike/workflow-status': {
@@ -490,9 +490,9 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRouteWithChildren,
   OnboardingRoute: OnboardingRoute,
   AcceptInvitationInvitationIdRoute: AcceptInvitationInvitationIdRoute,
+  ApiArtifactsSplatRoute: ApiArtifactsSplatRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiSpikeBrowserRoute: ApiSpikeBrowserRoute,
-  ApiSpikeWorkflowRoute: ApiSpikeWorkflowRoute,
   ApiSpikeWorkflowStatusRoute: ApiSpikeWorkflowStatusRoute,
   ApiSpikeLoaderIndexRoute: ApiSpikeLoaderIndexRoute,
 }

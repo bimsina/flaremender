@@ -96,15 +96,15 @@ function IntentDetail() {
 
   // M7: an environment selector goes here; today the run targets the project's
   // default environment, which is what `runIntent` falls back to.
+  //
+  // The verdict no longer arrives with the response — a run is a Workflow now,
+  // and this only queues it. M6 streams progress; until then the history table
+  // catches up on the next refetch.
   const run = useMutation({
     mutationFn: () => runIntent({ data: { intentId } }),
     onSuccess: async (result) => {
       await queryClient.invalidateQueries()
-      toast.add({
-        variant: result.status === 'passed' ? 'success' : 'error',
-        title: result.status === 'passed' ? 'Run passed' : 'Run failed',
-        description: formatDuration(result.durationMs),
-      })
+      toast.add({ variant: 'info', title: 'Run queued', description: result.runId })
     },
   })
 

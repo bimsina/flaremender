@@ -30,7 +30,6 @@ import { useState } from 'react'
 import { PageBody, PageHeader } from '#/components/page.tsx'
 import { TestCaseStatusBadge } from '#/components/status-badge.tsx'
 import { RelativeTime } from '#/components/relative-time.tsx'
-import { formatDuration } from '#/lib/format.ts'
 import { intentsQuery, projectQuery } from '#/lib/queries.ts'
 import { createIntent, runIntent } from '#/server/intents.ts'
 import { deleteProject, updateProject } from '#/server/projects.ts'
@@ -68,19 +67,17 @@ function ProjectDetail() {
 
   const runAll = useMutation({
     mutationFn: async () => {
-      let passed = 0
-      for (const row of runnable) {
-        const result = await runIntent({ data: { intentId: row.id } })
-        if (result.status === 'passed') passed++
-      }
-      return { passed, total: runnable.length }
+      // Queued, not awaited: each run is a Workflow instance that outlives this
+      // request. M6 replaces the refetch below with live progress.
+      for (const row of runnable) await runIntent({ data: { intentId: row.id } })
+      return { total: runnable.length }
     },
-    onSuccess: async ({ passed, total }) => {
+    onSuccess: async ({ total }) => {
       await queryClient.invalidateQueries()
       toast.add({
-        variant: passed === total ? 'success' : 'error',
-        title: `${passed}/${total} passed`,
-        description: passed === total ? 'Suite is green.' : 'Open a failing intent to fix it.',
+        variant: 'info',
+        title: `${total} run${total === 1 ? '' : 's'} queued`,
+        description: 'Results appear in each intent as they finish.',
       })
     },
   })
@@ -253,11 +250,7 @@ function RowActions({
     mutationFn: () => runIntent({ data: { intentId } }),
     onSuccess: async (result) => {
       await queryClient.invalidateQueries()
-      toast.add({
-        variant: result.status === 'passed' ? 'success' : 'error',
-        title: result.status === 'passed' ? 'Run passed' : 'Run failed',
-        description: formatDuration(result.durationMs),
-      })
+      toast.add({ variant: 'info', title: 'Run queued', description: result.runId })
     },
   })
 
