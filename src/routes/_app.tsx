@@ -11,7 +11,6 @@ import {
 import { useQueryClient } from '@tanstack/react-query'
 import { Outlet, createFileRoute, redirect, useLocation, useNavigate } from '@tanstack/react-router'
 
-import { BrandMark } from '#/components/brand.tsx'
 import { OrgSwitcher } from '#/components/org-switcher.tsx'
 import { ThemeToggle } from '#/components/theme-toggle.tsx'
 import { authClient } from '#/lib/auth-client.ts'
@@ -44,13 +43,7 @@ function AppLayout() {
     <Sidebar.Provider defaultOpen className="h-svh">
       <Sidebar>
         <Sidebar.Header>
-          <div className="grid gap-3 px-1 py-1">
-            <div className="flex items-center gap-2">
-              <BrandMark />
-              <Text as="span" variant="heading">
-                Flaremender
-              </Text>
-            </div>
+          <div className="px-1 py-1">
             <OrgSwitcher session={session} />
           </div>
         </Sidebar.Header>

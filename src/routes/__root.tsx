@@ -30,7 +30,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
     meta: [
       { charSet: 'utf-8' },
       { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-      { title: 'Flaremender' },
+      { title: 'E2E Tests' },
       {
         name: 'description',
         content: 'Describe a test in plain English, get Playwright code that keeps itself green.',
@@ -62,7 +62,9 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           </AppLinkProvider>
         </ThemeProvider>
         <TanStackDevtools
-          config={{ position: 'bottom-right' }}
+          // Fixed, not floating: the floating trigger persists dragged coords in
+          // localStorage and ends up parked over the sidebar's org switcher.
+          config={{ position: 'bottom-right', triggerMode: 'fixed' }}
           plugins={[
             { name: 'Tanstack Router', render: <TanStackRouterDevtoolsPanel /> },
             TanStackQueryDevtools,

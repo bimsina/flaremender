@@ -24,7 +24,7 @@ function Settings() {
 
   return (
     <>
-      <PageHeader title="Settings" description="Your profile and how Flaremender looks." />
+      <PageHeader title="Settings" description="Your profile and appearance." />
 
       <PageBody>
         <div className="grid max-w-2xl gap-8">

@@ -105,7 +105,7 @@ export function EnvironmentsPanel({ projectId }: { projectId: string }) {
           variant="alert"
           icon={<WarningCircleIcon weight="fill" />}
           title="Variable values are write-only"
-          description="Flaremender stores them encrypted and shows only the last four characters. To change one, set it again."
+          description="Values are stored encrypted and only the last four characters are shown. To change one, set it again."
         />
       </div>
 

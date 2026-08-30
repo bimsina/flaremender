@@ -3,7 +3,6 @@ import { WarningCircleIcon } from '@phosphor-icons/react'
 import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 
-import { BrandLockup } from '#/components/brand.tsx'
 import { ThemeToggle } from '#/components/theme-toggle.tsx'
 import { authClient } from '#/lib/auth-client.ts'
 import { slugify } from '#/lib/ids.ts'
@@ -60,7 +59,6 @@ function Onboarding() {
 
       <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-8 px-5 py-12">
         <div className="grid gap-1.5 text-center">
-          <BrandLockup className="justify-center" />
           <Text variant="secondary">One more step before you can add a project.</Text>
         </div>
 

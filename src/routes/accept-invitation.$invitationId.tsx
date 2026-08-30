@@ -3,7 +3,6 @@ import { WarningCircleIcon } from '@phosphor-icons/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
 
-import { BrandLockup } from '#/components/brand.tsx'
 import { ThemeToggle } from '#/components/theme-toggle.tsx'
 import { authClient } from '#/lib/auth-client.ts'
 
@@ -59,8 +58,6 @@ function AcceptInvitation() {
       </div>
 
       <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-8 px-5 py-12">
-        <BrandLockup className="justify-center" />
-
         <LayerCard className="px-6 py-5">
           {invitation.isPending ? (
             <div className="flex justify-center py-6">

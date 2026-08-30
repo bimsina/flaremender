@@ -16,7 +16,7 @@ export function NotFound() {
       <Empty
         icon={<CompassIcon size={48} className="text-kumo-inactive" />}
         title="Page not found"
-        description="That URL doesn't match anything in Flaremender."
+        description="That URL doesn't match anything here."
         contents={
           <Link to="/">
             <Button variant="primary">Back to the start</Button>
