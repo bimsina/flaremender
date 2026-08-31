@@ -4,10 +4,6 @@ import { count, desc, eq, sql } from 'drizzle-orm'
 import { intent, member, organization, project, run, user } from '#/db/schema/index.ts'
 import { adminMiddleware } from './auth.ts'
 
-/**
- * Instance-wide counters. User management itself goes through Better Auth's
- * admin plugin endpoints; this only covers what the plugin doesn't expose.
- */
 export const getAdminStats = createServerFn({ method: 'GET' })
   .middleware([adminMiddleware])
   .handler(async ({ context }) => {

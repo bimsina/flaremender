@@ -1,7 +1,3 @@
-/**
- * Spike: read a Workflow instance's status, which carries the `spike` step
- * output once the instance completes. Dev only.
- */
 import { createFileRoute } from '@tanstack/react-router'
 import { env } from 'cloudflare:workers'
 

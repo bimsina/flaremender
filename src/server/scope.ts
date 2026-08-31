@@ -1,11 +1,3 @@
-/**
- * The tenant boundary, expressed as loaders.
- *
- * Every org-scoped server function starts by resolving the row it was asked
- * about *through* its project's `organizationId`. A record belonging to another
- * organization is therefore indistinguishable from one that does not exist —
- * the caller learns nothing it should not know.
- */
 import { and, eq } from 'drizzle-orm'
 
 import type { Db } from '#/db/index.ts'
@@ -105,7 +97,6 @@ export async function loadSuiteRun(db: Db, organizationId: string, suiteRunId: s
   return row
 }
 
-/** The environment a run points at when the caller did not name one. */
 export async function loadDefaultEnvironment(db: Db, projectId: string) {
   const [row] = await db
     .select()

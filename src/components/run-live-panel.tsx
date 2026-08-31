@@ -1,11 +1,3 @@
-/**
- * The run, as it happens.
- *
- * Steps appear the moment the harness makes the call and settle in place when
- * it returns, which is why a step can be listed with no verdict yet — that is
- * the point of the panel. It lives on the Script tab, directly under the
- * editor, so the code and what it is doing are on one screen.
- */
 import { Badge, Banner, LayerCard, Loader, Text } from '@cloudflare/kumo'
 import { WarningCircleIcon } from '@phosphor-icons/react'
 

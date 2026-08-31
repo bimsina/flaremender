@@ -8,17 +8,11 @@ import { DEFAULT_MODEL_ID, parseModelId } from '#/lib/models.ts'
 import { AuthError, orgMiddleware } from './auth.ts'
 import { ValidationError, optionalStr, str, url } from './validate.ts'
 
-/**
- * Base URLs live on `environment`, never on `project`. Listings surface the
- * project's default environment so cards and headers have something to show;
- * everything that *edits* a base URL goes through `environments.ts`.
- */
 const defaultEnvironment = and(
   eq(environment.projectId, project.id),
   eq(environment.isDefault, true),
 )
 
-/** Null only while a project is mid-creation or its last environment is gone. */
 function toDefaultEnvironment(row: {
   environmentId: string | null
   environmentName: string | null
@@ -29,13 +23,6 @@ function toDefaultEnvironment(row: {
     : { id: row.environmentId, name: row.environmentName, baseUrl: row.baseUrl }
 }
 
-/**
- * What an agent working on this project would actually use: the project's own
- * model, else the instance default, else the Workers AI floor. Resolved here
- * rather than in `llm.ts` so a member who cannot see the admin console still
- * gets an honest caption under the picker — the id is instance-wide
- * configuration, not a credential.
- */
 async function resolveEffectiveModel(db: Db, projectModelId: string | null) {
   const [settings] = await db
     .select({ defaultModelId: instanceSettings.defaultModelId })
@@ -55,8 +42,6 @@ async function resolveEffectiveModel(db: Db, projectModelId: string | null) {
   return {
     modelId,
     origin,
-    // A model can leave the allowlist while a project still points at it, so
-    // fall back to the slug rather than showing nothing.
     displayName: named?.displayName ?? parseModelId(modelId)?.slug ?? modelId,
   }
 }
@@ -75,8 +60,6 @@ export const listProjects = createServerFn({ method: 'GET' })
         baseUrl: environment.baseUrl,
         createdAt: project.createdAt,
         updatedAt: project.updatedAt,
-        // Proposals are not this project's tests yet, so the card must not say
-        // they are; they get their own count so the badge can invite a review.
         intentCount: sql<number>`sum(case when ${intent.id} is not null and ${intent.status} <> 'proposed' then 1 else 0 end)`,
         proposedCount: sql<number>`sum(case when ${intent.status} = 'proposed' then 1 else 0 end)`,
         failingCount: sql<number>`sum(case when ${intent.status} = 'failing' then 1 else 0 end)`,
@@ -86,8 +69,6 @@ export const listProjects = createServerFn({ method: 'GET' })
       .leftJoin(environment, defaultEnvironment)
       .leftJoin(intent, eq(intent.projectId, project.id))
       .where(eq(project.organizationId, context.organizationId))
-      // The environment columns join at most one row per project, but grouping
-      // by its id too keeps them legally aggregated rather than bare.
       .groupBy(project.id, environment.id)
       .orderBy(desc(project.updatedAt))
 
@@ -138,7 +119,6 @@ export const createProject = createServerFn({ method: 'POST' })
   .handler(async ({ data, context }) => {
     const base = slugify(data.name) || 'project'
 
-    // Slugs are unique per organization, so walk until we find a free one.
     const taken = await context.db
       .select({ slug: project.slug })
       .from(project)
@@ -158,7 +138,6 @@ export const createProject = createServerFn({ method: 'POST' })
       createdBy: context.user.id,
     }
 
-    // D1 has no interactive transactions; a batch is the atomic unit.
     await context.db.batch([
       context.db.insert(project).values(row),
       context.db.insert(environment).values({
@@ -182,8 +161,6 @@ export const updateProject = createServerFn({ method: 'POST' })
     description: optionalStr(data, 'description', 500),
   }))
   .handler(async ({ data, context }) => {
-    // No `baseUrl` here on purpose: environments own it, and a project form
-    // that silently rewrote the default environment would be a trapdoor.
     const result = await context.db
       .update(project)
       .set({ name: data.name, description: data.description })
@@ -196,12 +173,6 @@ export const updateProject = createServerFn({ method: 'POST' })
     return { ok: true as const }
   })
 
-/**
- * The project's model choice, kept apart from `updateProject` on purpose: it is
- * picked from a different list (the admin allowlist), saved by a different
- * control, and `null` here means "whatever the instance default is" rather than
- * "cleared".
- */
 export const setProjectModel = createServerFn({ method: 'POST' })
   .middleware([orgMiddleware])
   .validator((data: unknown) => ({
@@ -210,8 +181,6 @@ export const setProjectModel = createServerFn({ method: 'POST' })
   }))
   .handler(async ({ data, context }) => {
     if (data.modelId !== null) {
-      // Only the allowlist is selectable, so a stale picker cannot pin a
-      // project to a model an admin has since withdrawn.
       const [model] = await context.db
         .select({ id: allowedModel.id })
         .from(allowedModel)
@@ -239,7 +208,6 @@ export const deleteProject = createServerFn({ method: 'POST' })
   .middleware([orgMiddleware])
   .validator((data: unknown) => ({
     projectId: str(data, 'projectId'),
-    /** Typed-name confirmation, matched server-side so the UI can't skip it. */
     confirmName: str(data, 'confirmName', { max: 80 }),
   }))
   .handler(async ({ data, context }) => {

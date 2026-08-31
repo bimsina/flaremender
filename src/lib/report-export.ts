@@ -3,7 +3,6 @@ import { readTranscript } from './transcript.ts'
 
 type Report = Awaited<ReturnType<typeof readRunReport>>
 
-/** An allowlist: source code and credentials never enter an export. */
 export function exportRun(report: Report) {
   return {
     id: report.run.id,
@@ -35,7 +34,6 @@ export function exportRun(report: Report) {
 function xml(value: unknown): string {
   return (
     String(value ?? '')
-      // XML 1.0 forbids these control characters.
       // eslint-disable-next-line no-control-regex
       .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
       .replace(
@@ -45,7 +43,6 @@ function xml(value: unknown): string {
   )
 }
 
-/** Draft and verification successes are skipped, never CI regression passes. */
 export function junitReport(
   name: string,
   reports: Array<ReturnType<typeof exportRun>>,
@@ -70,8 +67,6 @@ export function junitReport(
           : ''
     return `<testcase name="${xml(report.test.title)}" classname="${xml(report.environment.name)}" time="${duration}"><properties><property name="runId" value="${xml(report.id)}"/><property name="purpose" value="${xml(report.purpose)}"/><property name="status" value="${xml(report.status)}"/><property name="scriptVersionId" value="${xml(report.scriptVersion.id)}"/><property name="environmentId" value="${xml(report.environment.id)}"/></properties>${result}<system-out>${xml(JSON.stringify({ attempts: report.attempts }))}</system-out></testcase>`
   })
-  // A workflow can fail before creating any member runs. Give CI a real error
-  // case instead of exporting an empty, apparently successful suite.
   if (suite?.status === 'error' && (suite.errorMessage || errors === 0)) {
     const message = suite.errorMessage ?? 'The suite could not finish.'
     cases.push(

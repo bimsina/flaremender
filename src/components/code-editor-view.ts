@@ -19,18 +19,6 @@ import { tags as t } from '@lezer/highlight'
 
 import type { ResolvedTheme } from '#/lib/theme.tsx'
 
-/**
- * Every CodeMirror import in the app lives here, and nothing imports this
- * module statically — `code-editor.tsx` pulls it in from an effect, so the
- * editor is a client-only chunk and never reaches the Worker bundle.
- */
-
-/*
- * Syntax colours are lifted from the two Shiki themes Kumo's own `CodeBlock`
- * renders with — `github-light` and `vesper` — so a script in this editor and a
- * script in a Kumo code block are the same colours rather than two dialects.
- */
-
 const LIGHT_HIGHLIGHT = HighlightStyle.define(
   [
     { tag: [t.comment, t.lineComment, t.blockComment, t.docComment], color: '#6a737d' },
@@ -120,11 +108,6 @@ export interface EditorLook {
   maxHeight?: string
 }
 
-/**
- * The chrome around the code. Every colour is a Kumo token read at runtime, so
- * the editor follows `data-mode` the same way the rest of the app does and
- * there is no second palette to keep in sync.
- */
 function chromeTheme({ theme, minHeight, maxHeight }: EditorLook): Extension {
   const dark = theme === 'dark'
   return EditorView.theme(
@@ -186,9 +169,7 @@ export interface CreateEditorOptions {
 
 export interface EditorHandle {
   view: EditorView
-  /** Swap the theme without tearing the document, selection or history down. */
   setLook: (look: EditorLook) => void
-  /** Push an outside change (a restored version, a different intent) into the doc. */
   setDoc: (value: string) => void
   destroy: () => void
 }
@@ -217,8 +198,6 @@ export function createEditor({
         bracketMatching(),
         indentUnit.of('  '),
         javascript({ typescript: true }),
-        // Tab indents rather than moving focus — this is an editor, not a form
-        // field, and `Escape` still releases the tab stop for keyboard users.
         keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
         readOnly
           ? [EditorState.readOnly.of(true), EditorView.editable.of(false)]

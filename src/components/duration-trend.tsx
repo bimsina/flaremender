@@ -1,15 +1,3 @@
-/**
- * How long a test's recent runs took, one bar each, coloured by verdict.
- *
- * Drawn from the rows already on screen rather than from a query of its own, so
- * the chart and the table under it can never disagree about what happened. A
- * regression shows up as a step in the heights and flakiness as a red bar in a
- * green stretch — both of which a table of durations makes you read for.
- *
- * Nothing is drawn when there is nothing to draw: a test whose runs are all
- * still queued has a table that already says so, and a dashed empty box above
- * it would only be one more thing to look at.
- */
 import { Text } from '@cloudflare/kumo'
 import { useMemo } from 'react'
 

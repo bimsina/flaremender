@@ -195,10 +195,7 @@ function Projects() {
                                 {project.failingCount} failing
                               </Badge>
                             ) : null}
-                            {/* Deliberately last and deliberately not counted
-                                in the badge before it: a proposal is work
-                                waiting for a person, not a test this project
-                                has. */}
+
                             {project.proposedCount > 0 ? (
                               <Badge variant="neutral" appearance="dot">
                                 {project.proposedCount} proposed
@@ -224,8 +221,6 @@ function Projects() {
 function ProjectActions({ projectId }: { projectId: string }) {
   const navigate = useNavigate()
 
-  // Typed navigation rather than an href: the tab is a search param, and a
-  // hand-written query string would bypass the router's own validation of it.
   const open = (tab: 'intents' | 'environments' | 'settings') => {
     void navigate({ to: '/projects/$projectId', params: { projectId }, search: { tab } })
   }

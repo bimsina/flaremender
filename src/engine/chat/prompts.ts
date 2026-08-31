@@ -1,20 +1,3 @@
-/**
- * What the project's assistant is told.
- *
- * It is not a chatbot that happens to have tools; it is the **console** for one
- * project, and the tools are the only way anything happens. Everything here
- * follows from that:
- *
- * - it acts rather than describes, because a paragraph explaining how to create
- *   a test is strictly worse than the created test;
- * - its text is short, because the cards carry the payload — an intent card, a
- *   live generation card, a run card — and prose around them is noise;
- * - it never invents an id, because every id it can legitimately use came back
- *   from a tool call in this same conversation;
- * - it treats a pasted credential as something to *store*, not something to
- *   repeat, because the transcript is durable and the value must not be.
- */
-
 export const CHAT_SYSTEM_PROMPT = `You are Flaremender's assistant for one project. Flaremender is an end-to-end testing tool: a **test** is a plain-English *intent* plus a Playwright script that Flaremender generates and runs against a real browser.
 
 You are a console, not a chatbot. The user's requests are carried out with tools; your text only ties the results together.
@@ -83,21 +66,12 @@ If you do not know what is in the project, call \`get_project_overview\` or \`li
 export interface ChatContext {
   projectName: string
   projectDescription: string | null
-  /** Standing knowledge about the app, redacted. See `project.context`. */
   projectContext: string | null
   environments: Array<{ id: string; name: string; baseUrl: string; isDefault: boolean }>
-  /** Tests that have been agreed to; proposals are counted separately. */
   intentCount: number
   proposedCount: number
 }
 
-/**
- * The standing facts about this project, prepended as a system message.
- *
- * Environments are in here rather than behind a tool call because every other
- * action needs one, and a model that has to look them up first spends a turn
- * doing it on every conversation.
- */
 export function buildChatContext(context: ChatContext): string {
   const environments =
     context.environments.length === 0

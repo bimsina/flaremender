@@ -1,7 +1,5 @@
-/** Tiny hand-rolled validators — the app has no schema library as a dependency. */
 import { parseCron } from '#/lib/cron.ts'
 
-/** Thrown by every validator here; server functions surface the message as-is. */
 export class ValidationError extends Error {
   constructor(message: string) {
     super(message)
@@ -34,10 +32,6 @@ export function optionalStr(data: unknown, key: string, max = 5000): string | nu
   return trimmed || null
 }
 
-/**
- * Whether a patch actually mentions a field. Lets partial updates tell "leave
- * this alone" (key absent) apart from "clear this" (key present, null).
- */
 export function has(data: unknown, key: string): boolean {
   return record(data)[key] !== undefined
 }
@@ -45,13 +39,11 @@ export function has(data: unknown, key: string): boolean {
 export function bool(data: unknown, key: string): boolean {
   const value = record(data)[key]
   if (typeof value === 'boolean') return value
-  // Form posts arrive as strings, so accept the two spellings that mean it.
   if (value === 'true') return true
   if (value === 'false') return false
   throw new ValidationError(`"${key}" must be true or false.`)
 }
 
-/** Narrows to the union the caller passed, so handlers keep their literal types. */
 export function oneOf<T extends readonly [string, ...Array<string>]>(
   data: unknown,
   key: string,
@@ -64,15 +56,6 @@ export function oneOf<T extends readonly [string, ...Array<string>]>(
   return value as T[number]
 }
 
-/**
- * A five-field UTC cron expression, checked by the parser that will actually
- * run it.
- *
- * Deliberately not a looser check than the matcher: an expression this accepts
- * but `matchesCron` cannot read would be a schedule that silently never fires,
- * which is the worst possible outcome for a scheduling feature. The grammar is
- * documented on `src/lib/cron.ts`.
- */
 export function cron(data: unknown, key: string): string | null {
   const value = optionalStr(data, key, 200)
   if (value === null) return null

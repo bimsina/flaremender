@@ -29,9 +29,6 @@ function Dashboard() {
 
   const activeOrg = session.organizations.find((org) => org.id === session.activeOrganizationId)
 
-  // Healed runs went green, so they count towards the rate — but they are named
-  // separately underneath it, because a suite that only passes after repairs is
-  // not the same suite as one that passes outright.
   const green = data.passedRuns + data.healedRuns
   const passRate = data.runs > 0 ? Math.round((green / data.runs) * 100) : null
 

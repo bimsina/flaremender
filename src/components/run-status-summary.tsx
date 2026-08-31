@@ -1,13 +1,3 @@
-/**
- * The roll-up above a table of runs: how the window in front of you broke down.
- *
- * Deliberately computed from the rows that were loaded rather than from a
- * separate `count(*)` — the strip and the table then always agree, and a strip
- * that disagrees with the list under it is worse than no strip.
- *
- * A count of zero is shown, dimmed, rather than hidden: "no failures" is the
- * fact people come here for, and it cannot be read off an absent segment.
- */
 import { Text } from '@cloudflare/kumo'
 import { useMemo } from 'react'
 

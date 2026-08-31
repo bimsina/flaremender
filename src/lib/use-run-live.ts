@@ -1,17 +1,3 @@
-/**
- * Watching a run happen.
- *
- * The socket is the fast path, not the only one. Everything a run produces is
- * also in the database, so if the WebSocket never opens — a proxy that strips
- * upgrades, an offline moment, a browser that has run out of connections — the
- * hook falls back to polling the same `getRun` query the page would have used
- * anyway. The panel gets quieter, not broken.
- *
- * The socket itself, and the fold from envelopes to steps, live in
- * `use-channel-feed.ts` and are shared with generation — the two are the same
- * stream from the same Durable Object, and only what they poll when it fails
- * is different.
- */
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo } from 'react'
 
@@ -39,14 +25,9 @@ export interface RunLive {
   finished: boolean
   outcome: RunOutcome | null
   errorMessage: string | null
-  /** The run's status as the database has it, once polling has asked. */
   status: RunStatus | null
 }
 
-/**
- * @param runId The run to watch, or null when nothing is running.
- * @param intentId Which listings to refresh once the run reports a verdict.
- */
 export function useRunLive(runId: string | null, intentId: string): RunLive {
   const queryClient = useQueryClient()
   const poll = useQuery({
@@ -69,8 +50,6 @@ export function useRunLive(runId: string | null, intentId: string): RunLive {
   useEffect(() => {
     if (runId === null || !finished) return
 
-    // The run row, the history list and the intent's own badge all changed the
-    // moment the verdict landed, and none of them know it.
     void queryClient.invalidateQueries({ queryKey: runQuery(runId).queryKey })
     void queryClient.invalidateQueries({ queryKey: runsQuery(intentId).queryKey })
     void queryClient.invalidateQueries({ queryKey: intentQuery(intentId).queryKey })

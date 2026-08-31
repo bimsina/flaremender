@@ -1,22 +1,3 @@
-/**
- * What the explorer is told.
- *
- * The generator and the explorer are the same machinery pointed at opposite
- * questions. The generator is given a flow and must not wander: every successful
- * fragment is permanently the next line of a file somebody will read, so it acts
- * only on steps it means. The explorer is given *nothing* and must wander: its
- * whole job is to find out what the app does, and nothing it clicks is kept.
- *
- * So the rules invert. It may navigate freely, it may go back, it may try a
- * form and abandon it — the browser is a scratchpad. What it produces is not
- * code but *judgement*: a short list of the tests this app would actually
- * benefit from, written the way a person describes behaviour.
- *
- * The one thing both share is the standard for a description. An intent is the
- * permanent source of truth, and a vague one produces a vague script, so the
- * explorer is held to exactly the wording rules `create_intent` is.
- */
-
 export const EXPLORE_SYSTEM_PROMPT = `You are Flaremender's test planner. You are given a real web app, a real browser already open on it, and any notes its owner has written down. You go and look at the app, work out what it is for, and propose the end-to-end tests worth having.
 
 You are **not** writing code. Nothing you click is saved. The browser is a scratchpad for finding out what the app does.
@@ -83,17 +64,12 @@ export interface ExploreContext {
   projectDescription: string | null
   environmentName: string
   baseUrl: string
-  /** Names only. Values never enter a prompt, a transcript or a tool result. */
   credentialNames: Array<string>
-  /** What the project already knows about itself — redacted, from `project.context`. */
   projectContext: string | null
-  /** Titles the project already has, so the explorer does not propose them again. */
   existingTitles: Array<string>
-  /** What the user asked it to concentrate on, if they said. */
   focus: string | null
 }
 
-/** The opening message: where you are, what is known, and what not to repeat. */
 export function buildExplorePrompt(context: ExploreContext): string {
   const sections: Array<string> = [
     `# The app
@@ -150,14 +126,6 @@ None. This is the first plan for this app.`,
   return sections.join('\n\n')
 }
 
-/**
- * The summary written into `project.context` when an exploration ends.
- *
- * Deliberately assembled here rather than taken from the model verbatim: what
- * goes into durable storage and every future prompt should be the two facts
- * worth carrying — what this app is and what was proposed — with a date on it,
- * not whatever length of prose the model felt like producing.
- */
 export function buildContextSection(input: {
   summary: string | null
   titles: Array<string>

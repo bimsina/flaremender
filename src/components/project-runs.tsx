@@ -1,18 +1,3 @@
-/**
- * Everything this project has run, in one list.
- *
- * The list interleaves two different things by time: suites, which are one row
- * that opens into the runs inside them, and runs that were started on their
- * own. Suites are not flattened into their members — a "Run all" is one event,
- * and seven rows claiming to be seven separate decisions would misdescribe what
- * happened — and a member run is therefore reachable through its suite rather
- * than listed twice.
- *
- * The filters are server-side, so filtering widens the window rather than
- * narrowing what was already fetched: asking for the failures of a project that
- * has run two hundred times must not mean "the failures among the newest
- * fifty". The one exception is documented on `matchesStatus` below.
- */
 import { Button, Empty, LayerCard, LinkButton, Loader, Select, Table, Text } from '@cloudflare/kumo'
 import { CaretDownIcon, ClockIcon, PlayIcon, StackIcon } from '@phosphor-icons/react'
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
@@ -95,13 +80,6 @@ type Entry =
   | { kind: 'suite'; id: string; startedAt: Date; suite: SuiteRow }
   | { kind: 'run'; id: string; startedAt: Date; run: ProjectRunRow }
 
-/**
- * `running` covers both `queued` and `running`, which is one filter and two
- * values — more than the server function's single-status parameter can take.
- * It is therefore the one filter applied here instead, over the unfiltered
- * window; that window is the newest runs, which is exactly where anything still
- * in flight has to be.
- */
 function matchesStatus(status: RunStatus | SuiteRunStatus, filter: StatusFilter): boolean {
   if (filter === 'all') return true
   if (filter === 'running') return status === 'running' || status === 'queued'
@@ -115,7 +93,6 @@ export function ProjectRunsTab({
 }: {
   projectId: string
   environments: Array<{ id: string; name: string; isDefault: boolean }>
-  /** The suite whose progress belongs above this list, if one is in flight. */
   liveSuiteRunId: string | null
 }) {
   const [status, setStatus] = useState<StatusFilter>('all')
@@ -123,15 +100,9 @@ export function ProjectRunsTab({
   const [trigger, setTrigger] = useState<TriggerFilter>('all')
   const [expanded, setExpanded] = useState<string | null>(null)
 
-  // The summary describes the project, not the filter — so it reads the
-  // unfiltered window. While nothing is filtered this is the same request as
-  // the list's, and React Query serves both from one fetch.
   const { data: recent } = useSuspenseQuery(projectRunsQuery(projectId))
   const { data: suiteRuns } = useSuspenseQuery(suiteRunsQuery(projectId))
 
-  // The trend is the project's own fortnight, counted server-side — not a
-  // roll-up of the window above, which is the newest fifty runs and could be
-  // an afternoon.
   const { data: trend } = useSuspenseQuery(runTrendQuery(projectId))
 
   const { data: runs, isPending } = useQuery(
@@ -374,8 +345,6 @@ function SuiteEntry({
   open: boolean
   onToggle: () => void
 }) {
-  // The span, not the sum: a suite runs its members one after another, so how
-  // long it occupied the browser is the wall clock from first to last.
   const spanMs =
     suite.finishedAt === null ? null : suite.finishedAt.getTime() - suite.startedAt.getTime()
 
@@ -444,13 +413,6 @@ function SuiteEntry({
   )
 }
 
-/**
- * The runs inside a suite, fetched only when someone opens it.
- *
- * Read from `getSuiteRun` rather than filtered out of the list above: the list
- * is a limited, filtered window, and a suite must show all of its members or it
- * is lying about what it did.
- */
 function SuiteMembers({ projectId, suiteRunId }: { projectId: string; suiteRunId: string }) {
   const { data, isPending, error } = useQuery({
     ...suiteRunQuery(suiteRunId),

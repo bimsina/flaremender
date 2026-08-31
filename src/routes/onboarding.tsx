@@ -31,8 +31,6 @@ export const Route = createFileRoute('/onboarding')({
       throw redirect({ to: '/signin', search: { redirect: location.href } })
     }
 
-    // Only an admin of an instance nobody has configured yet has a second step,
-    // so everyone else still leaves the moment they belong to an organization.
     const status = await context.queryClient.ensureQueryData(instanceSetupStatusQuery())
     if (context.session.organizations.length > 0 && !status.needsSetup) {
       throw redirect({ to: '/dashboard' })
@@ -40,8 +38,6 @@ export const Route = createFileRoute('/onboarding')({
 
     return { session: context.session, needsSetup: status.needsSetup }
   },
-  // Only an admin gets this far with `needsSetup`, and only they may read it —
-  // so the provider list is prefetched exactly when it is about to be shown.
   loader: async ({ context }) => {
     if (!context.needsSetup) return
     await context.queryClient.ensureQueryData({
@@ -58,8 +54,6 @@ function Onboarding() {
   const { session, needsSetup } = Route.useRouteContext()
   const navigate = useNavigate()
 
-  // An admin who already made an organization but never finished setup lands
-  // straight on the second step rather than being asked for another one.
   const [step, setStep] = useState<1 | 2>(session.organizations.length > 0 ? 2 : 1)
 
   return (
@@ -176,13 +170,6 @@ function CreateOrganizationStep({ onDone }: { onDone: () => Promise<void> }) {
   )
 }
 
-/**
- * The instance's LLM providers, shown once to whoever installed it.
- *
- * Deliberately flat about what is and isn't configured: no model is presented
- * as the right one, and skipping is a first-class outcome — Workers AI needs no
- * credentials, so an instance that sets nothing here still works.
- */
 function InstanceSetupStep() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()

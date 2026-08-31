@@ -1,11 +1,3 @@
-/**
- * Environments and their credentials.
- *
- * A variable is write-only by design: the server hands back a four-character
- * hint and nothing else, so this panel can say *which* value is stored without
- * ever holding it. Editing one means setting it again, which is why the add row
- * doubles as the replace row.
- */
 import {
   Badge,
   Banner,
@@ -147,8 +139,6 @@ function EnvironmentCard({
       toast.add({
         variant: 'success',
         title: 'Environment deleted',
-        // A project always has a default, so deleting the current one promotes
-        // the oldest survivor — say so rather than let it happen silently.
         description: result.promoted ? 'Another environment became the default.' : environment.name,
       })
     },
@@ -210,7 +200,6 @@ function EnvironmentCard({
               <DropdownMenu.Item
                 icon={TrashIcon}
                 variant="danger"
-                // The server refuses this too; disabling it here just explains why.
                 disabled={onlyOne || remove.isPending}
                 onClick={() => remove.mutate()}
               >
@@ -351,7 +340,6 @@ function VariableRow({
       </Text>
       <div className="flex shrink-0 items-center gap-2">
         <Text as="span" variant="mono-secondary">
-          {/* Null means the stored envelope no longer decrypts — a rotated key. */}
           {variable.hint ?? 'unreadable'}
         </Text>
         <Button
@@ -375,7 +363,6 @@ function EnvironmentDialog({
   open,
   onOpenChange,
 }: {
-  /** Set when creating; null when editing an existing environment. */
   projectId: string | null
   environment: EnvironmentRow | null
   open: boolean

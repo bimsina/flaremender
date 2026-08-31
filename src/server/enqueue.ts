@@ -1,6 +1,5 @@
 import { ValidationError } from './validate.ts'
 
-/** A lost create response must not fail work that already exists under the same ID. */
 export async function enqueueWork(
   start: () => Promise<unknown>,
   lookup: () => Promise<unknown>,

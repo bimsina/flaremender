@@ -1,10 +1,4 @@
-/**
- * Used only by `pnpm auth:generate` (in-memory SQLite).
- * Runtime auth lives in `src/lib/auth.ts` with Cloudflare D1.
- *
- * Keep the plugin list here in sync with `createAuth` in `src/lib/auth.ts`,
- * otherwise the generated schema will drift from what the app actually needs.
- */
+/** Keep these plugins in sync with createAuth in src/lib/auth.ts. */
 import Database from 'better-sqlite3'
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'

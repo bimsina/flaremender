@@ -22,7 +22,7 @@ export const authMiddleware = createMiddleware({ type: 'function' }).server(asyn
   return next({ context: { db: getDb(), user: result.user, session: result.session } })
 })
 
-/** The tenant boundary: never take an organization id from the client. */
+/** Never accept the active organization ID from client input. */
 export const orgMiddleware = createMiddleware({ type: 'function' })
   .middleware([authMiddleware])
   .server(async ({ next, context }) => {

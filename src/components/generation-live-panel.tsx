@@ -1,17 +1,3 @@
-/**
- * The script being written, as it is written.
- *
- * Two tracks, side by side down the page: what the model *said* it was doing
- * and what the browser actually did about it. They are shown together because
- * either alone is misleading — narration without steps is a model's account of
- * itself, and steps without narration is a wall of Playwright calls with no
- * explanation of why any of them happened.
- *
- * The panel deliberately reuses `StepList`, so a generation's steps read
- * exactly like a run's. They are the same kind of thing: real calls against a
- * real browser, and the only difference is that these ones were written moments
- * before they ran.
- */
 import { Badge, Banner, LayerCard, Loader, Text } from '@cloudflare/kumo'
 import { SparkleIcon, WarningCircleIcon } from '@phosphor-icons/react'
 

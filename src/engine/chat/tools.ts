@@ -1,26 +1,3 @@
-/**
- * The tool belt.
- *
- * Every tool here is a thin shell around `server/actions.ts` — the same
- * functions the dialogs and buttons call. That is the whole design rule of the
- * chat: an intent created by typing a sentence is byte-for-byte the row a person
- * would have made with the New intent dialog, made by the same code, with the
- * same guards. Nothing exists only inside a conversation.
- *
- * Three things are true of all of them:
- *
- * - **Scoped to one project, structurally.** The Durable Object was authorized
- *   on a project id before a socket or a turn reached it, and every lookup below
- *   filters on that id. There is no argument a model could produce that reaches
- *   another project, let alone another tenant.
- * - **They announce themselves.** Each call emits a `tool.started` with a
- *   summary *we* wrote and a `tool.finished` carrying the cards it produced.
- *   The model's raw arguments are never streamed and never stored — which is
- *   what makes it safe for one of those arguments to be a password.
- * - **They fail as data.** A validation error comes back to the model as
- *   `{ error }` so it can explain or retry, rather than throwing and killing the
- *   turn.
- */
 import { jsonSchema, tool } from 'ai'
 import { and, desc, eq, sql } from 'drizzle-orm'
 
@@ -65,19 +42,15 @@ import {
 } from '#/server/actions.ts'
 import { ValidationError, cron, str, url } from '#/server/validate.ts'
 
-/** How many intents a listing turns into cards before it stops. */
 const MAX_INTENT_CARDS = 12
 
-/** How many runs a listing returns to the model. */
 const RUN_LIMIT = 10
 
-/** Descriptions are prose; the model does not need all of one to recognise it. */
 const DESCRIPTION_PREVIEW = 240
 
 export interface ChatToolContext {
   db: Db
   projectId: string
-  /** From the session that opened the turn, never from a row. */
   organizationId: string
   userId: string
 }
@@ -90,32 +63,16 @@ export interface ToolFinishedInput {
   cards?: Array<ChatCard>
 }
 
-/** How a tool talks to the people watching, and to the redactor. */
 export interface ChatToolBus {
   started(toolCallId: string, name: string, summary: string): Promise<void>
   finished(input: ToolFinishedInput): Promise<void>
-  /**
-   * A credential has just been stored. From here on it is redacted from
-   * everything streamed or persisted — including, retroactively, the message
-   * that carried it into the conversation.
-   */
   liftSecret(value: string): Promise<void>
-  /**
-   * Runs text through the turn's current redactor.
-   *
-   * For the one tool whose argument is prose the *user* wrote and that is about
-   * to be persisted outside the transcript: a project's context is very often
-   * the sentence a credential arrived in, and the sentence is worth keeping
-   * once the value in it is `***`.
-   */
   redact(text: string): string
 }
 
 interface ToolOutcome {
-  /** What the model sees. Compact JSON; never a secret, never a whole page. */
   result: unknown
   cards?: Array<ChatCard>
-  /** One line for the transcript when the cards do not say it themselves. */
   detail?: string | null
 }
 
@@ -127,20 +84,11 @@ function preview(text: string): string {
   return text.length <= DESCRIPTION_PREVIEW ? text : `${text.slice(0, DESCRIPTION_PREVIEW)}…`
 }
 
-/** The JSON Schema dialect the AI SDK hands to every provider. */
 type ToolSchema = Parameters<typeof jsonSchema>[0]
 
 export function buildChatTools(context: ChatToolContext, bus: ChatToolBus) {
   const { db, projectId } = context
 
-  /**
-   * The one place a tool becomes a tool.
-   *
-   * The wrapper is what guarantees the two invariants the events depend on:
-   * a `tool.started` before any work and a `tool.finished` after it, whatever
-   * happened — and a summary line written here rather than derived from the
-   * arguments, so a password in an argument has nowhere to escape to.
-   */
   function define<Input>(config: {
     name: string
     description: string
@@ -154,8 +102,6 @@ export function buildChatTools(context: ChatToolContext, bus: ChatToolBus) {
       async execute(input, options) {
         const toolCallId = options.toolCallId
 
-        // A summary that throws must not take the turn with it — the model gets
-        // the complaint back and can fix its arguments.
         let summary: string
         try {
           summary = config.summary(input)
@@ -184,15 +130,7 @@ export function buildChatTools(context: ChatToolContext, bus: ChatToolBus) {
     })
   }
 
-  /* --------------------------------------------------------------- Loaders */
-
-  /**
-   * An intent of *this* project, or a complaint the model can act on.
-   *
-   * Scoping on `projectId` rather than on the organization is deliberate and
-   * stricter: the project was checked when the turn began, and an id from a
-   * sibling project is as invisible here as one from another tenant.
-   */
+  /** Chat tools are scoped to this project, including when another project belongs to the same organization. */
   async function requireIntent(intentId: string) {
     const [row] = await db
       .select()
@@ -216,7 +154,6 @@ export function buildChatTools(context: ChatToolContext, bus: ChatToolBus) {
     return row
   }
 
-  /** Null means "the project's default", which `resolveTargetEnvironment` finds. */
   async function targetEnvironment(environmentId: string | null | undefined, purpose: string) {
     const named = environmentId ? await requireEnvironment(environmentId) : null
     return resolveTargetEnvironment(db, projectId, named, purpose)
@@ -251,8 +188,6 @@ export function buildChatTools(context: ChatToolContext, bus: ChatToolBus) {
       variableNames: variables.map((variable) => variable.name),
     }
   }
-
-  /* ----------------------------------------------------------------- Tests */
 
   const listIntents = define<Record<string, never>>({
     name: 'list_intents',
@@ -433,8 +368,6 @@ export function buildChatTools(context: ChatToolContext, bus: ChatToolBus) {
     },
   })
 
-  /* ------------------------------------------------------------ Generation */
-
   const generateTest = define<{ intentId: string; environmentId?: string | null }>({
     name: 'generate_test',
     description:
@@ -491,8 +424,6 @@ export function buildChatTools(context: ChatToolContext, bus: ChatToolBus) {
       }
     },
   })
-
-  /* ------------------------------------------------------- Explore & plans */
 
   const exploreProject = define<{ focus?: string | null }>({
     name: 'explore_project',
@@ -561,8 +492,6 @@ export function buildChatTools(context: ChatToolContext, bus: ChatToolBus) {
       `Approving ${input.intentIds?.length ?? 0} test${input.intentIds?.length === 1 ? '' : 's'}`,
     async run(input) {
       const ids = Array.isArray(input.intentIds) ? input.intentIds : []
-      // Resolved one at a time so an id from another project is a complaint the
-      // model can act on rather than a silently shorter batch.
       for (const intentId of ids) await requireIntent(intentId)
 
       const target = await targetEnvironment(null, 'generate')
@@ -611,9 +540,6 @@ export function buildChatTools(context: ChatToolContext, bus: ChatToolBus) {
     },
     summary: () => 'Saving what I know about this app',
     async run(input) {
-      // Redacted before it is stored, not after: this is the one argument that
-      // leaves the transcript for a durable column every later prompt reads, so
-      // a credential that reached it would be read back out for ever.
       const text = bus.redact(str(input, 'text', { min: 10, max: MAX_PROJECT_CONTEXT_CHARS }))
 
       const stored = await setProjectContextRecord(db, projectId, text)
@@ -624,8 +550,6 @@ export function buildChatTools(context: ChatToolContext, bus: ChatToolBus) {
       }
     },
   })
-
-  /* ------------------------------------------------------------------ Runs */
 
   const runTest = define<{ intentId: string; environmentId?: string | null }>({
     name: 'run_test',
@@ -828,16 +752,12 @@ export function buildChatTools(context: ChatToolContext, bus: ChatToolBus) {
           scriptVersionId: row.run.scriptVersionId,
           environment: row.environmentName,
           durationMs: last?.durationMs ?? null,
-          // One line: the whole Playwright error is a dozen, and the user can
-          // open the run to read them.
           error: (last?.errorMessage ?? row.run.errorMessage)?.split('\n')[0] ?? null,
         },
         cards: [card],
       }
     },
   })
-
-  /* --------------------------------------------------------- Environments */
 
   const listEnvironments = define<Record<string, never>>({
     name: 'list_environments',
@@ -924,20 +844,7 @@ export function buildChatTools(context: ChatToolContext, bus: ChatToolBus) {
     },
   })
 
-  /**
-   * Credential lifting.
-   *
-   * This is the one tool whose *argument* is a secret, and it is the reason the
-   * wrapper above never streams or stores arguments. The value is encrypted into
-   * the environment and then handed to `bus.liftSecret`, which rebuilds the
-   * turn's redactor around it and rewrites the message the user typed it into —
-   * so within a second of arriving, the value exists nowhere but the encrypted
-   * column.
-   *
-   * The residual risk is real and documented: the value reached the model, so it
-   * transited the configured LLM provider exactly once, in the user's own
-   * message and in this tool call. Nothing after that point retains it.
-   */
+  /** Never stream tool arguments: credential values reach the model before this tool encrypts and redacts them. */
   const setEnvironmentVariable = define<{
     name: string
     value: string
@@ -967,8 +874,6 @@ export function buildChatTools(context: ChatToolContext, bus: ChatToolBus) {
 
       await setEnvironmentVariableRecord(db, { environmentId: target.id, name, value })
 
-      // Before anything else is streamed or stored: from here the value is
-      // `***` everywhere, including in the message that carried it.
       await bus.liftSecret(value)
 
       return {
@@ -983,8 +888,6 @@ export function buildChatTools(context: ChatToolContext, bus: ChatToolBus) {
       }
     },
   })
-
-  /* -------------------------------------------------------------- Overview */
 
   const getProjectOverview = define<Record<string, never>>({
     name: 'get_project_overview',

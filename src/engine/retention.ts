@@ -1,68 +1,28 @@
-/**
- * The nightly sweep: how history stops growing.
- *
- * Runs accumulate for ever otherwise, and a run is not one row — it is an
- * attempt, a transcript, a screenshot, a trace zip. The policy is deliberately
- * the simplest one that is easy to reason about: **keep the newest N runs of
- * every intent, delete the rest.** Not "delete anything older than a month",
- * which quietly erases the entire history of an intent nobody has run since
- * spring, and not a global cap, which lets one noisy intent evict everyone
- * else's.
- *
- * Three properties are load-bearing:
- *
- * - **R2 first, D1 second.** The run row is the only thing that knows where a
- *   run's objects live. Deleting it before its bytes would strand them in the
- *   bucket with nothing left pointing at them, so every intent's objects go
- *   first and its rows only once they are gone.
- * - **Bounded.** A sweep deletes at most `R2_DELETE_BUDGET` objects. An
- *   instance that has never been swept has a lot to get through, and a cron
- *   invocation that tries to do all of it at once is one that does none of it.
- *   What is left is simply still there tomorrow night, when the budget resets.
- * - **Per-intent isolation.** One intent whose objects will not delete must not
- *   stop the sweep for every intent after it, so each is its own `try`.
- *
- * `intent.lastRunId` is a plain column rather than a foreign key, so nothing
- * would stop it from pointing at a deleted run. When the sweep deletes what an
- * intent's badge was reading, it repoints it at the newest run that survived —
- * never null, because the newest run is by definition one of the kept ones.
- */
+/** Delete R2 objects before their D1 rows, which hold the only references needed to clean them up. */
 import { and, asc, desc, eq, inArray, isNotNull, notInArray, sql } from 'drizzle-orm'
 
 import type { Db } from '#/db/index.ts'
 import { createDb } from '#/db/index.ts'
 import { instanceSettings, intent, run, suiteRun } from '#/db/schema/app.ts'
 
-/** Used when `instanceSettings.retentionRunsPerIntent` has never been set. */
 export const DEFAULT_RETENTION_RUNS = 50
 
-/**
- * The most R2 objects one sweep will delete. Each surviving run carries at most
- * three or four objects, so this is a few hundred runs a night — enough to keep
- * up with any instance that is not actively backfilling, and small enough that
- * the invocation always finishes.
- */
 const R2_DELETE_BUDGET = 500
 
-/** Runs examined per intent per sweep. A guard, not a policy. */
 const MAX_DELETIONS_PER_INTENT = 200
 
-/** Suite rows are only ever tidied once they are this far past their runs. */
 const ORPHAN_SUITE_GRACE_MS = 60 * 60 * 1000
 
 export interface RetentionSummary {
-  /** How many runs each intent was allowed to keep. */
   keep: number
   intentsTouched: number
   runsDeleted: number
   objectsDeleted: number
-  /** Runs left for tomorrow because the object budget ran out. */
   carriedOver: number
   orphanSuitesDeleted: number
   failures: number
 }
 
-/** The configured cap, floored at one: an intent with no runs at all has no history. */
 async function loadKeepCount(db: Db): Promise<number> {
   const [row] = await db
     .select({ keep: instanceSettings.retentionRunsPerIntent })
@@ -74,14 +34,6 @@ async function loadKeepCount(db: Db): Promise<number> {
   return Math.max(1, configured)
 }
 
-/**
- * Deletes every object under a run's prefix.
- *
- * Listed rather than assumed: `ARTIFACT_NAMES` says what a run *usually*
- * writes, but a prefix is the durable statement of what it *did* write, and a
- * future artifact added to the run path should not need this file to be
- * edited to be cleaned up.
- */
 async function deletePrefix(
   bucket: R2Bucket,
   prefix: string,
@@ -96,8 +48,6 @@ async function deletePrefix(
     if (keys.length === 0) return { deleted, complete: true }
 
     if (deleted + keys.length > budget) {
-      // Stopping mid-prefix would leave the run row deletable while some of its
-      // objects survived, so the whole run waits for tomorrow instead.
       return { deleted, complete: false }
     }
 
@@ -109,13 +59,6 @@ async function deletePrefix(
   return { deleted, complete: true }
 }
 
-/**
- * One nightly pass.
- *
- * Awaited straight through rather than handed to `waitUntil`: a scheduled
- * handler is allowed to take its time, and a sweep that is still running when
- * the invocation ends is a sweep whose R2 deletes and D1 deletes may not agree.
- */
 export async function sweepRetention(env: Cloudflare.Env): Promise<RetentionSummary> {
   const db = createDb(env.DB)
   const keep = await loadKeepCount(db)
@@ -130,8 +73,6 @@ export async function sweepRetention(env: Cloudflare.Env): Promise<RetentionSumm
     failures: 0,
   }
 
-  // Only intents that are actually over the cap, so a quiet instance does the
-  // grouping query and nothing else.
   const over = await db
     .select({ intentId: run.intentId, total: sql<number>`count(*)` })
     .from(run)
@@ -183,7 +124,6 @@ interface IntentSweepResult {
   carriedOver: number
 }
 
-/** One intent, trimmed back to the newest `keep` runs. */
 async function sweepIntent(
   db: Db,
   bucket: R2Bucket,
@@ -196,8 +136,6 @@ async function sweepIntent(
     carriedOver: 0,
   }
 
-  // Everything past the newest `keep`. `id` breaks ties so two runs started in
-  // the same millisecond order the same way on every sweep.
   const expired = await db
     .select({
       id: run.id,
@@ -216,7 +154,6 @@ async function sweepIntent(
 
   for (const row of expired) {
     if (!row.artifactPrefix) {
-      // A run that never got as far as claiming a prefix has nothing in R2.
       deletable.push(row.id)
       continue
     }
@@ -240,7 +177,6 @@ async function sweepIntent(
 
   if (deletable.length === 0) return result
 
-  // The attempt rows go with them: `attempt.runId` cascades.
   await db.delete(run).where(inArray(run.id, deletable))
   result.runsDeleted = deletable.length
 
@@ -249,14 +185,6 @@ async function sweepIntent(
   return result
 }
 
-/**
- * Keeps the intent's "last run" pointing at a run that still exists.
- *
- * Repointed to the newest survivor rather than nulled: the badge on the intent
- * listing is a statement about the most recent thing that happened, and the
- * most recent thing that happened is still on file — only the one before it is
- * gone.
- */
 async function repointLastRun(db: Db, intentId: string, deleted: Array<string>): Promise<void> {
   const [row] = await db
     .select({ lastRunId: intent.lastRunId })
@@ -279,20 +207,6 @@ async function repointLastRun(db: Db, intentId: string, deleted: Array<string>):
     .where(eq(intent.id, intentId))
 }
 
-/**
- * Suite rows whose members have all been swept away.
- *
- * Best-effort tidying, not part of the policy: a suite is a thin row and the
- * cost of leaving one behind is cosmetic. Guarded three ways so it can never
- * take a suite that is still meaningful — it must be finished, it must have no
- * member runs left, and it must predate the oldest run its project still has
- * (with an hour's grace, for a suite whose members have not been created yet).
- *
- * Every project with suites is considered, not only the ones this sweep took
- * runs from: an orphan is made by the sweep that deleted its last member, and
- * a project that has stopped shedding runs would otherwise keep its orphans
- * for ever.
- */
 async function deleteOrphanSuites(db: Db): Promise<number> {
   const projects = await db.selectDistinct({ projectId: suiteRun.projectId }).from(suiteRun)
 
@@ -311,8 +225,6 @@ async function deleteOrphanSuites(db: Db): Promise<number> {
       Date.now() - ORPHAN_SUITE_GRACE_MS,
     )
 
-    // `is not null` is not decoration: `NOT IN (…)` over a set containing NULL
-    // is never true in SQL, and this delete would silently do nothing.
     const survivors = db
       .select({ id: run.suiteRunId })
       .from(run)

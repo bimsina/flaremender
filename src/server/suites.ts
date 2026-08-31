@@ -1,12 +1,3 @@
-/**
- * Suite runs — every runnable intent in a project, executed one after another.
- *
- * The shape mirrors `runIntent` deliberately: the row is inserted first, the
- * Workflow instance is named after it, and nothing executes in the request
- * handler. The suite id is then the only handle the client needs — it polls
- * that one row for progress, and the member runs it exposes are ordinary runs
- * that the intent pages already know how to render.
- */
 import { createServerFn } from '@tanstack/react-start'
 import { asc, desc, eq, sql } from 'drizzle-orm'
 
@@ -30,14 +21,6 @@ function limit(data: unknown): number {
   return parsed
 }
 
-/**
- * Queues a suite. Nothing executes in the request handler.
- *
- * The membership is deliberately *not* fixed here — the workflow's `load` step
- * decides it, from the same query, at the moment it starts. Counting runnable
- * intents in this handler is only a guard against queueing a suite that would
- * have nothing to do.
- */
 export const runSuite = createServerFn({ method: 'POST' })
   .middleware([orgMiddleware])
   .validator((data: unknown) => ({
@@ -94,13 +77,6 @@ export const listSuiteRuns = createServerFn({ method: 'GET' })
       .limit(data.limit)
   })
 
-/**
- * One suite and the runs inside it.
- *
- * Polled every couple of seconds while a suite is live, so the member listing
- * aggregates attempts in the same single query `listRuns` does rather than
- * fanning out per run.
- */
 export const getSuiteRun = createServerFn({ method: 'GET' })
   .middleware([orgMiddleware])
   .validator((data: unknown) => ({ suiteRunId: str(data, 'suiteRunId') }))
@@ -123,8 +99,6 @@ export const getSuiteRun = createServerFn({ method: 'GET' })
         intentTitle: intent.title,
         attemptCount: sql<number>`count(${attempt.id})`,
         durationMs: sql<number | null>`sum(${attempt.durationMs})`,
-        // SQLite pairs bare columns with the row that produced `max()`, so
-        // these describe the *latest* attempt of the run, not an arbitrary one.
         lastAttemptNumber: sql<number | null>`max(${attempt.attemptNumber})`,
         lastOutcome: attempt.outcome,
         lastErrorMessage: attempt.errorMessage,

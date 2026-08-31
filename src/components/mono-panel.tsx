@@ -4,14 +4,6 @@ import { useEffect, useState } from 'react'
 
 import { CodeEditor } from './code-editor.tsx'
 
-/**
- * A labelled block of machine output with a copy button — the shape the
- * Workflows dashboard uses for an instance's input and output payloads.
- *
- * Errors, transcripts and scripts all get copied into issues and searches far
- * more often than they get read in place, so the copy button is part of the
- * panel rather than something to hunt for.
- */
 export function MonoPanel({
   label,
   text,
@@ -22,14 +14,11 @@ export function MonoPanel({
   label: React.ReactNode
   text: string
   tone?: 'default' | 'danger'
-  /** `'javascript'` swaps the plain `<pre>` for a read-only, highlighted editor. */
   language?: 'javascript'
   className?: string
 }) {
   const [copied, setCopied] = useState(false)
 
-  // Reset by timer rather than on the next click: the confirmation is the only
-  // feedback the button gives, and it has to outlive the click that caused it.
   useEffect(() => {
     if (!copied) return
     const timer = setTimeout(() => setCopied(false), 2000)
@@ -41,8 +30,6 @@ export function MonoPanel({
       await navigator.clipboard.writeText(text)
       setCopied(true)
     } catch {
-      // A denied clipboard permission is not worth an error state; the text is
-      // right there and selectable.
       setCopied(false)
     }
   }

@@ -4,18 +4,11 @@ export function formatDuration(ms: number | null | undefined): string {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
-/** One magnitude of a duration: `13` and `s`, then `34` and `ms`. */
 export interface DurationPart {
   value: number
   unit: 'ms' | 's' | 'm' | 'h'
 }
 
-/**
- * A duration split into at most two magnitudes, so the number and its unit can
- * be styled apart — the unit muted, the number not. Truncated rather than
- * rounded: a step that took 13.9s took thirteen seconds and some, and rounding
- * it up to 14 would disagree with the sum of its parts.
- */
 export function durationParts(ms: number | null | undefined): Array<DurationPart> {
   if (ms === null || ms === undefined || !Number.isFinite(ms) || ms < 0) return []
   if (ms < 1000) return [{ value: Math.round(ms), unit: 'ms' }]
@@ -59,7 +52,6 @@ function toDate(value: Date | string | number | null | undefined): Date | null {
   return Number.isNaN(date.getTime()) ? null : date
 }
 
-/** Depends on the current clock, so only render this after hydration. */
 export function formatRelative(value: Date | string | number | null | undefined): string {
   const date = toDate(value)
   if (!date) return '—'
@@ -71,10 +63,6 @@ export function formatRelative(value: Date | string | number | null | undefined)
   return 'just now'
 }
 
-/**
- * Fixed locale and time zone: the server and the browser must agree on the
- * output or hydration reports a mismatch.
- */
 export function formatDate(value: Date | string | number | null | undefined): string {
   const date = toDate(value)
   if (!date) return '—'

@@ -1,30 +1,3 @@
-/**
- * The minute tick: what the clock owes the intents that asked to be run.
- *
- * Cloudflare fires one cron every minute; this decides which intents that
- * minute belongs to and hands each project's due set to a `SuiteWorkflow`. It
- * is the *only* thing the tick does — no browser, no script, no waiting — so a
- * tick costs one query and a workflow create even on a busy instance, and the
- * work itself happens where all other work happens.
- *
- * Three ideas do the load-bearing:
- *
- * - **Grouping by project.** Ten intents due in one project is one suite, not
- *   ten runs: a suite is sequential and shares a browser session, which is the
- *   only shape Browser Rendering's concurrency limits tolerate. Projects are
- *   dispatched together, and their suites do run concurrently — that is a
- *   deliberate choice, bounded by the account's own browser concurrency quota
- *   (2 on the free plan, 120 on paid) rather than by anything here. An instance
- *   with more scheduled projects than browser slots will see suites queue on
- *   the platform's limit, which is the right place for that to be decided.
- * - **Not stacking.** A suite that takes eleven minutes must not be joined by
- *   ten more of itself. Anything already queued or running — the project's own
- *   suites, or an individual run of a due intent — takes that intent (or that
- *   whole project) out of this tick.
- * - **Idempotence.** A cron tick can be delivered twice. The suite's id is
- *   derived from the project and the minute, so the second delivery loses the
- *   insert race and creates nothing.
- */
 import { and, eq, inArray, isNotNull } from 'drizzle-orm'
 
 import type { Db } from '#/db/index.ts'
@@ -34,27 +7,15 @@ import { matchesCron } from '#/lib/cron.ts'
 import { isRunnableIntent } from '#/server/test-policy.ts'
 import { enqueueWork } from '#/server/enqueue.ts'
 
-/** Non-terminal on both tables: work that is still expected to produce a verdict. */
 const UNFINISHED = ['queued', 'running'] as const
 
 export interface DispatchSummary {
-  /** Intents whose expression matched this minute, before any guard ran. */
   due: number
   suitesCreated: number
-  /** Due intents dropped because they, or their project, were already busy. */
   skippedBusy: number
-  /** Due intents in a project with no default environment to run against. */
   skippedNoEnvironment: number
 }
 
-/**
- * A suite id that two deliveries of the same tick both compute.
- *
- * `srun_sch_<project>_<yyyymmddhhmm>`: the project makes it unique across an
- * instance, the minute makes it unique across time, and neither is random —
- * which is the whole point. The insert then decides, once, whether this tick
- * has already been handled.
- */
 export function scheduledSuiteRunId(projectId: string, tick: Date): string {
   const stamp = [
     tick.getUTCFullYear(),
@@ -67,19 +28,11 @@ export function scheduledSuiteRunId(projectId: string, tick: Date): string {
   return `srun_sch_${projectId.replace(/^prj_/, '')}_${stamp}`
 }
 
-/** The minute a tick belongs to. Cron names minutes; nothing finer is meaningful. */
 export function alignToMinute(time: number | Date): Date {
   const ms = time instanceof Date ? time.getTime() : time
   return new Date(Math.floor(ms / 60_000) * 60_000)
 }
 
-/**
- * Runs one minute of the schedule.
- *
- * Never throws for one project's sake: a project without an environment, or a
- * workflow that would not start, is logged and stepped over, because the next
- * project's intents are still due.
- */
 export async function dispatchSchedules(
   env: Cloudflare.Env,
   tickTime: number | Date,
@@ -94,9 +47,6 @@ export async function dispatchSchedules(
     skippedNoEnvironment: 0,
   }
 
-  // Everything that *could* be due, which is a short list on any real instance:
-  // scheduled intents are a small fraction of intents, and matching is cheap
-  // enough to do in code, where the parser already lives.
   const candidates = await db
     .select({
       intentId: intent.id,
@@ -106,9 +56,6 @@ export async function dispatchSchedules(
     })
     .from(intent)
     .innerJoin(project, eq(project.id, intent.projectId))
-    // A proposal cannot have a schedule or a script today, so both of the other
-    // conditions already exclude one — but the clock is the last place that
-    // should be relying on an implication rather than saying what it means.
     .where(and(isNotNull(intent.schedule), isNotNull(intent.currentVersionId), isRunnableIntent))
 
   const dueByProject = new Map<string, { organizationId: string; intentIds: Array<string> }>()
@@ -135,9 +82,6 @@ export async function dispatchSchedules(
 
   for (const [projectId, group] of dueByProject) {
     try {
-      // A suite of this project's is still going. Its members overlap this
-      // tick's by construction, and starting a second one would double the
-      // browser sessions to say the same thing twice.
       if (busyProjectIds.has(projectId)) {
         summary.skippedBusy += group.intentIds.length
         console.log(
@@ -188,7 +132,6 @@ export async function dispatchSchedules(
   return summary
 }
 
-/** Intents with an execution of their own still in flight. */
 async function loadBusyIntentIds(db: Db, intentIds: Array<string>): Promise<Set<string>> {
   if (intentIds.length === 0) return new Set()
 
@@ -200,7 +143,6 @@ async function loadBusyIntentIds(db: Db, intentIds: Array<string>): Promise<Set<
   return new Set(rows.map((row) => row.intentId))
 }
 
-/** Projects with a suite still in flight, whoever started it. */
 async function loadBusyProjectIds(db: Db, projectIds: Array<string>): Promise<Set<string>> {
   if (projectIds.length === 0) return new Set()
 
@@ -212,14 +154,6 @@ async function loadBusyProjectIds(db: Db, projectIds: Array<string>): Promise<Se
   return new Set(rows.map((row) => row.projectId))
 }
 
-/**
- * Claims the minute, then starts the suite.
- *
- * The insert is the lock. `onConflictDoNothing` with `returning` tells us
- * whether *this* delivery of the tick is the one that gets to create the
- * workflow, so a replayed tick returns false and does nothing rather than
- * racing another instance onto the same browser.
- */
 async function startScheduledSuite(
   env: Cloudflare.Env,
   input: {
@@ -245,7 +179,6 @@ async function startScheduledSuite(
       status: 'queued',
       trigger: 'schedule',
       totalCount: input.intentIds.length,
-      // Nobody pressed anything. `createdBy` is nullable precisely for this.
       createdBy: null,
       startedAt: new Date(),
     })
@@ -269,9 +202,6 @@ async function startScheduledSuite(
       }),
     async () => (await env.SUITE_WORKFLOW.get(input.suiteRunId)).status(),
     async () => {
-      // The row is the lock, and a lock nobody will ever release is worse than
-      // no lock: a suite stuck at 'queued' would take this project out of every
-      // future tick. Give it a verdict, then let the caller log the failure.
       await db
         .update(suiteRun)
         .set({

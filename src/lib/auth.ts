@@ -8,10 +8,6 @@ import { drizzle } from 'drizzle-orm/d1'
 
 import * as schema from '#/db/schema'
 
-/**
- * Keep the plugin list in sync with `auth.config.ts`, which is what
- * `pnpm auth:generate` reads to emit `src/db/schema/auth.ts`.
- */
 export function createAuth(d1: D1Database, env: Cloudflare.Env) {
   const db = drizzle(d1, { schema })
 
@@ -23,8 +19,6 @@ export function createAuth(d1: D1Database, env: Cloudflare.Env) {
     databaseHooks: {
       user: {
         create: {
-          // Self-hosted instances have no bootstrap step: whoever signs up
-          // first owns the instance. Everyone after them is a plain user.
           before: async (newUser) => {
             const [existing] = await db.select({ id: schema.user.id }).from(schema.user).limit(1)
             if (existing) return
@@ -35,8 +29,6 @@ export function createAuth(d1: D1Database, env: Cloudflare.Env) {
       },
       session: {
         create: {
-          // Pin the session to an organization up front so every query can
-          // rely on `session.activeOrganizationId` instead of re-resolving it.
           before: async (session) => {
             const membership = await db
               .select({ organizationId: schema.member.organizationId })

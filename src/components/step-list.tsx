@@ -5,7 +5,6 @@ import { useMemo, useState } from 'react'
 import { Duration } from '#/components/duration.tsx'
 import { MonoPanel } from '#/components/mono-panel.tsx'
 
-/** `ok: null` means the call is still out — only the live panel ever sees that. */
 export interface StepRowData {
   index: number
   label: string
@@ -14,15 +13,6 @@ export interface StepRowData {
   error: string | null
 }
 
-/**
- * The step transcript, shared by the live panel and the attempt drill-down so a
- * run reads the same whether you are watching it or reading it back.
- *
- * `showOffset` adds the elapsed time each step began at. That is derived from
- * the durations before it rather than from a clock — steps run strictly in
- * sequence, so the sum is exact, and it is the only per-step timing a persisted
- * transcript carries.
- */
 export function StepList({
   steps,
   showOffset = false,
@@ -32,9 +22,6 @@ export function StepList({
 }) {
   const [expanded, setExpanded] = useState<number | null>(null)
 
-  // Summed rather than accumulated: a running total mutated during render is
-  // exactly the pattern the React compiler refuses, and a transcript is dozens
-  // of steps at most.
   const rows = useMemo(
     () =>
       steps.map((step, position) => ({

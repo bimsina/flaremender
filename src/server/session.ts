@@ -20,10 +20,6 @@ export interface AppSession {
   organizations: Array<{ id: string; name: string; slug: string; role: string }>
 }
 
-/**
- * One round trip for everything the shell needs: who you are, which
- * organizations you belong to, and which one is active.
- */
 export const fetchSession = createServerFn({ method: 'GET' }).handler(
   async (): Promise<AppSession | null> => {
     const result = await readSession()
@@ -60,7 +56,6 @@ export const fetchSession = createServerFn({ method: 'GET' }).handler(
   },
 )
 
-/** Read on the server so the first paint already matches the saved theme. */
 export const fetchThemePreference = createServerFn({ method: 'GET' }).handler(
   async (): Promise<ThemePreference> => {
     const cookie = getRequest().headers.get('cookie') ?? ''

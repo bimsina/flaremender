@@ -1,18 +1,3 @@
-/**
- * What the assistant's answers are actually made of.
- *
- * A card is the visible half of a row the conversation created or touched, and
- * every one of them is a link out of the chat: the test card opens the test,
- * the run card opens the run, the environment card names the variables that now
- * exist. That is what keeps the conversation from being a place where things
- * live — nothing here is a record, everything here is a *view* of one.
- *
- * Two of them are live. A generation card reuses the run channel's feed to show
- * the script being written, in the same compact step list the test page uses;
- * a run card polls the run it names until it has a verdict. Both fall silent and
- * become an ordinary link once the thing they describe has finished, so an old
- * transcript costs nothing to render.
- */
 import {
   Badge,
   Banner,
@@ -70,7 +55,6 @@ import { updateIntent } from '#/server/intents.ts'
 
 const POLL_INTERVAL_MS = 2500
 
-/** How many of a generation's steps a card shows before it stops growing. */
 const MAX_CARD_STEPS = 6
 
 export function ChatCardView({ card, projectId }: { card: ChatCard; projectId: string }) {
@@ -94,13 +78,6 @@ export function ChatCardView({ card, projectId }: { card: ChatCard; projectId: s
   }
 }
 
-/**
- * The card frame.
- *
- * A `LayerCard` rather than a bordered div so a card reads as the same kind of
- * object the rest of the app shows in lists — and never nested, which is why the
- * message bubble around it is a plain container.
- */
 function CardFrame({
   icon,
   title,
@@ -133,15 +110,6 @@ function CardFrame({
   )
 }
 
-/**
- * An intent, as it is *now* rather than as it was when the card was made.
- *
- * The card stores a snapshot so an old transcript renders without a query, but
- * a test created a minute ago and generated since would otherwise sit in the
- * conversation reading "Draft" for ever. The project's intent listing is already
- * loaded and already invalidated at the end of every turn, so reading the live
- * row out of it costs nothing and never goes stale.
- */
 function IntentCardView({ card, projectId }: { card: IntentCard; projectId: string }) {
   const { data } = useQuery(intentsQuery(projectId))
   const live = data?.find((row) => row.id === card.intentId) ?? null
@@ -175,15 +143,6 @@ function IntentCardView({ card, projectId }: { card: IntentCard; projectId: stri
   )
 }
 
-/**
- * The script being written, inside a message.
- *
- * Deliberately the same feed and the same `StepList` as the test page's
- * generation panel: these are the same events, and a generation watched from the
- * chat should look like a generation watched anywhere else. Only the amount is
- * different — a card shows the last few steps and the newest narration line,
- * because a message is not the place to read a hundred of them.
- */
 function GenerationCardView({ card, projectId }: { card: GenerationCard; projectId: string }) {
   const { job, live, transport } = useJobProgress(card.jobId)
 
@@ -259,10 +218,6 @@ function GenerationCardView({ card, projectId }: { card: GenerationCard; project
   )
 }
 
-/**
- * One run. Polled rather than socketed: a run card is usually read after the
- * fact, and the step-by-step view already has a home on the run page.
- */
 function RunCardView({ card, projectId }: { card: RunCard; projectId: string }) {
   const queryClient = useQueryClient()
   const { data } = useQuery({
@@ -310,7 +265,6 @@ function RunCardView({ card, projectId }: { card: RunCard; projectId: string }) 
   )
 }
 
-/** A "run all". The counts are the whole story, so they are the whole card. */
 function SuiteCardView({ card, projectId }: { card: SuiteCard; projectId: string }) {
   const queryClient = useQueryClient()
   const { data } = useQuery({
@@ -424,16 +378,6 @@ function EnvironmentCardView({ card }: { card: EnvironmentCard }) {
   )
 }
 
-/**
- * The agent going round the app.
- *
- * The same feed and the same `StepList` as a generation, because they are the
- * same events from the same harness — what differs is that this one has no
- * script to show and no verdict of its own. When it finishes, the plan arrives
- * as a *separate message*, which is why the completion here re-reads the
- * conversation: the workflow posted that message minutes after the turn ended,
- * so nothing else on the page knows it exists.
- */
 function ExploreCardView({ card, projectId }: { card: ExploreCard; projectId: string }) {
   const { live, transport } = useJobProgress(card.jobId)
   const queryClient = useQueryClient()
@@ -443,11 +387,6 @@ function ExploreCardView({ card, projectId }: { card: ExploreCard; projectId: st
   const steps = live.steps.slice(-MAX_CARD_STEPS)
   const narration = live.logs.at(-1)?.line ?? null
 
-  // The plan is a message the *workflow* posted, minutes after the turn that
-  // started it ended — so nothing else on this page knows it exists. Re-reading
-  // the conversation the moment the job reports finished is what makes the plan
-  // appear, including in the case the chat object was mid-turn and could not
-  // broadcast it.
   useEffect(() => {
     if (!finished) return
 
@@ -506,25 +445,10 @@ function ExploreCardView({ card, projectId }: { card: ExploreCard; projectId: st
   )
 }
 
-/**
- * The plan: a checklist of proposed tests, and a button that generates them.
- *
- * The card stores a snapshot of each item so an old transcript is legible, but
- * the *live* intent rows are what it acts on — so a proposal edited on the
- * Intents tab shows its new title here, one that has already been approved
- * shows its real status instead of a checkbox, and one that was dismissed reads
- * as removed rather than silently vanishing from a list somebody remembers
- * ticking.
- *
- * Deliberately a real affordance rather than a suggestion to type something:
- * approving is one click on the thing you are already reading, and it calls the
- * same server function the assistant's `approve_plan` tool does.
- */
 function PlanCardView({ card, projectId }: { card: PlanCard; projectId: string }) {
   const queryClient = useQueryClient()
   const { data: intents } = useQuery(intentsQuery(projectId))
 
-  /** Ids the user has un-ticked. Default-checked, so absence means selected. */
   const [excluded, setExcluded] = useState<ReadonlySet<string>>(new Set())
   const [editing, setEditing] = useState<string | null>(null)
 
@@ -540,7 +464,6 @@ function PlanCardView({ card, projectId }: { card: PlanCard; projectId: string }
           intentId: item.intentId,
           title: live?.title ?? item.title,
           description: live?.description ?? item.description,
-          // No live row and a listing that has loaded means the test is gone.
           removed: item.intentId !== null && intents !== undefined && live === null,
           status: live?.status ?? null,
           pending: live?.status === 'proposed',
@@ -558,8 +481,6 @@ function PlanCardView({ card, projectId }: { card: PlanCard; projectId: string }
   const approve = useMutation({
     mutationFn: () => approveProposedIntents({ data: { projectId, intentIds: selected } }),
     onSuccess: async () => {
-      // The batch posts its own message into the conversation, and every
-      // intent it touched has just changed status.
       await queryClient.invalidateQueries()
     },
   })
@@ -689,9 +610,6 @@ function PlanItemRow({
     )
   }
 
-  // Approved already: it is an ordinary test now, so it links like one and
-  // shows the status its generation earned rather than a checkbox nobody can
-  // usefully tick.
   if (!item.pending) {
     return (
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -763,15 +681,6 @@ function PlanItemRow({
   )
 }
 
-/**
- * Editing a proposal in place.
- *
- * The same `update_intent` the assistant calls, which matters more than it
- * looks: a description is the permanent source of truth a script gets generated
- * from, so the moment before approval is exactly when someone wants to correct
- * it — and correcting it here has to produce the same row a correction anywhere
- * else would.
- */
 function PlanItemEditor({
   intentId,
   title,
@@ -854,15 +763,6 @@ function PlanItemEditor({
   )
 }
 
-/**
- * An approved plan being written, one test at a time.
- *
- * Two live sources, because they answer different questions and neither implies
- * the other: the channel says what the batch is *doing* — which member, how far
- * in — and the test rows say what each member has *become*. The listing is
- * polled while the batch is running, which is also what keeps every other intent
- * card in the transcript current, since they all read the same query.
- */
 function BatchCardView({ card, projectId }: { card: BatchCard; projectId: string }) {
   const queryClient = useQueryClient()
   const { job, live, transport } = useJobProgress(card.jobId)
@@ -873,11 +773,6 @@ function BatchCardView({ card, projectId }: { card: BatchCard; projectId: string
     refetchInterval: finished ? false : POLL_INTERVAL_MS,
   })
 
-  // The channel says "done" a moment before the last member's verdict is
-  // readable, and stopping the poll on that word alone freezes the card on the
-  // second-to-last state — every member still reading `Generating` under a
-  // heading that says it finished. One read after the end is what makes the
-  // final answer the one that stays on screen.
   useEffect(() => {
     if (!finished) return
     void queryClient.invalidateQueries({ queryKey: intentsQuery(projectId).queryKey })

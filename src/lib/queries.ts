@@ -45,14 +45,6 @@ export const overviewQuery = () =>
     queryFn: () => getOrgOverview(),
   })
 
-/**
- * The last fortnight of runs, one row per UTC day, for the trend charts.
- *
- * With a project id it is the same window narrowed to that project, which is a
- * different cache entry rather than a filter over the org-wide one — the server
- * groups either shape in a single query, and a fortnight of one project cannot
- * be recovered from a fortnight of all of them.
- */
 export const runTrendQuery = (projectId?: string) =>
   queryOptions({
     queryKey: ['run-trend', projectId ?? null] as const,
@@ -83,26 +75,12 @@ export const intentQuery = (intentId: string) =>
     queryFn: () => getIntent({ data: { intentId } }),
   })
 
-/**
- * The newest generation job for an intent, or null.
- *
- * How a page reloaded mid-generation finds the channel to reconnect to, and the
- * polling fallback for when the socket will not open — so it is asked for on
- * every visit to an intent, not only after pressing Generate.
- */
 export const intentGenerationQuery = (intentId: string) =>
   queryOptions({
     queryKey: ['intent-generation', intentId] as const,
     queryFn: () => getIntentGeneration({ data: { intentId } }),
   })
 
-/**
- * The project chat's history — the latest fifty messages, oldest first.
- *
- * Everything live arrives on the socket instead; this is what a page loads on
- * the way in, and what it re-reads once a turn finishes so the two views of the
- * same conversation cannot drift.
- */
 export const chatMessagesQuery = (projectId: string) =>
   queryOptions({
     queryKey: ['chat-messages', projectId] as const,
@@ -121,12 +99,10 @@ export const scriptVersionsQuery = (intentId: string) =>
     queryFn: () => listScriptVersions({ data: { intentId } }),
   })
 
-/** One version's code, fetched only when the history panel opens it. */
 export const scriptVersionQuery = (versionId: string) =>
   queryOptions({
     queryKey: ['script-version', versionId] as const,
     queryFn: () => getScriptVersion({ data: { versionId } }),
-    // Versions are immutable, so a fetched one never needs refreshing.
     staleTime: Infinity,
   })
 
@@ -136,14 +112,6 @@ export const runsQuery = (intentId: string) =>
     queryFn: () => listRuns({ data: { intentId } }),
   })
 
-/**
- * Every run in a project, filtered server-side.
- *
- * The filters are normalised to an all-null object so that "no filters" is one
- * cache key rather than several: the project Runs tab asks for the unfiltered
- * window to compute its summary and for the filtered window to fill its table,
- * and while nothing is filtered those are the same request.
- */
 export interface ProjectRunFilters {
   status?: RunStatus | null
   environmentId?: string | null
@@ -164,8 +132,6 @@ export const projectRunsQuery = (projectId: string, filters: ProjectRunFilters =
         data: {
           projectId,
           limit: PROJECT_RUNS_LIMIT,
-          // Absent rather than null: the validator reads a present key as an
-          // opinion, and `null` is not one of the values it accepts.
           ...(status ? { status } : {}),
           ...(environmentId ? { environmentId } : {}),
           ...(trigger ? { trigger } : {}),
@@ -186,35 +152,24 @@ export const suiteRunsQuery = (projectId: string) =>
     queryFn: () => listSuiteRuns({ data: { projectId } }),
   })
 
-/**
- * One suite and its members. Polled by the progress strip while a suite is
- * live; the caller supplies `refetchInterval`, because only it knows whether
- * what it is showing has stopped moving.
- */
 export const suiteRunQuery = (suiteRunId: string) =>
   queryOptions({
     queryKey: ['suite-run', suiteRunId] as const,
     queryFn: () => getSuiteRun({ data: { suiteRunId } }),
   })
 
-/** Provider status, the default model and setup state. Admins only. */
 export const instanceSettingsQuery = () =>
   queryOptions({
     queryKey: ['instance', 'settings'] as const,
     queryFn: () => getInstanceSettings(),
   })
 
-/** Asked on the way into the app by everyone; false for non-admins. */
 export const instanceSetupStatusQuery = () =>
   queryOptions({
     queryKey: ['instance', 'setup-status'] as const,
     queryFn: () => getInstanceSetupStatus(),
   })
 
-/**
- * The curated model list, read by every project's picker as well as the admin
- * console. Allowlists change on the scale of weeks, so it is worth holding.
- */
 export const allowedModelsQuery = () =>
   queryOptions({
     queryKey: ['instance', 'allowed-models'] as const,
@@ -222,11 +177,6 @@ export const allowedModelsQuery = () =>
     staleTime: 5 * 60_000,
   })
 
-/**
- * One provider's live catalog. Matches the server's own half-hour cache, so
- * switching back and forth between providers costs nothing; the refresh button
- * passes `force` through its own request rather than invalidating this.
- */
 export const providerModelsQuery = (provider: Provider) =>
   queryOptions({
     queryKey: ['instance', 'provider-models', provider] as const,

@@ -1,10 +1,3 @@
-/**
- * Reading run history.
- *
- * A run is one execution request; the attempts inside it are what actually
- * touched a browser. Today every run has exactly one attempt, but the listing
- * already aggregates so the healing loop can append attempts without a rewrite.
- */
 import { createServerFn } from '@tanstack/react-start'
 import { and, desc, eq, sql } from 'drizzle-orm'
 
@@ -50,8 +43,6 @@ export const listRuns = createServerFn({ method: 'GET' })
         status: run.status,
         trigger: run.trigger,
         purpose: run.purpose,
-        // Null for a run started on its own; the UI labels the rest as part of
-        // a "Run all" rather than leaving them looking spontaneous.
         suiteRunId: run.suiteRunId,
         startedAt: run.startedAt,
         finishedAt: run.finishedAt,
@@ -61,8 +52,6 @@ export const listRuns = createServerFn({ method: 'GET' })
         version: scriptVersion.version,
         attemptCount: sql<number>`count(${attempt.id})`,
         durationMs: sql<number | null>`sum(${attempt.durationMs})`,
-        // SQLite pairs bare columns with the row that produced `max()`, so
-        // these describe the *latest* attempt of the run, not an arbitrary one.
         lastAttemptNumber: sql<number | null>`max(${attempt.attemptNumber})`,
         lastOutcome: attempt.outcome,
         lastErrorMessage: attempt.errorMessage,
@@ -83,16 +72,6 @@ export const listRuns = createServerFn({ method: 'GET' })
     }))
   })
 
-/**
- * Every run in a project, whichever intent produced it.
- *
- * The filters are optional and additive; each one absent means "no opinion"
- * rather than "null", which is why they go through `has` before they are read.
- * Suite membership is not a filter here — the project Runs tab draws suites
- * from `listSuiteRuns` and interleaves them with the standalone runs this
- * returns, so a member run is exposed under the suite it belongs to rather than
- * twice.
- */
 export const listProjectRuns = createServerFn({ method: 'GET' })
   .middleware([orgMiddleware])
   .validator((data: unknown) => ({
@@ -127,8 +106,6 @@ export const listProjectRuns = createServerFn({ method: 'GET' })
         version: scriptVersion.version,
         attemptCount: sql<number>`count(${attempt.id})`,
         durationMs: sql<number | null>`sum(${attempt.durationMs})`,
-        // SQLite pairs bare columns with the row that produced `max()`, so
-        // these describe the *latest* attempt of the run, not an arbitrary one.
         lastAttemptNumber: sql<number | null>`max(${attempt.attemptNumber})`,
         lastOutcome: attempt.outcome,
         lastErrorMessage: attempt.errorMessage,
@@ -157,11 +134,6 @@ export const getRun = createServerFn({ method: 'GET' })
     return readRunReport(context.db, context.organizationId, data.runId)
   })
 
-/**
- * The key has to belong to *this* run, not merely to a run in this
- * organization — otherwise a run id the caller can see would unlock every
- * artifact the organization has ever produced.
- */
 function assertArtifactBelongsToRun(
   scopedRun: { id: string; artifactPrefix: string | null },
   key: string,
@@ -179,14 +151,6 @@ function artifactPath(key: string): string {
   return `/api/artifacts/${key.split('/').map(encodeURIComponent).join('/')}`
 }
 
-/**
- * Where to fetch one of a run's artifacts.
- *
- * Returns a URL rather than bytes: an image belongs in an `<img>` tag and a
- * trace belongs in a download, neither of which a JSON server function can
- * provide. `/api/artifacts/*` re-runs this exact check before it streams
- * anything, so the URL is a convenience and not the authorisation.
- */
 export const getArtifactUrl = createServerFn({ method: 'GET' })
   .middleware([orgMiddleware])
   .validator((data: unknown) => ({
@@ -200,18 +164,6 @@ export const getArtifactUrl = createServerFn({ method: 'GET' })
     return { url: artifactPath(data.key) }
   })
 
-/**
- * The same artifact, but readable without a session for the next ten minutes.
- *
- * This is what the Playwright trace viewer needs: it runs on trace.playwright.dev
- * and fetches the zip cross-origin, where our cookie does not travel. The
- * authorisation therefore has to be *in* the URL, which is what makes the
- * expiry and the narrowness matter — the signature covers one exact key and
- * nothing about the caller, so a leaked link is one trace for ten minutes and
- * never a way into the organization.
- *
- * The org check is unchanged: it happens here, once, before anything is signed.
- */
 export const getSignedArtifactUrl = createServerFn({ method: 'GET' })
   .middleware([orgMiddleware])
   .validator((data: unknown) => ({

@@ -1,7 +1,6 @@
 import { DropdownMenu } from '@cloudflare/kumo'
 import { CheckIcon, type Icon } from '@phosphor-icons/react'
 
-/** Radio menu item that actually shows which option is selected. */
 export function MenuRadioItem({
   value,
   icon,

@@ -1,14 +1,6 @@
 import { ScrollableTabs } from './scrollable-tabs.tsx'
 import { Sidebar, Text, cn } from '@cloudflare/kumo'
 
-/**
- * The frame every page shares.
- *
- * Two rows, both optional beyond the title: the identity row (breadcrumbs,
- * title, page-level actions) and — on detail pages — a tab strip whose primary
- * action sits at its right-hand end, the way the Cloudflare dashboard puts
- * "Edit code" opposite a resource's tabs.
- */
 export function PageHeader({
   title,
   description,
@@ -34,7 +26,6 @@ export function PageHeader({
           )}
         >
           <div className="flex min-w-0 items-end gap-3">
-            {/* The sidebar is off-canvas below md, so this is the only way back. */}
             <Sidebar.Trigger className="mb-1 md:hidden" />
             <div className="grid min-w-0 gap-1.5">
               {breadcrumbs}

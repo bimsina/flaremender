@@ -49,7 +49,6 @@ export const Route = createFileRoute('/_app/admin/settings')({
   component: AdminSettings,
 })
 
-/** The slug an operator sees when the chain falls through to Workers AI. */
 const FALLBACK_SLUG = parseModelId(DEFAULT_MODEL_ID)?.slug ?? DEFAULT_MODEL_ID
 
 const PROVIDER_ITEMS: Record<Provider, string> = PROVIDER_LABELS
@@ -570,7 +569,6 @@ function ManualEntryCard() {
   )
 }
 
-/** Sentinel for "no explicit default", which is a real choice rather than an empty one. */
 const FALLBACK_VALUE = '__fallback'
 
 function DefaultModelRow({

@@ -29,9 +29,6 @@ export function OrgSwitcher({ session }: { session: AppSession }) {
       <DropdownMenu>
         <DropdownMenu.Trigger
           render={
-            // In the collapsed rail there is only room for the icon, so the
-            // name and the caret drop out and the button squares off — it still
-            // opens the same switcher.
             <Button
               variant="secondary"
               loading={switching}

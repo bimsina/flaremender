@@ -1,43 +1,18 @@
-/**
- * The socket half of watching something happen.
- *
- * A run and a generation job are, on the wire, the same thing: a channel id, a
- * `RunChannel` Durable Object addressed by it, and a stream of sequenced
- * envelopes that replays in full to anyone who connects late. Only the *fallback*
- * differs — a run is polled from the run table, a generation from its job row —
- * so the socket lives here and each hook brings its own way of asking the
- * database instead.
- *
- * Replay is what makes the socket honest: the Durable Object keeps every event
- * for fifteen minutes after the channel finishes, so connecting late is the same
- * as connecting early and a reconnect is not a gap. Each envelope carries a
- * sequence number and anything already seen is dropped, so a replay that
- * overlaps a live broadcast shows each event once.
- */
 import { useEffect, useState } from 'react'
 
 import type { RunEventEnvelope } from '#/engine/contract.ts'
 
-/** Matches the Durable Object's ping auto-response, which never wakes it. */
 const KEEPALIVE_MS = 30_000
 
 export type LiveTransport = 'connecting' | 'socket' | 'polling'
 
-/**
- * What has been heard on one channel.
- *
- * The channel id is part of the state rather than something an effect resets,
- * because the alternative — clearing the feed after the render that switched
- * channels — paints one frame of the previous channel's events under the new
- * one's heading.
- */
+/** Key state by channel to avoid displaying the previous run’s events during a switch. */
 interface Feed {
   channelId: string | null
   envelopes: Array<RunEventEnvelope>
   transport: LiveTransport
 }
 
-/** Shared so `useMemo` sees a stable reference while nothing is being watched. */
 const NO_EVENTS: Array<RunEventEnvelope> = []
 
 const EMPTY: Feed = { channelId: null, envelopes: NO_EVENTS, transport: 'connecting' }
@@ -74,11 +49,8 @@ export function useChannelFeed(channelId: string | null): ChannelFeed {
     if (channelId === null) return
 
     let disposed = false
-    // Local rather than a ref: every handler below is created by this same
-    // effect run, so they all close over this one variable.
     let finished = false
 
-    /** Writes only ever land on this channel's feed, never on a newer one's. */
     const update = (change: (feed: Feed) => Feed) => {
       if (disposed) return
       setFeed((previous) =>
@@ -86,8 +58,6 @@ export function useChannelFeed(channelId: string | null): ChannelFeed {
       )
     }
 
-    // A socket that closes *after* the channel finished did its job; only an
-    // unfinished one needs the database asked instead.
     const fallBack = () =>
       update((state) => (finished ? state : { ...state, transport: 'polling' }))
 
@@ -95,8 +65,6 @@ export function useChannelFeed(channelId: string | null): ChannelFeed {
     try {
       socket = new WebSocket(liveUrl(channelId))
     } catch {
-      // A browser that refuses to open the socket at all — a sandboxed frame, a
-      // blocked port — is in the same position as one whose socket died.
       const timer = setTimeout(fallBack, 0)
       return () => {
         disposed = true
@@ -127,8 +95,6 @@ export function useChannelFeed(channelId: string | null): ChannelFeed {
     socket.addEventListener('error', fallBack)
     socket.addEventListener('close', fallBack)
 
-    // Long gaps between steps are normal; some intermediaries read them as a
-    // dead connection.
     const keepalive = setInterval(() => {
       if (socket.readyState === WebSocket.OPEN) socket.send('ping')
     }, KEEPALIVE_MS)
@@ -143,7 +109,6 @@ export function useChannelFeed(channelId: string | null): ChannelFeed {
   return { envelopes: current.envelopes, transport: current.transport }
 }
 
-/** One step as a panel knows it: `ok` is null while the call is still out. */
 export interface LiveStep {
   index: number
   label: string
@@ -154,14 +119,12 @@ export interface LiveStep {
 
 export interface ReducedFeed {
   steps: Array<LiveStep>
-  /** Narration lines, oldest first. Only generation produces these today. */
   logs: Array<{ seq: number; line: string }>
   started: boolean
   outcome: 'passed' | 'failed' | 'error' | null
   errorMessage: string | null
 }
 
-/** Folds a channel's envelopes into what a panel actually renders. */
 export function reduceFeed(envelopes: Array<RunEventEnvelope>): ReducedFeed {
   const steps = new Map<number, LiveStep>()
   const logs: Array<{ seq: number; line: string }> = []

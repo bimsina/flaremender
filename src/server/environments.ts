@@ -1,15 +1,4 @@
-/**
- * Environments and their credentials.
- *
- * An environment is where a run points: a base URL plus the variables a script
- * reads through `secret('NAME')`. Values are stored as AES-GCM envelopes and
- * **never** leave the server in plaintext — listings decrypt only far enough to
- * compute a mask, so the UI can show "which value is this" without holding it.
- *
- * Exactly one environment per project carries `isDefault`. D1 has no
- * interactive transactions, so every write that could break that invariant goes
- * through a single `db.batch`.
- */
+/** Update default environments in one D1 batch to preserve exactly one default per project. */
 import { createServerFn } from '@tanstack/react-start'
 import { and, asc, eq, inArray, ne } from 'drizzle-orm'
 
@@ -30,7 +19,6 @@ function variableName(data: unknown): string {
   return assertVariableName(str(data, 'name', { max: 64 }))
 }
 
-/** Clears `isDefault` on every sibling; pair it with the row that wins. */
 function clearDefaults(db: Db, projectId: string, keepId: string) {
   return db
     .update(environment)
@@ -52,8 +40,6 @@ export const listEnvironments = createServerFn({ method: 'GET' })
 
     if (rows.length === 0) return []
 
-    // Scoped to the environments just read, which were themselves scoped to the
-    // caller's organization — no variable from another tenant can be selected.
     const variables = await context.db
       .select()
       .from(environmentVariable)
@@ -71,14 +57,10 @@ export const listEnvironments = createServerFn({ method: 'GET' })
     >()
 
     for (const variable of variables) {
-      // Decrypt only to mask: the plaintext is discarded in this scope and the
-      // client receives the last four characters at most.
       let hint: string | null
       try {
         hint = maskSecret(await decryptSecret(variable.encryptedValue))
       } catch {
-        // A rotated ENCRYPTION_KEY must not take the whole page down — the UI
-        // shows the variable as unreadable so the operator can re-enter it.
         hint = null
       }
 
@@ -175,8 +157,6 @@ export const deleteEnvironment = createServerFn({ method: 'POST' })
       )
       .orderBy(asc(environment.createdAt))
 
-    // A project with no environment has nothing to run against, so the last one
-    // is not deletable — the project itself is what you delete instead.
     if (siblings.length === 0) {
       throw new ValidationError(
         'This is the only environment in the project. Add another one before deleting it.',
@@ -187,8 +167,6 @@ export const deleteEnvironment = createServerFn({ method: 'POST' })
 
     await context.db.batch([
       context.db.delete(environment).where(eq(environment.id, row.environment.id)),
-      // Deleting the default would leave the project without one; the oldest
-      // survivor inherits the flag in the same batch.
       ...(successor
         ? [
             context.db

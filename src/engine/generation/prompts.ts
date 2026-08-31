@@ -1,37 +1,11 @@
-/**
- * What the model is told.
- *
- * The generator is not asked to *write a test*; it is asked to *perform a
- * flow* and let the transcript of what worked become the test. Everything here
- * follows from that one framing:
- *
- * - it acts in small steps, because a step that fails should invalidate two
- *   lines rather than twenty;
- * - it looks before it acts, because the accessibility tree it is shown is the
- *   same tree its locators will resolve against;
- * - it never sees a credential, only the *names* of the ones this environment
- *   has, because `secret('NAME')` is what belongs in the saved file anyway.
- *
- * The prompt is deliberately concrete about the two things a model gets wrong
- * most often here: writing a whole file when asked for statements, and
- * finishing without an assertion — a script that navigates and checks nothing
- * passes for ever and tells nobody anything.
- */
-
 export interface GenerationContext {
   intentTitle: string
   intentDescription: string
   projectName: string
-  /**
-   * What is already known about this app — how one signs in, what the explorer
-   * found, what the owner pasted in. Redacted before it was ever stored.
-   */
   projectContext: string | null
   environmentName: string
   baseUrl: string
-  /** Names only. Values never enter a prompt, a transcript or a tool result. */
   credentialNames: Array<string>
-  /** The script being replaced, when this is a regeneration. */
   currentScript: string | null
 }
 
@@ -108,7 +82,6 @@ Before calling \`finish\`, the script must end with assertions that would fail i
 
 Call \`finish\` only when the flow described by the intent has been performed and asserted. If you become certain the intent cannot be carried out on this site — the feature described does not exist — call \`finish\` and say so plainly in the notes rather than inventing steps that pass.`
 
-/** The opening message: what to build, where, and what is already there. */
 export function buildTaskPrompt(context: GenerationContext): string {
   const sections: Array<string | null> = [
     `# The intent
@@ -158,7 +131,6 @@ Your first fragment should still be \`await page.goto('/')\` — the saved scrip
   return sections.filter((section) => section !== null).join('\n\n')
 }
 
-/** How an observation is put in front of the model. */
 export function formatObservation(observation: {
   url: string
   title: string

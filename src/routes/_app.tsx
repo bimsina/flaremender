@@ -21,8 +21,6 @@ export const Route = createFileRoute('/_app')({
     if (!context.session) {
       throw redirect({ to: '/signin', search: { redirect: location.href } })
     }
-    // Everything below this layout is organization-scoped, so a member of no
-    // organization has to make one before any of it can render.
     if (context.session.organizations.length === 0) {
       throw redirect({ to: '/onboarding' })
     }
@@ -42,11 +40,6 @@ function AppLayout() {
   return (
     <Sidebar.Provider defaultOpen className="h-svh">
       <Sidebar>
-        {/*
-          Kumo pads the header for the expanded width; the collapsed rail is
-          57px wide, so it gets the same 11px the nav viewport uses and the org
-          button shrinks to an icon rather than being clipped in half.
-        */}
         <Sidebar.Header
           className={cn(
             'group-not-data-[state=collapsed]/sidebar:px-3.5',
@@ -118,11 +111,6 @@ function AppLayout() {
           ) : null}
         </Sidebar.Content>
 
-        {/*
-          One row of 34px controls that lines up with the nav above it, and a
-          centred column of the same three controls in the rail — the collapse
-          trigger is the last of them, so it is reachable in either state.
-        */}
         <Sidebar.Footer
           className={cn(
             'gap-1.5 group-not-data-[state=collapsed]/sidebar:px-3.5',
@@ -157,8 +145,6 @@ function UserMenu({ user }: { user: AppSession['user'] }) {
     <DropdownMenu>
       <DropdownMenu.Trigger
         render={
-          // Sized and padded like a Sidebar.MenuButton so the user icon sits on
-          // the same vertical line as the nav icons above it.
           <Button
             variant="ghost"
             aria-label={user.name}

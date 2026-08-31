@@ -26,7 +26,6 @@ function updateCurrentResult(
     )
 }
 
-/** Infrastructure failures have no attempt, but still belong to an exact version. */
 export async function recordRunError(db: Db, runId: string, errorMessage: string) {
   const [row] = await db.select().from(run).where(eq(run.id, runId)).limit(1)
   if (!row) throw new Error('Run not found.')
@@ -56,9 +55,7 @@ export async function recordRunResult(
     .limit(1)
   if (!existing) throw new Error('Run not found.')
   if (!['queued', 'running'].includes(existing.status)) return existing.status
-  // Every line of an error is indented, not just its first: the UI reads this
-  // column back into steps, and a Playwright error runs to a dozen lines whose
-  // second onwards would otherwise be indistinguishable from console output.
+  // Indent every error line so legacy transcript readers do not mistake it for console output.
   const transcript = [
     ...executed.result.steps.map((step) => {
       const head = `${step.ok ? '✓' : '✘'} ${step.label} (${step.durationMs}ms)`
@@ -69,9 +66,7 @@ export async function recordRunResult(
   ].join('\n')
 
   await db.batch([
-    // Deterministic id + do-nothing: `persist` is a retryable step, and the
-    // `(runId, attemptNumber)` unique index would otherwise turn a retry into
-    // a permanent failure.
+    // Use a deterministic attempt ID so persistence retries cannot duplicate an attempt.
     db
       .insert(attempt)
       .select(
@@ -96,8 +91,7 @@ export async function recordRunResult(
             createdAt: sql`${Date.now()}`.as('created_at'),
           })
           .from(run)
-          // The initial read can race with the workflow error handler. Check
-          // again inside the atomic batch, before attaching any evidence.
+          // Recheck status inside the batch: the initial read can race with the workflow error handler.
           .where(and(eq(run.id, runId), inArray(run.status, ['queued', 'running']))),
       )
       .onConflictDoNothing(),

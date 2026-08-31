@@ -2,7 +2,6 @@ import Database from 'better-sqlite3'
 import { readFileSync, readdirSync } from 'node:fs'
 import { createDb } from '../src/db/index.ts'
 
-/** SQLite-backed D1 contract, including atomic batch behavior. No network or AI. */
 export function testDatabase() {
   const sqlite = new Database(':memory:')
   for (const file of readdirSync('migrations')

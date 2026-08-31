@@ -62,10 +62,6 @@ import { createIntent, deleteIntent, runIntent } from '#/server/intents.ts'
 import { deleteProject, setProjectModel, updateProject } from '#/server/projects.ts'
 import { runSuite } from '#/server/suites.ts'
 
-/**
- * Overview is the project entry point. Existing explicit tab links keep their
- * original values, including `intents`, while the interface calls them Tests.
- */
 const TABS = ['overview', 'chat', 'intents', 'runs', 'environments', 'settings'] as const
 type Tab = (typeof TABS)[number]
 
@@ -74,8 +70,6 @@ function isTab(value: unknown): value is Tab {
 }
 
 export const Route = createFileRoute('/_app/projects/$projectId/')({
-  // The tab lives in the URL so a bookmark, a menu item and the back button all
-  // land on the same view. Optional, so a plain link to the project still works.
   validateSearch: (search: Record<string, unknown>): { tab?: Tab } =>
     isTab(search.tab) ? { tab: search.tab } : {},
   loader: async ({ context, params }) => {
@@ -130,7 +124,6 @@ function ProjectDetail() {
 
   const [addingIntent, setAddingIntent] = useState(false)
   const [environmentId, setEnvironmentId] = useState<string | null>(null)
-  /** Explicitly watched suite — set the moment one is queued from this page. */
   const [watchingSuite, setWatchingSuite] = useState<string | null>(null)
 
   const runnableCount = intents.filter(
@@ -140,8 +133,6 @@ function ProjectDetail() {
   const defaultEnvironment = environments.find((row) => row.isDefault) ?? environments[0] ?? null
   const targetEnvironmentId = environmentId ?? defaultEnvironment?.id ?? null
 
-  // A reload in the middle of a suite must find its way back to the progress
-  // strip, so an unfinished suite in the history seeds the watch as well.
   const inFlightSuite = suiteRuns.find((row) => row.status === 'queued' || row.status === 'running')
   const liveSuiteRunId = watchingSuite ?? inFlightSuite?.id ?? null
 
@@ -155,8 +146,6 @@ function ProjectDetail() {
       }),
     onSuccess: async (result) => {
       setWatchingSuite(result.suiteRunId)
-      // Nothing has run yet — this only queued the workflow. The progress strip
-      // takes it from here.
       await queryClient.invalidateQueries()
       if (tab !== 'intents') void navigate({ search: { tab: 'intents' }, replace: true })
       toast.add({
@@ -229,7 +218,6 @@ function ProjectDetail() {
         tabActions={
           tab === 'intents' ? (
             <>
-              {/* Only worth the width once there is a choice to make. */}
               {environments.length > 1 ? (
                 <Select
                   aria-label="Environment"
@@ -241,8 +229,6 @@ function ProjectDetail() {
                 />
               ) : null}
               {runAllDisabled ? (
-                // A disabled button emits no pointer events, so the span is what
-                // the tooltip actually hangs off.
                 <Tooltip
                   content={
                     runnableCount === 0
@@ -315,7 +301,6 @@ type IntentRow = {
   title: string
   description: string
   status: IntentStatus
-  /** Five-field UTC cron, null when this test only runs on request. */
   schedule: string | null
   currentVersion: number
   updatedAt: Date
@@ -323,14 +308,6 @@ type IntentRow = {
   lastRunAt: Date | null
 }
 
-/**
- * Ordered as a test moves through them, not alphabetically — `'proposed'`
- * first because it is the state before anyone has agreed to anything, and
- * `'generating'` between having nothing and having something, for the same
- * reason both sit where they do in the enum. Transient states are still worth
- * filtering for: a project with twenty intents mid-generation is exactly when
- * someone wants to see only those.
- */
 const STATUS_FILTERS = {
   all: 'Any status',
   proposed: 'Proposed',
@@ -351,7 +328,6 @@ function IntentsTab({
 }: {
   projectId: string
   intents: Array<IntentRow>
-  /** The suite whose progress belongs above this list, if one is in flight. */
   liveSuiteRunId: string | null
   onCreate: () => void
 }) {
@@ -395,10 +371,6 @@ function IntentsTab({
         <SuiteProgress key={liveSuiteRunId} suiteRunId={liveSuiteRunId} projectId={projectId} />
       ) : null}
 
-      {/* Proposals sit in this list looking like tests until somebody decides
-          about them, and nothing else on the page says they are waiting. The
-          banner only appears while they are mixed in with everything else —
-          once the filter is on them, the list is the message. */}
       {proposedCount > 0 && status !== 'proposed' ? (
         <Banner
           variant="default"
@@ -484,13 +456,6 @@ function IntentsTab({
   )
 }
 
-/**
- * Starts an exploration and takes you to where you can watch it.
- *
- * The navigation is the point rather than a nicety: the exploration streams
- * into the chat and posts its plan there, so a button that started one and left
- * you on an empty list would look like it had done nothing for four minutes.
- */
 function ExploreButton({ projectId }: { projectId: string }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -522,11 +487,6 @@ function ExploreButton({ projectId }: { projectId: string }) {
   )
 }
 
-/**
- * That a test runs on a clock is worth one glance, not a column: the listing
- * is about what the tests *are*, and the schedule itself is a detail-page
- * concern. The tooltip carries the description so the icon does not have to.
- */
 function ScheduleHint({ schedule }: { schedule: string }) {
   return (
     <Tooltip
@@ -601,10 +561,6 @@ function IntentActions({
 
   return (
     <>
-      {/* A proposal's whole purpose is to be accepted or thrown away, so both
-          are one click rather than two inside a menu. Dismissing needs no
-          confirmation because nothing is lost: it is a suggestion, and the next
-          exploration will make it again if it was a good one. */}
       {proposed ? (
         <>
           <Button
@@ -830,26 +786,12 @@ function ProjectDetailsCard({ project }: { project: ProjectRow }) {
   )
 }
 
-/**
- * The standing brief the agents work from.
- *
- * Written mostly by them — the chat stores what you tell it, an exploration
- * appends what it found — and editable here because a column that steers every
- * future generation must not be one only a machine can reach. An exploration
- * that concluded something wrong about the app would otherwise keep telling
- * every script it writes so, with nowhere for a person to say otherwise.
- *
- * Credentials are named here, never valued: everything that writes this field
- * redacts first, and anything typed in by hand should follow the same rule.
- */
 function ProjectContextCard({ project }: { project: ProjectRow }) {
   const queryClient = useQueryClient()
   const toast = useKumoToastManager()
 
   const [context, setContext] = useState(project.context ?? '')
 
-  // Reset when the row changes underneath — an exploration finishing while this
-  // tab is open would otherwise leave a stale draft in the box.
   const [seen, setSeen] = useState(project.context ?? '')
   if (seen !== (project.context ?? '')) {
     setSeen(project.context ?? '')
@@ -890,11 +832,6 @@ function ProjectContextCard({ project }: { project: ProjectRow }) {
         />
 
         <div className="flex items-center justify-between gap-3">
-          {/* The cap itself is deliberately not quoted here: it lives beside
-              the write in `server/actions.ts`, and importing it would drag
-              `cloudflare:workers` into the client bundle. Text that is too
-              long is refused by the validator, with the number in the
-              message. */}
           <Text variant="secondary" size="base">
             {context.length} characters
           </Text>
@@ -907,7 +844,6 @@ function ProjectContextCard({ project }: { project: ProjectRow }) {
   )
 }
 
-/** Sentinel: "no choice of our own" is a value the picker has to be able to hold. */
 const INSTANCE_DEFAULT = '__instance-default'
 
 function ProjectModelCard({ project }: { project: ProjectRow }) {

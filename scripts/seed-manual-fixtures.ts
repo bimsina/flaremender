@@ -3,7 +3,6 @@ import { readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { manualScenarios, scenarioScript } from './manual-scenarios.ts'
 
-// Local files only. Never resolves a remote D1 binding or deployment credential.
 const directory = '.wrangler/state/v3/d1/miniflare-D1DatabaseObject'
 let database: Database.Database | undefined
 for (const file of readdirSync(directory).filter(

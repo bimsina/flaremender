@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { jobQuery } from './queries.ts'
 import { reduceFeed, useChannelFeed } from './use-channel-feed.ts'
 
-/** Persisted state owns completion; an expired event channel is not a running job. */
+/** Persisted status owns completion because event channels expire. */
 export function useJobProgress(jobId: string) {
   const query = useQuery({
     ...jobQuery(jobId),

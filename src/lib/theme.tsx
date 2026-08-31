@@ -19,10 +19,6 @@ export function isThemePreference(value: unknown): value is ThemePreference {
   return typeof value === 'string' && (PREFERENCES as ReadonlyArray<string>).includes(value)
 }
 
-/**
- * Runs before first paint so the document is already in the right mode. Kumo
- * keys its palette off `data-mode`, so this has to be synchronous.
- */
 export const themeInitScript = `(function(){try{
 var m=document.cookie.match(/(?:^|; )${THEME_COOKIE}=([^;]*)/);
 var p=localStorage.getItem('${THEME_COOKIE}')||(m&&decodeURIComponent(m[1]))||'system';
@@ -81,9 +77,7 @@ export function ThemeProvider({
     setPreferenceState(next)
     try {
       localStorage.setItem(THEME_COOKIE, next)
-    } catch {
-      // Private-mode browsers can refuse storage; the cookie still carries it.
-    }
+    } catch {}
     document.cookie = `${THEME_COOKIE}=${next}; path=/; max-age=31536000; samesite=lax`
   }, [])
 

@@ -1,30 +1,3 @@
-/**
- * One turn of the generation loop.
- *
- * A turn is a single `generateText` call with three tools and a live browser
- * behind two of them. It is deliberately the unit a Workflow step wraps: an LLM
- * call is the least reliable thing in the engine and the most expensive to
- * repeat, so each one is checkpointed the moment it returns.
- *
- * That step boundary shapes everything here:
- *
- * - **Nothing live is returned.** A turn hands back plain messages, plain
- *   strings and a session id. The browser stub, the model object and the
- *   decrypted credentials are all created inside the turn and die with it.
- * - **Only the delta is returned.** The transcript grows every turn; returning
- *   the whole of it each time would store it once per turn. The workflow
- *   accumulates.
- * - **Nothing secret is returned either.** Credentials are decrypted here to be
- *   handed to the harness, and every string that comes back out — step labels,
- *   errors, logs, the page snapshot — has been through the scrubber inside the
- *   isolate that held the plaintext. The transcript that reaches durable
- *   storage carries `secret('NAME')` references and never a value.
- *
- * The loop's contract with the model is narrow on purpose: it may look, it may
- * try one small piece of code, and it may stop. Code that works is kept; code
- * that does not is thrown away and explained. Nothing the model says is trusted
- * about the page — only what the browser did.
- */
 import { type ModelMessage, generateText, hasToolCall, jsonSchema, stepCountIs, tool } from 'ai'
 import { eq } from 'drizzle-orm'
 
@@ -56,38 +29,20 @@ import {
 } from '#/engine/runner/loader.ts'
 import { decryptSecret } from '#/server/crypto.ts'
 
-/** How many tool calls the model may make inside one turn. */
 const MAX_TOOL_STEPS = 4
 
-/** A fragment past this length is a flow, not a step. */
 export const MAX_FRAGMENT_CHARS = 1200
 
-/** Nothing worth building needs more than this many verified fragments. */
 export const MAX_FRAGMENTS = 40
 
-/**
- * How many fragments may fail back to back before the model is told so.
- *
- * Three is the point at which a model has stopped debugging and started
- * guessing: it has seen the page, seen two errors, and is still wrong. It is a
- * nudge rather than a stop — a model that is told it is going in circles very
- * often gets out of them — and `MAX_TOTAL_FAILURES` is the actual ceiling.
- */
 export const MAX_CONSECUTIVE_FAILURES = 3
 
-/** And a ceiling across the whole job, for a model that keeps recovering badly. */
 export const MAX_TOTAL_FAILURES = 10
 
-/**
- * How many fragments may fail back to back before looking at the page again is
- * compulsory rather than merely advised.
- */
 export const OBSERVE_AFTER_FAILURES = 2
 
-/** How many tool results keep their page tree and script listing in full. */
 const OBSERVATIONS_KEPT_IN_FULL = 2
 
-/** Tool-result fields that restate the present and go stale immediately. */
 const PRUNED_FIELDS: Record<string, string> = {
   page: '(page tree omitted — observe again if you need it)',
   script: '(listing omitted — the newest one above is current)',
@@ -101,75 +56,35 @@ export interface TurnFailures {
 export interface TurnInput {
   jobId: string
   environmentId: string
-  /** The project's model choice, or null to fall through the resolution chain. */
   projectModelId: string | null
   baseUrl: string
-  /**
-   * What the script is supposed to prove. Restated after every step, because
-   * the goal is stated once in the opening message and then sits behind a
-   * growing transcript — and a model that has lost the thread starts exploring
-   * the site instead of performing the flow.
-   */
   intentTitle: string
   intentDescription: string
   sessionId: string
-  /** The whole transcript so far. Accumulated by the workflow, not stored here. */
   messages: Array<ModelMessage>
-  /**
-   * Every fragment verified so far, in order. Read only to replay the flow into
-   * a fresh session when the old one goes away mid-turn.
-   */
   verified: Array<string>
   stepIndexOffset: number
   failures: TurnFailures
-  /**
-   * Whether the model has already been sent back once for trying to finish
-   * without asserting anything. Carried across turns so the push-back happens
-   * exactly once per job: a model that is genuinely blocked has to be able to
-   * stop, and refusing every time would spend the whole turn budget arguing.
-   */
   refusedFinish: boolean
-  /**
-   * Whether the page has been looked at since the last fragment failed. Carried
-   * across turns because a turn can end on a failure, and the rule it feeds is
-   * about the *flow*, not about one `generateText` call.
-   */
   observedSinceFailure: boolean
 }
 
 export interface TurnResult {
-  /**
-   * Only what this turn added, as JSON.
-   *
-   * A string rather than the messages themselves because this crosses a
-   * Workflow step boundary, and `ModelMessage` is a union deep enough that the
-   * platform's `Serializable<T>` cannot see through it. Encoding it here is
-   * honest about what actually happens to it — the workflow stores it, reads it
-   * back and parses it — and keeps the type of the step's result trivial.
-   */
+  /** Encode the message delta because the Workflow Serializable type cannot represent ModelMessage. */
   messagesJson: string
-  /** Fragments this turn verified, in order, ready to append to the script. */
   fragments: Array<string>
-  /** The session the next turn should join — not always the one it was given. */
   sessionId: string
   stepIndexOffset: number
   finished: boolean
-  /** What the model said when it stopped, if it stopped on purpose. */
   notes: string | null
   failures: TurnFailures
   refusedFinish: boolean
   observedSinceFailure: boolean
   modelId: string
-  /**
-   * Set when the loop cannot continue at all — a browser that will not come
-   * back, or a verified prefix that no longer replays. Distinct from a model
-   * that is merely stuck, which is `finished` with unhappy notes.
-   */
   fatal: string | null
   usage: { inputTokens: number; outputTokens: number }
 }
 
-/** The decrypted variables for one environment, keyed by name. */
 export async function loadCredentials(
   env: Cloudflare.Env,
   environmentId: string,
@@ -185,16 +100,12 @@ export async function loadCredentials(
   for (const row of rows) {
     try {
       creds[row.name] = await decryptSecret(row.encryptedValue)
-    } catch {
-      // A variable that will not decrypt reads as missing, and `secret()` says
-      // so by name when the model reaches for it.
-    }
+    } catch {}
   }
 
   return creds
 }
 
-/** The names the prompt is allowed to mention. */
 export async function loadCredentialNames(
   env: Cloudflare.Env,
   environmentId: string,
@@ -209,27 +120,16 @@ export async function loadCredentialNames(
   return rows.map((row) => row.name)
 }
 
-/** What a tool hands back to the model about the page it is now looking at. */
 function describePage(observation: PageObservation | null): string {
   return observation
     ? formatObservation(observation)
     : 'The page could not be read after that step.'
 }
 
-/** A one-line summary of each executed call, for the model's own bookkeeping. */
 function describeSteps(response: ActResponse): Array<string> {
   return response.steps.map((step) => `${step.ok ? '✓' : '✘'} ${step.label}`)
 }
 
-/**
- * The file as it now stands, handed back after every accepted fragment.
- *
- * The model is writing a script it cannot see. Told only "that worked", it has
- * to remember across a dozen turns what is already in there — and the way a
- * model hedges against that is to resend everything, which is exactly the
- * failure `detectReplay` exists to catch. Showing it the accumulated statements
- * removes the reason to hedge, so the guard rarely has to fire.
- */
 function describeScript(fragments: Array<string>, goal: string): string {
   const statements = fragments.flatMap(statementsOf)
 
@@ -248,8 +148,6 @@ export async function runTurn(env: Cloudflare.Env, input: TurnInput): Promise<Tu
   const creds = await loadCredentials(env, input.environmentId)
   const resolved = await resolveModel(db, input.projectModelId)
 
-  // Mutable across the tool calls of this one turn, and returned at the end of
-  // it. Nothing here survives the step boundary except by being returned.
   const state = {
     sessionId: input.sessionId,
     stepIndexOffset: input.stepIndexOffset,
@@ -262,7 +160,6 @@ export async function runTurn(env: Cloudflare.Env, input: TurnInput): Promise<Tu
     fatal: null as string | null,
   }
 
-  /** One line the model is shown after every step, so the target never fades. */
   const goal = `${input.intentTitle} — ${input.intentDescription}`
 
   const narrate = (line: string) =>
@@ -277,40 +174,23 @@ export async function runTurn(env: Cloudflare.Env, input: TurnInput): Promise<Tu
     loader: env.LOADER,
     browser: env.BROWSER,
     baseUrl: input.baseUrl,
-    // Every generation-mode isolate gets these, `observe` included: the
-    // scrubber is built from the values, so an isolate without them cannot
-    // redact the page it reads. See the note in `runner/loader.ts`.
     creds,
   }
 
-  /** Runs one module against the live session and moves the step counter on. */
   async function execute(code: string): Promise<ActResponse> {
     const response = await actInDynamicWorker({
       ...browserOptions,
       sessionId: state.sessionId,
       code,
-      // Resolved per call rather than carried in: a Durable Object stub does
-      // not survive a step boundary, and this is the step that uses it.
       channel: env.RUN_CHANNEL.getByName(input.jobId),
       jobId: input.jobId,
       stepIndexOffset: state.stepIndexOffset,
     })
 
-    // Failed steps were streamed too, so the counter moves either way.
     state.stepIndexOffset += response.steps.length
     return response
   }
 
-  /**
-   * Takes a new session and puts it back where the old one was.
-   *
-   * The replay *is* the recovery: everything verified so far is, by
-   * construction, code that works, so running it into a fresh browser
-   * reproduces the exact page the next fragment expects. If the replay itself
-   * fails the flow is no longer reproducible and the loop has nothing left to
-   * build on, so it stops rather than carrying on against a page it cannot
-   * account for.
-   */
   async function recoverSession(): Promise<boolean> {
     await narrate('The browser session was lost. Starting a new one and replaying the flow…')
 
@@ -376,15 +256,6 @@ export async function runTurn(env: Cloudflare.Env, input: TurnInput): Promise<Tu
     },
   })
 
-  /**
-   * Makes the model look before guessing again.
-   *
-   * One failed fragment is a wrong locator. Two in a row is almost always a
-   * wrong *page* — the flow is not where the model thinks it is, and every
-   * further attempt written from memory compounds the mistake into the script.
-   * Observing is one cheap call that replaces the assumption with the page, and
-   * requiring it here costs far less than the fragments it prevents.
-   */
   function mustObserveFirst(): string | null {
     if (state.failures.consecutive < OBSERVE_AFTER_FAILURES) return null
     if (state.observedSinceFailure) return null
@@ -417,9 +288,6 @@ export async function runTurn(env: Cloudflare.Env, input: TurnInput): Promise<Tu
 
       const verifiedSoFar = [...input.verified, ...state.fragments]
 
-      // Refusals rather than failures of the page: none costs a browser round
-      // trip, and each comes back with enough for the model to fix itself on
-      // the next call.
       const complaint =
         rejectFragment(code, MAX_FRAGMENT_CHARS) ??
         rejectUnsafeInteraction(code) ??
@@ -452,8 +320,6 @@ export async function runTurn(env: Cloudflare.Env, input: TurnInput): Promise<Tu
       if (!response.ok) {
         state.failures.total += 1
         state.failures.consecutive += 1
-        // The page moved, or was never where it was thought to be. Either way
-        // what the model believes about it is now suspect.
         state.observedSinceFailure = false
 
         const advice =
@@ -497,12 +363,6 @@ export async function runTurn(env: Cloudflare.Env, input: TurnInput): Promise<Tu
       additionalProperties: false,
     }),
     execute({ notes }) {
-      // The one thing worth arguing about. A script with no assertions passes
-      // its verification run, passes every run after it, and reports a healthy
-      // intent for a flow nobody is checking — the single worst thing this
-      // engine can produce, because every signal around it says green. So the
-      // first attempt to stop without one is sent back; a model that really is
-      // blocked simply says so again and is let through.
       if (
         !state.refusedFinish &&
         !hasAssertions([...input.verified, ...state.fragments].join('\n'))
@@ -558,5 +418,4 @@ export async function runTurn(env: Cloudflare.Env, input: TurnInput): Promise<Tu
   }
 }
 
-/** Re-exported so the workflow can build the opening message without a cycle. */
 export type { GenerationContext }

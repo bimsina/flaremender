@@ -4,10 +4,6 @@ import { forwardRef } from 'react'
 
 import type { LinkComponentProps } from '@cloudflare/kumo'
 
-/**
- * Bridges Kumo's `href` API onto TanStack Router so sidebar buttons and
- * Kumo links navigate client-side instead of doing a full page load.
- */
 const AppLink = forwardRef<HTMLAnchorElement, LinkComponentProps>(function AppLink(
   { href, to: _to, ...rest },
   ref,

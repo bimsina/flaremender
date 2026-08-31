@@ -1,16 +1,3 @@
-/**
- * What a "Run all" looks like while it is happening.
- *
- * A suite runs its members one at a time and can take minutes, so the only
- * useful thing to show is movement: how far through it is, and what it has
- * found so far. The counts come off the `suite_run` row, which the workflow
- * updates after every member — one row read per poll, regardless of how many
- * intents the project has.
- *
- * Polling rather than the `RunChannel` socket on purpose: the channel is
- * per-run, and a suite is not a run. Each member still narrates itself live on
- * its own intent page; this is the view from above.
- */
 import { Banner, LinkButton, Loader, Text, useKumoToastManager } from '@cloudflare/kumo'
 import { WarningCircleIcon } from '@phosphor-icons/react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -42,7 +29,6 @@ export function SuiteProgress({
 }: {
   suiteRunId: string
   projectId: string
-  /** Fired once, when the suite reaches a verdict. */
   onFinished?: () => void
 }) {
   const queryClient = useQueryClient()
@@ -59,8 +45,6 @@ export function SuiteProgress({
   const suite = data?.suiteRun ?? null
   const done = suite ? suite.passedCount + suite.failedCount + suite.errorCount : 0
 
-  // Two separate signals, because they mean different things: a member landing
-  // means the test list is stale, and the suite ending means everything is.
   const lastDone = useRef(-1)
   const announced = useRef(false)
 

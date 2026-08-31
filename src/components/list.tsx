@@ -1,15 +1,6 @@
 import { Button, InputGroup, LayerCard, RefreshButton, Text } from '@cloudflare/kumo'
 import { MagnifyingGlassIcon } from '@phosphor-icons/react'
 
-/**
- * The collection primitives.
- *
- * Lists in the Cloudflare dashboard are full-width rows, not a grid of squares:
- * an icon, a name with a muted second line, right-aligned metadata and a kebab.
- * Anything a row wants to say about its contents goes in the footer strip,
- * which is part of the same card rather than a card of its own — Kumo forbids
- * stacking `LayerCard`s.
- */
 export function ListRow({
   icon,
   title,
@@ -21,7 +12,6 @@ export function ListRow({
   icon?: React.ReactNode
   title: React.ReactNode
   subtitle?: React.ReactNode
-  /** Right-aligned, before the kebab: a relative time, a badge, a count. */
   meta?: React.ReactNode
   actions?: React.ReactNode
   footer?: React.ReactNode
@@ -53,7 +43,6 @@ export function ListRow({
   )
 }
 
-/** The row above a collection: search grows, filters and refresh sit at the end. */
 export function ListToolbar({
   value,
   onValueChange,
@@ -65,7 +54,6 @@ export function ListToolbar({
   value: string
   onValueChange: (value: string) => void
   placeholder: string
-  /** Filter `Select`s, rendered between the search field and refresh. */
   children?: React.ReactNode
   onRefresh?: () => void
   refreshing?: boolean
@@ -92,10 +80,6 @@ export function ListToolbar({
   )
 }
 
-/**
- * A section whose heading sits *outside* its cards, so a page of settings reads
- * as headings with rows under them rather than as boxes inside boxes.
- */
 export function Section({
   title,
   description,
@@ -123,7 +107,6 @@ export function Section({
   )
 }
 
-/** One setting: what it is on the left, the control that changes it on the right. */
 export function SettingRow({
   label,
   hint,
@@ -152,10 +135,6 @@ export function SettingRow({
   )
 }
 
-/**
- * The zero state *inside* a card — a dashed box with one line and, usually, the
- * action that fills it. `Empty` is the page-level version of the same idea.
- */
 export function InlineEmpty({
   message,
   actionLabel,

@@ -1,15 +1,3 @@
-/**
- * What one run did, wherever it is being read.
- *
- * The same markup serves the drill-down that opens inside a table row and the
- * run's own page, because they are the same question asked from two places —
- * and a run that reads differently depending on how you arrived at it is a run
- * you cannot compare with another. The page adds a run-level summary above the
- * attempts (the facts the table row was already showing: environment, trigger,
- * which script version ran, which intent it belongs to); the inline form leaves
- * those out, since the row above it just said them, and offers a link to the
- * page instead.
- */
 import { Badge, Banner, Button, LinkButton, Loader, Text } from '@cloudflare/kumo'
 import {
   ArrowSquareOutIcon,
@@ -51,7 +39,6 @@ export interface RunDetailAttempt {
   scriptUsed: string
 }
 
-/** Exactly what `getRun` returns, named so both callers can pass it around. */
 export interface RunDetailData {
   run: {
     id: string
@@ -72,10 +59,6 @@ const TRIGGER_LABEL: Record<RunTrigger, string> = {
   schedule: 'Schedule',
 }
 
-/**
- * The drill-down inside a table row: fetched on demand, because a table of
- * twenty runs should not fetch twenty transcripts to show none of them.
- */
 export function RunDetailPanel({ runId, projectId }: { runId: string; projectId: string }) {
   const { data, isPending, error } = useQuery(runQuery(runId))
 
@@ -126,7 +109,6 @@ export function RunDetail({
 }: {
   data: RunDetailData
   projectId: string
-  /** `page` adds the run-level summary the surrounding table row would carry. */
   variant: 'inline' | 'page'
 }) {
   return (
@@ -173,7 +155,6 @@ export function RunDetail({
           attempt={attempt}
           environmentName={data.environment.name}
           showAttemptNumber={data.attempts.length > 1}
-          // The page already said all of this above, once, for the whole run.
           showSummary={variant === 'inline'}
         />
       ))}
@@ -181,11 +162,6 @@ export function RunDetail({
   )
 }
 
-/**
- * The run itself, in key-value form. The version and the test are links
- * because "which script was this?" and "what is this testing?" are the two
- * questions a failed run always raises next.
- */
 function RunSummary({
   data,
   projectId,
@@ -280,7 +256,6 @@ const ARTIFACT_LABELS: Record<keyof ArtifactKeys, { label: string; icon: React.R
   video: { label: 'Video', icon: <WaveformIcon size={14} /> },
 }
 
-/** `/api/artifacts/*` re-checks the caller before it streams a byte. */
 function artifactHref(key: string): string {
   return `/api/artifacts/${key.split('/').map(encodeURIComponent).join('/')}`
 }
@@ -303,7 +278,6 @@ function AttemptDetail({
   projectId: string
   attempt: RunDetailAttempt
   environmentName: string
-  /** Only worth a row of its own once the healing loop retries within a run. */
   showAttemptNumber: boolean
   showSummary: boolean
 }) {
@@ -317,9 +291,6 @@ function AttemptDetail({
   const outcome = OUTCOME_BADGE[attempt.outcome] ?? OUTCOME_BADGE.error
   const completed = transcript.steps.filter((step) => step.ok).length
 
-  // Transcripts written before errors were fully indented leave the tail of the
-  // error stranded among the logs, where it is already shown in full above.
-  // Repeating it twice under two different headings is worse than dropping it.
   const output = useMemo(() => {
     if (transcript.logs.length === 0) return null
     const joined = transcript.logs.join('\n')
@@ -481,13 +452,6 @@ function AttemptDetail({
   )
 }
 
-/**
- * The two things anyone does with a trace: keep it, or look at it.
- *
- * "Open in Trace Viewer" goes to the run's trace page, which embeds
- * Playwright's own viewer self-hosted under `/pw-trace` — full page, linkable,
- * and nothing about the trace leaves this app.
- */
 function TraceActions({
   runId,
   projectId,

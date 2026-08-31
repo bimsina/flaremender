@@ -1,27 +1,9 @@
-/**
- * Keeping an agent's transcript from becoming mostly stale page trees.
- *
- * Both loops in this engine — the one that writes a script and the one that
- * explores an app — hand the model a fresh accessibility tree with every tool
- * result. Each is ten kilobytes, each was decisive when it arrived, and each is
- * noise two turns later, because they all describe a *present* that has moved
- * on. The model needs the page as it is now; the newest copy is always the one
- * immediately above it.
- *
- * So older copies are replaced by a line saying where to get another. Crucially
- * this happens in the **in-memory** copy only: what the workflow stored is
- * untouched, so a replayed instance rebuilds exactly the same messages from
- * exactly the same stored deltas.
- */
 import type { ModelMessage } from 'ai'
 
-/** Anything shorter than this is too small to be worth pruning. */
 const PRUNE_THRESHOLD = 400
 
 export interface PruneOptions {
-  /** How many of the most recent tool results keep their fields in full. */
   keep: number
-  /** Field name → what to say instead, once it is old enough to drop. */
   replacements: Record<string, string>
 }
 
@@ -46,7 +28,6 @@ export function pruneToolResults(
     return Object.fromEntries(entries)
   }
 
-  // Newest first, so the most recent results are the ones kept.
   const reversed = [...messages].reverse().map((message) => {
     if (message.role !== 'tool') return message
     if (remaining > 0) {

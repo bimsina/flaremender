@@ -1,15 +1,3 @@
-/**
- * The resolution chain, ending in an AI SDK model.
- *
- * A run asks for "the model for this project" and gets back something
- * `generateText` can use. Three steps, in order: the project's own choice, the
- * instance default, then Workers AI — which needs no credentials, so the chain
- * always terminates somewhere runnable on a fresh install.
- *
- * This module constructs models and nothing else; it never calls one. It is
- * imported from Workflows as well as request handlers, so it must stay free of
- * anything that assumes a request is in flight.
- */
 import { env } from 'cloudflare:workers'
 import { createAnthropic } from '@ai-sdk/anthropic'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
@@ -29,21 +17,17 @@ import {
 } from '#/lib/models.ts'
 import { resolveProviderKey } from '#/server/providers.ts'
 
-/** Which link of the chain the model actually came from, for logs and UI. */
 export type ModelOrigin = 'project' | 'instance' | 'fallback'
 
 export interface ResolvedModel {
   model: LanguageModel
-  /** `"{provider}:{slug}"`, recorded on the run so history says what wrote it. */
   modelId: string
   provider: Provider
   slug: string
   origin: ModelOrigin
-  /** Where the credential came from: `'secret'` also covers the AI binding. */
   keySource: 'secret' | 'database'
 }
 
-/** Operator-facing: says what to fix and where, never what the key is. */
 export class ModelResolutionError extends Error {
   constructor(message: string) {
     super(message)
@@ -51,11 +35,6 @@ export class ModelResolutionError extends Error {
   }
 }
 
-/**
- * Walks the chain without touching credentials, so callers that only want to
- * *name* the effective model (a settings caption, a run record) do not have to
- * construct one.
- */
 export async function resolveModelId(
   db: Db,
   projectModelId: string | null,

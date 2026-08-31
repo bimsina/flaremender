@@ -1,7 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "flaremender",
-  // Needs a date new enough for workerd's real node:fs (Playwright traces/mkdtemp).
   "compatibility_date": "2026-08-01",
   "compatibility_flags": ["nodejs_compat"],
   "main": "src/server.ts",
@@ -14,9 +13,6 @@
       "migrations_dir": "migrations",
     },
   ],
-  // Browser Rendering runs a LOCAL browser under dev (since 2025-07); this also
-  // lets tests reach localhost apps. Set `"remote": true` here to develop
-  // against the real service instead. Production always uses the real service.
   "browser": { "binding": "BROWSER" },
   "ai": { "binding": "AI", "remote": true },
   "r2_buckets": [
@@ -42,29 +38,21 @@
       "binding": "GENERATE_WORKFLOW",
       "class_name": "GenerateWorkflow",
     },
-    // Browses the app and proposes tests; ends in `'proposed'` intent rows.
     {
       "name": "flaremender-explore",
       "binding": "EXPLORE_WORKFLOW",
       "class_name": "ExploreWorkflow",
     },
-    // An approved plan, generated one test at a time by the same turn loop.
     {
       "name": "flaremender-batch",
       "binding": "BATCH_WORKFLOW",
       "class_name": "BatchGenerateWorkflow",
     },
   ],
-  // The minute tick dispatches due intent schedules; 03:30 UTC sweeps history.
-  // Both land on `scheduled` in src/server.ts, which tells them apart by
-  // `controller.cron` — keep the nightly expression in step with
-  // `RETENTION_CRON` there.
   "triggers": { "crons": ["* * * * *", "30 3 * * *"] },
   "durable_objects": {
     "bindings": [
       { "name": "RUN_CHANNEL", "class_name": "RunChannel" },
-      // One per project, addressed by the project id: it serialises chat turns
-      // and streams them over hibernating sockets.
       { "name": "PROJECT_CHAT", "class_name": "ProjectChat" },
     ],
   },

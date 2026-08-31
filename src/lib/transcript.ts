@@ -1,27 +1,5 @@
 import type { RunResult } from '#/engine/contract.ts'
 
-/**
- * Reading an attempt's transcript back.
- *
- * The Workflow flattens a run's steps and logs into one text column so an
- * attempt is legible without joining anything or fetching an artifact. That
- * makes the column the only record the UI can reach, so this parses it back
- * into the same shape the live panel renders — one screen, one presentation,
- * whether the run is happening now or happened last week.
- *
- * The format is written by `RunWorkflow.persist`:
- *
- *     ✓ page.goto('/') (412ms)
- *     ✘ expect(locator).toBeVisible() (5001ms)
- *         Timed out 5000ms waiting for …
- *     <blank line>
- *     [log] whatever the script printed
- *
- * Anything that does not match is kept verbatim as a log line rather than
- * dropped: a transcript is evidence, and silently losing part of it would be
- * worse than showing a line the parser did not understand.
- */
-
 export interface TranscriptStep {
   index: number
   label: string
@@ -36,7 +14,6 @@ export interface Transcript {
 }
 
 const STEP = /^([✓✘])\s(.*?)(?:\s\((\d+)ms\))?$/u
-/** Continuation of the step above it — the Workflow indents errors by four. */
 const CONTINUATION = /^ {4}(.*)$/u
 
 export function parseTranscript(text: string | null | undefined): Transcript {
@@ -60,8 +37,6 @@ export function parseTranscript(text: string | null | undefined): Transcript {
 
     const continuation = CONTINUATION.exec(line)
     const last = steps.at(-1)
-    // Indented lines belong to the step they follow, but only while the log
-    // section has not started — after the first log line every step is closed.
     if (continuation && last && logs.length === 0) {
       last.error = last.error === null ? continuation[1]! : `${last.error}\n${continuation[1]}`
       continue
@@ -73,7 +48,6 @@ export function parseTranscript(text: string | null | undefined): Transcript {
   return { steps, logs }
 }
 
-/** Prefer structured evidence; retain the reader for historical text-only attempts. */
 export function readTranscript(
   attempt: { result?: RunResult | null; logs?: string | null } | null | undefined,
 ): Transcript {

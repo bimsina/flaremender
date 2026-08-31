@@ -1,15 +1,3 @@
-/**
- * What a run leaves behind, in R2.
- *
- * Keys are organization-first — `runs/{orgId}/{projectId}/{runId}/…` — so a
- * tenant's objects share a prefix that lifecycle rules, exports and deletions
- * can address in one operation, and so the read path can authorise a key by
- * looking at it rather than by consulting a table it does not have.
- *
- * The bucket binding deliberately lives out here rather than inside the Dynamic
- * Worker: bytes travel back over RPC, and the untrusted script never holds a
- * handle to storage shared with every other tenant.
- */
 import type { ArtifactKeys } from '#/db/schema/app.ts'
 import type { RunResult } from '#/engine/contract.ts'
 
@@ -21,7 +9,6 @@ export const ARTIFACT_NAMES = {
   logs: 'logs.json',
 } as const
 
-/** Trailing slash included: every key is `prefix + name`. */
 export function artifactPrefix(input: {
   organizationId: string
   projectId: string
@@ -30,10 +17,8 @@ export function artifactPrefix(input: {
   return `${ARTIFACT_ROOT}/${input.organizationId}/${input.projectId}/${input.runId}/`
 }
 
-/** The run an artifact key belongs to, or null if the key is not one of ours. */
 export function runIdFromKey(key: string): string | null {
   const parts = key.split('/')
-  // runs / orgId / projectId / runId / name
   if (parts.length !== 5 || parts[0] !== ARTIFACT_ROOT) return null
   return parts[3] || null
 }
@@ -50,22 +35,11 @@ export function contentTypeForKey(key: string): string {
 }
 
 export interface ArtifactInput {
-  /** PNG bytes, present only when the attempt failed and a shot was possible. */
   screenshot: ArrayBuffer | null
-  /** Playwright trace zip, present whenever tracing started. */
   trace: ArrayBuffer | null
-  /** Already scrubbed by the time it arrives here. */
   result: RunResult
 }
 
-/**
- * Writes everything an attempt produced and returns the keys to record on it.
- *
- * A failed upload is not a failed run: the outcome is already known, and losing
- * a screenshot should not turn a green run red. Each put is therefore
- * independent and best-effort, and a key is only recorded once its object
- * exists.
- */
 export async function writeArtifacts(
   bucket: R2Bucket,
   prefix: string,
@@ -113,8 +87,6 @@ export async function writeArtifacts(
     'application/json',
   )
 
-  // `undefined` values would survive JSON round-trips as absent keys anyway,
-  // but dropping them keeps the persisted column honest about what exists.
   for (const [name, value] of Object.entries(keys)) {
     if (value === undefined) delete keys[name as keyof ArtifactKeys]
   }

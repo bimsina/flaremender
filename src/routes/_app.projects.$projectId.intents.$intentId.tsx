@@ -101,8 +101,6 @@ export const Route = createFileRoute('/_app/projects/$projectId/intents/$intentI
         ...environmentsQuery(params.projectId),
         revalidateIfStale: true,
       }),
-      // Asked for on every visit, not only after pressing Generate: a page
-      // reloaded mid-generation has to find its way back to the live channel.
       context.queryClient.ensureQueryData({
         ...intentGenerationQuery(params.intentId),
         revalidateIfStale: true,
@@ -134,9 +132,7 @@ function IntentDetail() {
   const [editorKey, setEditorKey] = useState(0)
   const [editingDescription, setEditingDescription] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  /** Explicitly watched run — set the moment one is queued from this page. */
   const [watching, setWatching] = useState<string | null>(null)
-  /** Same, for a generation started from this page — kept after it finishes. */
   const [watchingGeneration, setWatchingGeneration] = useState<string | null>(null)
   const [environmentId, setEnvironmentId] = useState<string | null>(null)
 
@@ -158,14 +154,9 @@ function IntentDetail() {
           ? 'failing'
           : 'ready'
 
-  // A reload in the middle of a run must find its way back to the live panel,
-  // so an unfinished run in the history seeds the watch as well.
   const inFlight = runs.find((row) => !TERMINAL.has(row.status))
   const liveRunId = watching ?? inFlight?.id ?? null
 
-  // The same rule for generations, with one difference: a *finished* job is
-  // still worth showing while the page that started it is open, so the panel
-  // can say how it went rather than vanishing at the moment of the verdict.
   const unfinishedGeneration =
     generation && (generation.status === 'queued' || generation.status === 'running')
       ? generation.id
@@ -183,8 +174,6 @@ function IntentDetail() {
       }),
     onSuccess: async (result) => {
       setWatching(result.runId)
-      // The verdict does not arrive with the response — a run is a Workflow and
-      // this only queues it. The live panel takes it from here.
       await queryClient.invalidateQueries()
       if (tab !== 'script') void navigate({ search: { tab: 'script' }, replace: true })
       toast.add({ variant: 'info', title: 'Run queued', description: result.runId })
@@ -330,8 +319,6 @@ function IntentDetail() {
 
         <div hidden={tab !== 'script'}>
           <ScriptTab
-            // A restore replaces the saved code, and the editor has to follow it
-            // rather than sit there claiming unsaved changes it did not make.
             key={`${currentVersion?.id ?? 'unsaved'}-${editorKey}`}
             manual={search.mode === 'manual'}
             readiness={intent.readiness}
@@ -387,8 +374,6 @@ function IntentDetail() {
   )
 }
 
-/* -------------------------------------------------------------- Script tab */
-
 interface GenerationSummary {
   id: string
   status: 'queued' | 'running' | 'succeeded' | 'failed'
@@ -438,12 +423,9 @@ function ScriptTab({
   const queryClient = useQueryClient()
   const toast = useKumoToastManager()
 
-  // A brand-new intent starts from the template rather than an empty box: the
-  // shape of a script is not obvious, and an empty editor teaches nothing.
   const saved = currentVersion?.code ?? DEFAULT_SCRIPT_TEMPLATE
   const [code, setCode] = useState(saved)
   const [note, setNote] = useState('')
-  /** Set by "start from a blank script", which is the way past the hero. */
   const [authoring, setAuthoring] = useState(manual)
 
   const dirty = code !== saved || note.trim().length > 0
@@ -453,10 +435,6 @@ function ScriptTab({
   }, [dirty, onDirtyChange])
   const untouched = currentVersion === null && !dirty
 
-  // With no script and nothing in flight, the editor is not the first thing to
-  // show someone: the test is already written down, and the fastest route
-  // from it to a working test is to let the agent try. Writing it by hand is
-  // one click away and always will be.
   const hero = currentVersion === null && !authoring && !generating
 
   const save = useMutation({
@@ -761,16 +739,6 @@ function ScriptTab({
   )
 }
 
-/* ---------------------------------------------------------------- Schedule */
-
-/**
- * The schedules worth naming, plus the two entries that are not schedules.
- *
- * Presets exist because the useful cases are few and cron is a bad thing to
- * make someone remember; `custom` exists because the ones we did not think of
- * are exactly as valid, and the matcher does not care which route produced the
- * expression.
- */
 const SCHEDULE_PRESETS = [
   { label: 'Not scheduled', value: 'none' },
   { label: 'Every 15 minutes', value: '*/15 * * * *' },
@@ -786,17 +754,11 @@ const PRESET_EXPRESSIONS = new Set(
   ),
 )
 
-/** Which row of the Select an existing schedule already sits on. */
 function presetFor(schedule: string | null): string {
   if (!schedule) return 'none'
   return PRESET_EXPRESSIONS.has(schedule) ? schedule : 'custom'
 }
 
-/**
- * Everything about a schedule that fits next to a status badge. The raw
- * expression is the `title`, because a description is a summary and someone
- * debugging a schedule wants the thing itself.
- */
 function ScheduleBadge({ schedule, paused = false }: { schedule: string; paused?: boolean }) {
   return (
     <span title={`${schedule} (UTC)`}>
@@ -815,8 +777,6 @@ function ScheduleSection({ intentId, schedule }: { intentId: string; schedule: s
   const [custom, setCustom] = useState(() => (presetFor(schedule) === 'custom' ? schedule! : ''))
 
   const next = choice === 'none' ? null : choice === 'custom' ? custom.trim() : choice
-  // An empty custom box is "not finished typing", not "clear the schedule" —
-  // the Select's own first row means that, and says so.
   const valid = next === null ? true : isValidCron(next)
   const dirty = next !== (schedule ?? null)
 
@@ -889,8 +849,6 @@ function ScheduleSection({ intentId, schedule }: { intentId: string; schedule: s
     </Section>
   )
 }
-
-/* ---------------------------------------------------------------- Runs tab */
 
 type RunRowData = {
   purpose: RunPurpose
@@ -981,9 +939,7 @@ function RunsTab({ projectId, runs }: { projectId: string; runs: Array<RunRowDat
                             <Text as="span" variant="mono-secondary">
                               {shortId(row.id)}
                             </Text>
-                            {/* Who started it, but only when it was not a
-                                person — "manual" is the unremarkable case and
-                                does not need saying on every row. */}
+
                             {row.trigger === 'schedule' ? (
                               <span
                                 className="flex items-center text-kumo-subtle"
@@ -1022,8 +978,6 @@ function RunsTab({ projectId, runs }: { projectId: string; runs: Array<RunRowDat
     </Section>
   )
 }
-
-/* ------------------------------------------------------------- History tab */
 
 type VersionRowData = {
   id: string
@@ -1198,8 +1152,6 @@ function VersionCode({ versionId }: { versionId: string }) {
 
   return <CodeEditor value={data.code} readOnly wrap showLineNumbers={false} maxHeight="60vh" />
 }
-
-/* ------------------------------------------------------------------ Dialogs */
 
 function EditIntentDialog({
   intent,

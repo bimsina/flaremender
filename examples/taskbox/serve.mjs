@@ -1,4 +1,3 @@
-/** Tiny static server for the Taskbox demo app. `node serve.mjs [port]` */
 import { readFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import path from 'node:path'

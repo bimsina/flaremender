@@ -1,35 +1,10 @@
 import { hasSupportedAssertions } from '#/lib/assertions.ts'
-/**
- * Turning fragments into a script.
- *
- * The model never writes a file. It writes *statements* — two or three lines
- * that do one thing and check it worked — and each of those is executed against
- * the live page before it is allowed to become part of anything. This module is
- * the only place that knows how a fragment becomes runnable code, and it is
- * deliberately the same knowledge in both directions:
- *
- * - `wrapFragment` builds the throwaway module one candidate fragment runs as;
- * - `assembleScript` builds the file the verified fragments are saved as.
- *
- * Because both wrap the same body in the same `{ page, expect, secret }`
- * signature, a fragment that worked during generation is a fragment that works
- * in the saved script. If these two ever disagreed, generation would be
- * verifying something other than what it saves.
- */
 import { DEFAULT_SCRIPT_TEMPLATE } from '#/lib/script-template.ts'
 
 const OPEN = 'export default async function ({ page, expect, secret }) {'
 const CLOSE = '}'
 const INDENT = '  '
 
-/**
- * Re-indents a fragment to sit inside the wrapper.
- *
- * Models indent inconsistently — sometimes for the enclosing function they
- * cannot see, sometimes not at all — so whatever common indentation a fragment
- * arrived with is stripped and one level is added back. Blank lines stay blank
- * rather than becoming trailing whitespace.
- */
 function reindent(fragment: string): Array<string> {
   const lines = fragment.replace(/\r\n?/g, '\n').replace(/\s+$/, '').split('\n')
 
@@ -39,27 +14,15 @@ function reindent(fragment: string): Array<string> {
 
   const strip = Number.isFinite(common) ? common : 0
 
-  return (
-    lines
-      .map((line) => (line.trim().length === 0 ? '' : `${INDENT}${line.slice(strip)}`))
-      // A fragment that opens with blank lines would push the wrapper apart.
-      .filter((line, index, all) => !(line === '' && (index === 0 || index === all.length - 1)))
-  )
+  return lines
+    .map((line) => (line.trim().length === 0 ? '' : `${INDENT}${line.slice(strip)}`))
+    .filter((line, index, all) => !(line === '' && (index === 0 || index === all.length - 1)))
 }
 
-/** The module one candidate fragment executes as. */
 export function wrapFragment(fragment: string): string {
   return `${OPEN}\n${reindent(fragment).join('\n')}\n${CLOSE}\n`
 }
 
-/**
- * The finished script.
- *
- * Fragments are separated by a blank line, which is the only formatting
- * decision made here: they arrived as coherent little groups of statements and
- * reading them back as paragraphs is how the person who inherits this file will
- * see the flow the model built.
- */
 export function assembleScript(fragments: Array<string>): string {
   const bodies = fragments
     .map((fragment) => reindent(fragment).join('\n'))
@@ -70,13 +33,6 @@ export function assembleScript(fragments: Array<string>): string {
   return `${OPEN}\n${bodies.join('\n\n')}\n${CLOSE}\n`
 }
 
-/**
- * The statements of a fragment, flattened and normalised.
- *
- * For comparison and for showing the model what it has already done — never for
- * generating code, which is why collapsing whitespace and dropping the
- * separators is safe here and would not be anywhere else.
- */
 export function statementsOf(fragment: string): Array<string> {
   return fragment
     .split(/[\n;]+/)
@@ -84,38 +40,10 @@ export function statementsOf(fragment: string): Array<string> {
     .filter((line) => line.length > 0 && !line.startsWith('//'))
 }
 
-/**
- * Whether a script checks anything at all.
- *
- * The one property verification cannot establish on its own, and the reason it
- * has to be asked here. A run proves that a script did not throw — so a script
- * that navigates, signs in and stops passes, and goes on passing for ever, no
- * matter what the site does. It is the most dangerous thing generation can
- * produce, because every signal around it says green.
- *
- * Crude by design: whether the assertions are *good* is a judgement, and this is
- * only the floor beneath it.
- */
 export function hasAssertions(code: string): boolean {
   return hasSupportedAssertions(code)
 }
 
-/**
- * Catches the one failure mode the prompt cannot reliably talk a model out of:
- * resending the whole flow every turn instead of the next step of it.
- *
- * It is a *plausible* mistake rather than a stupid one — a model that cannot
- * see the file being assembled hedges by restating everything — and it costs
- * nothing at execution time, because replaying a sign-in against a browser that
- * is already signed in usually still passes. So it survives all the way into
- * the saved script, where it reads as six navigations and three sign-ins for a
- * flow that needed one of each.
- *
- * Detected on statements rather than on text, so reformatting does not evade
- * it, and deliberately tolerant of a single repeat: going back to a page that
- * has already been visited is a real thing a test does. Two or more repeats
- * that make up most of the fragment is not.
- */
 export function detectReplay(fragment: string, verified: Array<string>): string | null {
   const already = verified.flatMap(statementsOf)
   if (already.length === 0) return null
@@ -132,32 +60,6 @@ export function detectReplay(fragment: string, verified: Array<string>): string 
     .join('\n')}`
 }
 
-/**
- * Ways of touching the page that a real user has no access to.
- *
- * Each of these makes a fragment *more* likely to be kept and *less* likely to
- * survive, which is the worst possible combination for a loop whose whole
- * premise is "keep only what worked":
- *
- * - `dispatchEvent('click')` fires the event straight at the node, skipping
- *   Playwright's actionability checks — visible, stable, enabled, unobscured.
- *   So it succeeds against a button that is covered, disabled or on a page the
- *   flow has already left, the fragment is appended, and the honest `.click()`
- *   in the replayed script then times out on exactly that element.
- * - `evaluate` does the same thing with more room: `el => el.click()` inside
- *   the page bypasses every check there is.
- * - `force: true` is the option that says "skip the checks" out loud.
- *
- * The important part is not that these are unusual — it is that a failure to
- * click is *information*. An element a user could not interact with means the
- * flow is on the wrong page or in the wrong state, and the right response is to
- * look, not to reach past the check and carry on building on a lie.
- *
- * Read-only uses of `evaluate` are collateral damage. They are rare in an
- * end-to-end test, a locator assertion says the same thing better, and the
- * refusal explains itself — which is much cheaper than the class of silent
- * failure it prevents.
- */
 const UNSAFE_INTERACTIONS: Array<{ pattern: RegExp; complaint: string }> = [
   {
     pattern: /\.dispatchEvent\s*\(/,
@@ -181,12 +83,6 @@ const UNSAFE_INTERACTIONS: Array<{ pattern: RegExp; complaint: string }> = [
   },
 ]
 
-/**
- * Refuses the shortcuts that make a fragment pass here and fail on replay.
- *
- * Separate from `rejectFragment` because the reasoning is different: those are
- * fragments that cannot run at all, these are fragments that run *too easily*.
- */
 export function rejectUnsafeInteraction(fragment: string): string | null {
   for (const { pattern, complaint } of UNSAFE_INTERACTIONS) {
     if (pattern.test(fragment)) {
@@ -197,38 +93,13 @@ export function rejectUnsafeInteraction(fragment: string): string | null {
   return null
 }
 
-/** `page.goto('…')` / `page.reload()` / `page.goBack()` and friends. */
 const NAVIGATION = /\bpage\s*\.\s*(goto|reload|goBack|goForward)\s*\(/
 const GOTO_TARGET = /\bpage\s*\.\s*goto\s*\(\s*['"`]([^'"`]*)['"`]/g
 
-/**
- * Stops the loop from browsing around inside the script it is writing.
- *
- * The asymmetry that causes this is real and worth naming: `observe` cannot
- * move the page, so the *only* way for the model to go and look at somewhere
- * else is `act` — and every successful `act` is appended for ever. A model that
- * is unsure where the cart is will therefore go and find out, and the finished
- * script carries its entire search: `/` → `/inventory.html` → `/cart.html` →
- * `/inventory.html`, none of which a user would ever do, all of which passed
- * when they ran, and which together leave the flow somewhere the next fragment
- * was not written for.
- *
- * So a fragment that *only* navigates is held to a much stricter rule than one
- * that does something: it may go somewhere new, but it may not go back
- * anywhere, and it may not reload. A test gets in through one navigation and
- * then moves the way a person does — by clicking the thing that takes them
- * there. That is also a better test, because the navigation itself is part of
- * what the flow is supposed to prove.
- *
- * Fragments that navigate *and* then do or check something are left alone: that
- * is a coherent step, not a search.
- */
 export function detectNavigationChurn(fragment: string, verified: Array<string>): string | null {
   const statements = statementsOf(fragment)
   if (statements.length === 0) return null
 
-  // Only pure movement is suspect. A navigation that comes with work attached
-  // is the model going somewhere on purpose.
   if (!statements.every((statement) => NAVIGATION.test(statement))) return null
 
   if (/\bpage\s*\.\s*(reload|goBack|goForward)\s*\(/.test(fragment)) {
@@ -252,18 +123,6 @@ export function detectNavigationChurn(fragment: string, verified: Array<string>)
     )}, so going back there is not a step in the journey — it is the flow starting over, and it will leave the browser somewhere the steps after it are not written for. Move the way a user would: click the link or button that goes there. Use \`observe\` if you only want to see where you are.`
 }
 
-/**
- * Rejects a fragment before it costs a browser round trip.
- *
- * Only the two shapes that cannot possibly work are refused: a module wrapper
- * (the model was asked for statements and wrote a file) and imports (the
- * harness supplies everything, and an import inside a function body is a syntax
- * error). Everything else — including code that will throw — is the browser's
- * business to find out, which is the point of running it.
- *
- * Returns the complaint to send back to the model, or null when the fragment is
- * worth executing.
- */
 export function rejectFragment(fragment: string, maxLength: number): string | null {
   const trimmed = fragment.trim()
 

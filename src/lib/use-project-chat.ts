@@ -1,18 +1,3 @@
-/**
- * Watching a conversation happen.
- *
- * The same idea as `use-channel-feed.ts` — a socket carrying sequenced
- * envelopes, with anything already seen dropped — with one difference that
- * shapes the whole hook: a chat has a *durable* half. The history is fifty rows
- * in D1 and the socket only ever describes the turn happening right now, so this
- * merges the two rather than reducing one of them.
- *
- * The merge rule is simple and matters: a message the socket announced wins
- * until the history query has caught up, and then the two are the same row and
- * deduplicate by id. That is what makes a sent message appear instantly, a
- * streaming answer appear as it is written, and a reload land on exactly the
- * same conversation.
- */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
@@ -32,25 +17,20 @@ import {
 import type { LiveTransport } from '#/lib/use-channel-feed.ts'
 import { sendChatMessage } from '#/server/chat.ts'
 
-/** Matches the Durable Object's ping auto-response, which never wakes it. */
 const KEEPALIVE_MS = 30_000
 
-/** How often the history is re-read when the socket will not open. */
 const POLL_INTERVAL_MS = 3000
 
 export type { LiveTransport }
 
-/** One tool call, as the transcript shows it while it is happening. */
 export interface LiveToolCall {
   toolCallId: string
   name: string
   summary: string
-  /** Null while the call is still out. */
   ok: boolean | null
   detail: string | null
 }
 
-/** The assistant's message while it is being written. */
 export interface PendingMessage {
   id: string
   parts: Array<ChatPart>
@@ -130,8 +110,6 @@ function useChatSocket(projectId: string): Feed {
     socket.addEventListener('error', fallBack)
     socket.addEventListener('close', fallBack)
 
-    // A turn can be quiet for a minute while a tool runs; some intermediaries
-    // read that as a dead connection.
     const keepalive = setInterval(() => {
       if (socket.readyState === WebSocket.OPEN) socket.send('ping')
     }, KEEPALIVE_MS)
@@ -147,18 +125,11 @@ function useChatSocket(projectId: string): Feed {
 }
 
 interface Reduced {
-  /** Finished assistant messages the socket announced, in arrival order. */
   announced: Array<ChatMessageWire>
   pending: PendingMessage | null
   busy: boolean
   error: string | null
-  /** Bumped every time a turn ends, so the history query knows to re-read. */
   completedTurns: number
-  /**
-   * Ids the Durable Object has rewritten, with their redacted parts. Applied to
-   * the sender's own optimistic copy, which is the only place the unredacted
-   * text ever existed outside the model call.
-   */
   redactions: Map<string, Array<ChatPart>>
 }
 
@@ -175,14 +146,6 @@ function appendCards(parts: Array<ChatPart>, cards: Array<ChatCard>): Array<Chat
   return [...parts, ...cards.map((card): ChatPart => ({ type: 'card', card }))]
 }
 
-/**
- * Folds one channel's events into what the transcript renders.
- *
- * The message being written is kept as three flat variables rather than as one
- * nullable object: every event that touches it touches exactly one of the three,
- * and the alternative — reassigning a `PendingMessage | null` from a spread of
- * itself — is a shape TypeScript declines to narrow.
- */
 function reduceChat(envelopes: Array<ChatEventEnvelope>): Reduced {
   const announced: Array<ChatMessageWire> = []
   const redactions = new Map<string, Array<ChatPart>>()
@@ -249,8 +212,6 @@ function reduceChat(envelopes: Array<ChatEventEnvelope>): Reduced {
         break
 
       case 'busy':
-        // Nothing was stored, and the composer already told the sender. The
-        // event exists so a second viewer's screen does not go quiet.
         break
 
       case 'error':
@@ -269,14 +230,10 @@ function reduceChat(envelopes: Array<ChatEventEnvelope>): Reduced {
 }
 
 export interface ProjectChat {
-  /** History, the sender's own message and live messages merged, oldest first. */
   messages: Array<ChatMessageWire>
   pending: PendingMessage | null
-  /** A turn is in flight; the composer stays disabled. */
   busy: boolean
-  /** Why the last send did not go through, if it did not. */
   sendError: string | null
-  /** Why the last turn stopped, if it stopped badly. */
   error: string | null
   transport: LiveTransport
   loading: boolean
@@ -289,20 +246,11 @@ export function useProjectChat(projectId: string): ProjectChat {
 
   const live = useMemo(() => reduceChat(envelopes), [envelopes])
 
-  /**
-   * The sender's own messages, kept locally until the history has them.
-   *
-   * This is not an optimistic-UI nicety: it is the mechanism that keeps a pasted
-   * credential off everybody else's socket. The Durable Object never broadcasts
-   * a user message, so this is the only copy of the text as typed, and it lives
-   * exactly as long as it takes the turn to end and the history to be re-read.
-   */
+  /** Keep unredacted user messages local until persisted redaction replaces them. */
   const [sent, setSent] = useState<Array<ChatMessageWire>>([])
 
   const history = useQuery({
     ...chatMessagesQuery(projectId),
-    // Only when the socket is not carrying the conversation. With one open the
-    // history is re-read at the end of each turn instead.
     refetchInterval: transport === 'polling' ? POLL_INTERVAL_MS : false,
   })
 
@@ -324,12 +272,6 @@ export function useProjectChat(projectId: string): ProjectChat {
     },
   })
 
-  /**
-   * A finished turn has almost certainly changed something else on the page —
-   * an intent was created, a run was queued, a variable was stored — and none
-   * of those listings know it. Broad on purpose, and cheap: it happens once per
-   * turn, not once per token.
-   */
   useEffect(() => {
     if (live.completedTurns === 0) return
 
@@ -343,9 +285,7 @@ export function useProjectChat(projectId: string): ProjectChat {
   const messages = useMemo(() => {
     const byId = new Map<string, ChatMessageWire>()
 
-    // Order is the precedence: the local copy is the weakest, because it is the
-    // only unredacted one. The socket and then the database overwrite it as soon
-    // as either has something to say about the same id.
+    // Redacted socket and database copies must overwrite the sender’s unredacted local copy.
     for (const message of sent) {
       const redacted = live.redactions.get(message.id)
       byId.set(message.id, redacted ? { ...message, parts: redacted } : message)

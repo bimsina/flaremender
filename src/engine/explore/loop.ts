@@ -1,29 +1,3 @@
-/**
- * One turn of the exploration loop.
- *
- * Structurally a twin of `generation/loop.ts` — one `generateText` call, a live
- * browser behind some of the tools, one Workflow step per turn so the least
- * reliable thing in the engine is checkpointed the moment it returns — and the
- * same three rules hold: nothing live is returned, only the delta is returned,
- * and nothing secret is returned either.
- *
- * What differs is the *permission*. The generator is building a file, so every
- * successful fragment is permanently a line somebody will read and wandering is
- * a defect. The explorer is building an opinion, so nothing it does is kept and
- * wandering is the job. Concretely:
- *
- * - it may `navigate` anywhere on the site, as often as it likes;
- * - its `interact` fragments are executed and thrown away — there is no script
- *   being assembled, so `detectReplay` and `detectNavigationChurn` have nothing
- *   to protect and are not applied;
- * - `rejectUnsafeInteraction` *is* applied, for a reason that outlives the
- *   script: `evaluate` and `force: true` are how an agent breaks somebody's real
- *   app by reaching past the checks that would have stopped it.
- *
- * The one output that matters is `propose`, and it is deliberately the only
- * thing here that validates hard: everything else can be retried, but a bad
- * proposal becomes a row in the user's project.
- */
 import { type ModelMessage, generateText, hasToolCall, jsonSchema, stepCountIs, tool } from 'ai'
 
 import { createDb } from '#/db/index.ts'
@@ -46,20 +20,15 @@ import {
   startGenerationSession,
 } from '#/engine/runner/loader.ts'
 
-/** How many tool calls the model may make inside one turn. */
 const MAX_TOOL_STEPS = 5
 
-/** An exploration step is a click, not a flow. */
 const MAX_FRAGMENT_CHARS = 800
 
-/** How many documentation pages one exploration may read. */
 export const MAX_DOCS_READS = 4
 
-/** How many proposals a plan may contain, and the floor below which it is thin. */
 export const MIN_PROPOSALS = 3
 export const MAX_PROPOSALS = 15
 
-/** How many tool results keep their page tree and document text in full. */
 const RESULTS_KEPT_IN_FULL = 2
 
 const PRUNED_FIELDS: Record<string, string> = {
@@ -67,7 +36,6 @@ const PRUNED_FIELDS: Record<string, string> = {
   text: '(document text omitted — you have already read it)',
 }
 
-/** One proposed test, exactly as it will become an intent row. */
 export interface Proposal {
   title: string
   description: string
@@ -76,43 +44,29 @@ export interface Proposal {
 export interface ExploreTurnInput {
   jobId: string
   environmentId: string
-  /** The project's model choice, or null to fall through the resolution chain. */
   projectModelId: string | null
   baseUrl: string
   sessionId: string
-  /** The whole transcript so far. Accumulated by the workflow, not stored here. */
   messages: Array<ModelMessage>
-  /** Titles that already exist, plus anything proposed in an earlier turn. */
   knownTitles: Array<string>
   stepIndexOffset: number
   docsRead: number
-  /**
-   * Whether the model has already been sent back once for proposing a thin
-   * plan. Carried across turns so the push-back happens exactly once per job —
-   * an app that genuinely only warrants two tests has to be able to say so.
-   */
   refusedThinPlan: boolean
 }
 
 export interface ExploreTurnResult {
-  /** Only what this turn added, as JSON — see the note in `generation/loop.ts`. */
   messagesJson: string
-  /** Proposals accepted this turn. Empty until the model calls `propose`. */
   proposals: Array<Proposal>
-  /** The session the next turn should join — not always the one it was given. */
   sessionId: string
   stepIndexOffset: number
   docsRead: number
   finished: boolean
-  /** What the model said the app is, when it stopped on purpose. */
   summary: string | null
   refusedThinPlan: boolean
   modelId: string
-  /** Set when the loop cannot continue at all — a browser that will not come back. */
   fatal: string | null
 }
 
-/** Titles compare on their words, so "User can sign in" ≈ "user can sign-in." */
 function normaliseTitle(title: string): string {
   return title
     .toLowerCase()
@@ -139,7 +93,6 @@ export async function runExploreTurn(
     fatal: null as string | null,
   }
 
-  /** Everything already spoken for, so a proposal cannot restate one. */
   const known = new Set(input.knownTitles.map(normaliseTitle))
 
   const narrate = (line: string) =>
@@ -149,9 +102,6 @@ export async function runExploreTurn(
     loader: env.LOADER,
     browser: env.BROWSER,
     baseUrl: input.baseUrl,
-    // Every isolate gets these, the read-only ones included: the scrubber is
-    // built from the values, so an isolate without them cannot redact the page
-    // it reads. See the note in `runner/loader.ts`.
     creds,
   }
 
@@ -169,14 +119,6 @@ export async function runExploreTurn(
     return response
   }
 
-  /**
-   * Takes a new session where the old one was.
-   *
-   * Simpler than the generator's recovery, and for a good reason: there is no
-   * verified prefix to replay. The explorer has no script and nothing it did is
-   * kept, so a fresh browser on the base URL is a completely valid place to
-   * carry on from — it has merely lost its position, which `observe` restores.
-   */
   async function recoverSession(): Promise<boolean> {
     await narrate('The browser session was lost. Starting a new one…')
 
@@ -309,9 +251,6 @@ export async function runExploreTurn(
     async execute({ narration, code }) {
       await narrate(narration)
 
-      // Only the two refusals that still mean something without a script: a
-      // fragment that cannot run at all, and one that reaches past the checks
-      // protecting somebody's real app.
       const complaint = rejectFragment(code, MAX_FRAGMENT_CHARS) ?? rejectUnsafeInteraction(code)
       if (complaint) return { ok: false, error: complaint }
 
@@ -456,10 +395,6 @@ export async function runExploreTurn(
         }
       }
 
-      // The one push-back worth making. A model that has explored an app and
-      // offers two tests has usually stopped at the front door — but an app
-      // that genuinely only warrants two has to be able to say so, so this
-      // happens exactly once.
       if (accepted.length < MIN_PROPOSALS && !state.refusedThinPlan) {
         state.refusedThinPlan = true
         return {

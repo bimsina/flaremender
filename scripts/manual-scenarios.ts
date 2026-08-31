@@ -1,4 +1,3 @@
-/** Public fixture data only. Destructive operations stay inside Reliability lab. */
 export const manualScenarios = [
   {
     id: 'isolation',

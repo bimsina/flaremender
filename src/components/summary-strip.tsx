@@ -2,24 +2,12 @@ import { Text, cn } from '@cloudflare/kumo'
 
 export interface SummaryItem {
   key: string
-  /** Muted caption. An icon belongs here, next to the word. */
   label: React.ReactNode
-  /** The number or pill the eye is meant to land on. */
   value: React.ReactNode
-  /** Dims the whole segment — a count of zero is worth showing, quietly. */
   dim?: boolean
-  /** Long identifiers, URLs or test names can use the full row. */
   wide?: boolean
 }
 
-/**
- * One bordered row divided into segments by hairlines: the shape the Workflows
- * dashboard uses both for a status roll-up above a table and for the key facts
- * above an instance's detail.
- *
- * Metadata reflows into a grid on narrow screens. Long names may use a full
- * row so the report's identifying context remains readable.
- */
 export function SummaryStrip({
   items,
   className,

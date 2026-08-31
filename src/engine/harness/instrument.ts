@@ -1,32 +1,12 @@
-/**
- * Step capture, without a step API.
- *
- * A script written against real Playwright has no notion of "steps" — it is a
- * flat sequence of awaits. Rather than make authors annotate their code, `page`
- * and `expect` are handed over behind proxies that watch calls go past: every
- * call that returns a promise becomes one step, labelled with the chain that
- * produced it (`page.getByRole('button', { name: 'Sign in' }).click()`).
- *
- * The proxies are deliberately non-invasive. Methods are invoked with the *real*
- * object as `this`, arguments are unwrapped back to real objects before they are
- * passed on, and anything that is not a promise or a locator is returned
- * untouched. Playwright never sees a proxy, so nothing about its behaviour
- * changes — including the parts of its API this file has never heard of.
- */
 import type { RunStep } from '#/engine/contract.ts'
 
-/** Reaches the real object behind a proxy. */
 const RAW = Symbol('flaremender.raw')
-/** The call chain that produced a proxy, used to label its steps. */
 const PATH = Symbol('flaremender.path')
 
 const MAX_ARG_LENGTH = 60
 const MAX_LABEL_LENGTH = 240
 
-/**
- * Reads a symbol the proxies answer for. `in` would not do: the traps below
- * define no `has`, so membership tests fall through to the real object.
- */
+/** Use property access: these proxies implement get but not has. */
 function readMarker(value: unknown, marker: symbol): unknown {
   if (value === null || (typeof value !== 'object' && typeof value !== 'function')) {
     return undefined
@@ -39,7 +19,6 @@ function pathOf(value: unknown): string | undefined {
   return typeof path === 'string' ? path : undefined
 }
 
-/** Arguments cross back into Playwright as the objects it gave us. */
 function unwrap(value: unknown): unknown {
   return readMarker(value, RAW) ?? value
 }
@@ -52,11 +31,7 @@ function isThenable(value: unknown): value is Promise<unknown> {
   )
 }
 
-/**
- * Locators are the only synchronous results worth following, because they are
- * where the next action will happen. Duck-typed rather than `instanceof`: the
- * fork's class identity is not exported.
- */
+/** The Playwright fork does not export Locator’s class identity. */
 function isLocatorLike(value: unknown): boolean {
   if (typeof value !== 'object' || value === null) return false
   const candidate = value as Record<string, unknown>
@@ -98,38 +73,22 @@ function clip(label: string): string {
 }
 
 export interface Instrumentation {
-  /** Wraps a Playwright object so its calls are recorded. */
   watch: <T extends object>(target: T, path: string) => T
-  /** Wraps `expect` so assertions are recorded with the locator they ran against. */
   watchExpect: <T extends object>(target: T) => T
   steps: Array<RunStep>
-  /** The number the next step would take, so a caller can carry it forward. */
   nextIndex: () => number
 }
 
 export function createInstrumentation(options: {
-  /** Applied to every label and error before it is recorded. */
   redact: (text: string) => string
-  /** Fires the moment a call is made, before it has settled. */
   onStepStarted?: (index: number, label: string) => void
-  /** Fires as each step settles, so a live channel can forward it. */
   onStep?: (index: number, step: RunStep) => void
-  /**
-   * Where to start numbering. Zero for a run, which is one script in one
-   * isolate. A generation turn passes the number the previous fragment stopped
-   * at, because the fragments are one continuous transcript to the person
-   * watching even though each runs in an isolate of its own.
-   */
   startIndex?: number
 }): Instrumentation {
   const steps: Array<RunStep> = []
   const completed = new Map<number, RunStep>()
 
-  /**
-   * Start order, not finish order. Scripts are sequential awaits in practice, so
-   * the two agree — but when they do not, a `step.started` and its
-   * `step.finished` still carry the same number, which is what the UI keys on.
-   */
+  /** Reserve indices at call start so concurrent completions retain the same step IDs. */
   let nextIndex = options.startIndex ?? 0
 
   function record(index: number, label: string, started: number, error: unknown): void {
@@ -151,12 +110,9 @@ export function createInstrumentation(options: {
     options.onStep?.(index, step)
   }
 
-  /** Runs a promise-returning call as one step. */
   async function settle(rawLabel: string, promise: Promise<unknown>): Promise<unknown> {
     const started = Date.now()
     const index = nextIndex++
-    // Redacted once, here, so neither the recorded step nor the live event can
-    // carry a credential the script echoed into its own call.
     const label = options.redact(clip(rawLabel))
 
     options.onStepStarted?.(index, label)
@@ -184,8 +140,7 @@ export function createInstrumentation(options: {
 
         return function instrumented(this: unknown, ...args: Array<unknown>) {
           const label = `${path}.${name}(${describeArgs(args)})`
-          // `this` is the real object: Playwright's internals rely on private
-          // fields, which a proxy receiver would not satisfy.
+          // Playwright private fields require the real object as the receiver.
           const result = (value as (...rest: Array<unknown>) => unknown).apply(
             object,
             args.map(unwrap),
@@ -199,11 +154,6 @@ export function createInstrumentation(options: {
     }) as T
   }
 
-  /**
-   * `expect(locator).toBeVisible()` is two calls, and only the second one runs.
-   * The apply trap remembers what was asserted about; the returned matcher
-   * object records the assertion itself.
-   */
   function watchExpect<T extends object>(target: T): T {
     return new Proxy(target, {
       apply(object, thisArg, args: Array<unknown>) {
@@ -221,7 +171,6 @@ export function createInstrumentation(options: {
     }) as T
   }
 
-  /** `.not`, `.resolves` and friends are chained getters, not calls. */
   function watchMatchers<T extends object>(target: T, path: string): T {
     return new Proxy(target, {
       get(object, property, receiver) {

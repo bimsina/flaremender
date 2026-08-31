@@ -1,13 +1,3 @@
-/**
- * Instance-wide LLM configuration: provider credentials, the model allowlist
- * and the default every project falls back to.
- *
- * Two rules run through the whole file. A Worker secret always wins — when one
- * is bound for a provider, this module refuses to store or delete a database
- * key for it, so an operator who put a key in the platform cannot have it
- * quietly shadowed from a web form. And key material never travels to the
- * client: listings decrypt only far enough to compute a four-character hint.
- */
 import { createServerFn } from '@tanstack/react-start'
 import { asc, eq } from 'drizzle-orm'
 
@@ -27,23 +17,15 @@ import { ValidationError, oneOf, optionalStr, str } from './validate.ts'
 
 const SETTINGS_ID = 'default'
 
-/** Where the key a run would actually use comes from. Mirrors `resolveProviderKey`. */
 export type ProviderEffectiveSource = 'secret' | 'database' | 'none'
 
 export interface ProviderStatus {
   provider: Provider
-  /** A Worker secret is bound (or, for Workers AI, the `AI` binding stands in). */
   secretDetected: boolean
-  /** `••••1234` for a key held in the database, null when there is none. */
   dbKeyHint: string | null
   effectiveSource: ProviderEffectiveSource
 }
 
-/**
- * Model slugs are passed through to the provider untouched, so the only thing
- * worth checking is that the string is a slug at all — `@cf/meta/llama-3.3`,
- * `claude-sonnet-4-5-20250929`, `gemini-2.0-flash` all have to survive.
- */
 const SLUG_PATTERN = /^[\w@./:-]+$/
 
 function modelSlug(value: string): string {
@@ -56,7 +38,6 @@ function modelSlug(value: string): string {
   return value
 }
 
-/** Rejects the two provider states where a stored key would be a lie. */
 function assertKeyManageable(provider: Provider): void {
   if (provider === 'workers-ai') {
     throw new ValidationError(
@@ -85,8 +66,6 @@ export const getInstanceSettings = createServerFn({ method: 'GET' })
 
     const providers: Array<ProviderStatus> = []
     for (const provider of PROVIDERS) {
-      // Workers AI is reached through a binding rather than a key, so it is
-      // always "configured" and never manageable from here.
       if (provider === 'workers-ai') {
         providers.push({
           provider,
@@ -103,11 +82,8 @@ export const getInstanceSettings = createServerFn({ method: 'GET' })
       let dbKeyHint: string | null = null
       if (row) {
         try {
-          // Decrypted only to mask: the plaintext dies in this scope.
           dbKeyHint = maskSecret(await decryptSecret(row.encryptedKey))
         } catch {
-          // A rotated ENCRYPTION_KEY must not take the page down; the row shows
-          // as unreadable so the operator can replace it.
           dbKeyHint = null
         }
       }
@@ -176,8 +152,6 @@ export const updateInstanceSettings = createServerFn({ method: 'POST' })
         .where(eq(allowedModel.modelId, data.defaultModelId))
         .limit(1)
 
-      // Anything outside the allowlist would be a default nobody can see, and
-      // one a project picker could never restore after changing it.
       if (!row) {
         throw new ValidationError('Add that model to the allowlist before making it the default.')
       }
@@ -202,10 +176,6 @@ export const updateInstanceSettings = createServerFn({ method: 'POST' })
     return { defaultModelId: data.defaultModelId }
   })
 
-/**
- * Under `authMiddleware`, not `adminMiddleware`: the allowlist is what every
- * project's model picker reads, and it carries no credentials.
- */
 export const listAllowedModels = createServerFn({ method: 'GET' })
   .middleware([authMiddleware])
   .handler(({ context }) =>
@@ -244,8 +214,6 @@ export const addAllowedModel = createServerFn({ method: 'POST' })
         displayName: data.displayName,
         addedBy: context.user.id,
       })
-      // Adding a model twice renames it rather than failing: the catalog and a
-      // manual entry can reasonably disagree about the display name.
       .onConflictDoUpdate({
         target: allowedModel.modelId,
         set: { displayName: data.displayName, addedBy: context.user.id },
@@ -258,9 +226,6 @@ export const removeAllowedModel = createServerFn({ method: 'POST' })
   .middleware([adminMiddleware])
   .validator((data: unknown) => ({ modelId: str(data, 'modelId', { max: 200 }) }))
   .handler(async ({ data, context }) => {
-    // The default must not survive the model it points at, and D1 has no
-    // interactive transactions — so both statements go in one batch. The update
-    // is a no-op unless this model happens to be the default.
     await context.db.batch([
       context.db.delete(allowedModel).where(eq(allowedModel.modelId, data.modelId)),
       context.db
@@ -288,11 +253,6 @@ export const completeInstanceSetup = createServerFn({ method: 'POST' })
     return { setupCompletedAt }
   })
 
-/**
- * Whether onboarding should show the instance-setup step. Non-admins never see
- * it, so this answers "no" for them rather than refusing — it is asked on the
- * way into the app, by everybody.
- */
 export const getInstanceSetupStatus = createServerFn({ method: 'GET' })
   .middleware([authMiddleware])
   .handler(async ({ context }) => {

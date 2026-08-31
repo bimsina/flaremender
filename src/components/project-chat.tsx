@@ -1,18 +1,3 @@
-/**
- * The project's console.
- *
- * A transcript and a box to type in, and the whole design decision is what a
- * message *is*: short text with cards under it. The assistant is not describing
- * what it would do, it is doing it and showing you the row — so this component
- * gives text as little room as it can get away with and gives cards the width of
- * the column.
- *
- * Layout: the transcript scrolls, the composer is pinned to the bottom of the
- * tab and is separated from the scrolling content by a border, as any sticky
- * element must be. The column is capped at reading width and centred, because a
- * conversation stretched across a wide monitor is unreadable and a card three
- * screens wide is not more informative than one.
- */
 import { Banner, Button, InputArea, LayerCard, Loader, Text, cn } from '@cloudflare/kumo'
 import {
   ArrowUpIcon,
@@ -28,14 +13,6 @@ import { RelativeTime } from '#/components/relative-time.tsx'
 import type { ChatMessageWire, ChatPart } from '#/engine/chat/contract.ts'
 import { type LiveToolCall, type PendingMessage, useProjectChat } from '#/lib/use-project-chat.ts'
 
-/**
- * What an empty chat suggests. Deliberately three different *kinds* of thing —
- * let it find the tests, describe one yourself, use what is already there —
- * because the point of the empty state is to say what this surface is for.
- *
- * Exploring leads, because it is the answer to the question an empty project
- * actually poses: not "how do I write a test" but "what should I even test?"
- */
 const SUGGESTIONS = [
   'Explore my app and propose tests.',
   'Describe a flow to test: a visitor signs in and sees their dashboard.',
@@ -65,9 +42,6 @@ export function ProjectChatTab({ projectId }: { projectId: string }) {
         onSuggestion={submit}
       />
 
-      {/* The scroll container is `main`, so the composer sticks to the viewport.
-          The negative margin lets it cover the page's own bottom padding rather
-          than floating above a strip of scrolling transcript. */}
       <div className="sticky bottom-0 -mb-6 grid gap-2 border-t border-kumo-line bg-kumo-canvas pt-4 pb-6">
         {chat.sendError ? (
           <Banner
@@ -126,8 +100,6 @@ function Transcript({
     return () => container.removeEventListener('scroll', track)
   }, [empty])
 
-  // Layout effect rather than effect: scrolling after paint shows one frame of
-  // the previous position, which reads as a jump on every token.
   useLayoutEffect(() => {
     if (following.current) bottom.current?.scrollIntoView({ block: 'end' })
   }, [messages, pending])
@@ -247,13 +219,6 @@ function PendingRow({ pending, projectId }: { pending: PendingMessage; projectId
   )
 }
 
-/**
- * One tool call while it is happening.
- *
- * The summary is written by the tool belt rather than derived from the model's
- * arguments — which is not a cosmetic choice: one of those arguments can be a
- * password, and the line that says what is happening must not be built from it.
- */
 function ToolRow({ call }: { call: LiveToolCall }) {
   return (
     <li className="flex items-start gap-2">
@@ -281,32 +246,6 @@ function PartView({ part, projectId }: { part: ChatPart; projectId: string }) {
   return <MarkdownLite text={part.text} />
 }
 
-/**
- * Just enough markdown.
- *
- * The assistant is told to keep its text to a sentence or two, so a full parser
- * would be a dependency in service of formatting that should not be there. Three
- * things do reliably show up and all three matter more than they look:
- *
- * - **newlines**, which a `<p>` would collapse;
- * - `` `identifiers` ``, because a variable name that is not visibly code reads
- *   as prose and gets retyped wrong;
- * - `**emphasis**`, because a model will produce it whatever the prompt says,
- *   and unrendered asterisks are worse than the emphasis they were meant to be.
- *
- * Everything else — headings, tables, links — is deliberately left as written.
- * The chat is not where long-form output belongs; that is what cards are for.
- */
-/**
- * `\*\*\*` comes first and is load-bearing.
- *
- * It is the redaction marker, and without its own alternative the emphasis rule
- * claims it: `Login is *** password ***` contains `** password **`, so the two
- * markers lose an asterisk each and the sentence renders as "Login is * password
- * *" with the middle in bold. That is the one string in this component that has
- * to be unambiguous — a reader looking at a message a credential was lifted out
- * of needs to see that it was redacted, not a stray asterisk.
- */
 const INLINE = /(\*\*\*|`[^`]+`|\*\*[^*]+\*\*)/g
 
 function MarkdownLite({ text }: { text: string }) {
@@ -317,8 +256,6 @@ function MarkdownLite({ text }: { text: string }) {
       {lines.map((line, index) =>
         line.trim().length === 0 ? null : (
           <Text key={index}>
-            {/* A leading "- " is a list of one line as far as this is
-                concerned: the bullet is what carries the meaning. */}
             {/^\s*[-*]\s+/.test(line) ? <span className="mr-1.5 text-kumo-subtle">•</span> : null}
             {line
               .replace(/^\s*[-*]\s+/, '')
@@ -365,8 +302,6 @@ function Composer({
 }) {
   const field = useRef<HTMLTextAreaElement>(null)
 
-  // Focus returns to the composer the moment a turn ends, so a conversation is
-  // a conversation rather than a form you keep clicking back into.
   useEffect(() => {
     if (!busy) field.current?.focus()
   }, [busy])
@@ -394,8 +329,6 @@ function Composer({
           value={value}
           onChange={(event) => onValueChange(event.target.value)}
           onKeyDown={(event) => {
-            // Enter sends, Shift+Enter is a newline. IME composition must not
-            // be interrupted by either.
             if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
             event.preventDefault()
             onSubmit(value)

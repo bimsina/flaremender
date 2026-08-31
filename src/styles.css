@@ -16,7 +16,6 @@ body {
   margin: 0;
 }
 
-/* Keyboard focus is visible on links as well as composed controls. */
 a:focus-visible,
 summary:focus-visible {
   outline: 2px solid var(--color-kumo-focus);

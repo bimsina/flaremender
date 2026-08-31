@@ -1,12 +1,4 @@
 import { readJob } from './reports.server.ts'
-/**
- * Intents and their script history.
- *
- * The plain-English description is the source of truth; the Playwright script
- * is a derived artefact kept in `scriptVersion`. Every save — by a human today,
- * by the generator in phase 2 — inserts a new immutable version, so "restore"
- * is just another save that copies old code forward.
- */
 import { createServerFn } from '@tanstack/react-start'
 import { and, desc, eq, sql } from 'drizzle-orm'
 
@@ -27,12 +19,6 @@ import { orgMiddleware } from './auth.ts'
 import { assertProject, loadEnvironment, loadIntent, loadScriptVersion } from './scope.ts'
 import { ValidationError, cron, has, optionalStr, str } from './validate.ts'
 
-/**
- * The environment a run or a generation was aimed at.
- *
- * Named ids are resolved through the caller's organization first, so an id from
- * another tenant is a 404 before it is ever compared against this project.
- */
 async function targetEnvironment(
   context: { db: Parameters<typeof loadEnvironment>[0]; organizationId: string },
   projectId: string,
@@ -65,8 +51,6 @@ export const listIntents = createServerFn({ method: 'GET' })
         createdAt: intent.createdAt,
         updatedAt: intent.updatedAt,
         currentVersion: scriptVersion.version,
-        // The listing shows "last run 3 minutes ago", which is the run's clock
-        // and not the intent's — an edit must not read as an execution.
         lastRunAt: run.startedAt,
         lastRunStatus: run.status,
         lastRunEnvironmentName: run.environmentName,
@@ -131,7 +115,6 @@ export const updateIntent = createServerFn({ method: 'POST' })
   .middleware([orgMiddleware])
   .validator((data: unknown) => ({
     intentId: str(data, 'intentId'),
-    // Absent keys are left alone; `schedule: null` clears the cron expression.
     title: has(data, 'title') ? str(data, 'title', { max: 120 }) : undefined,
     description: has(data, 'description')
       ? str(data, 'description', { min: 10, max: 4000 })
@@ -187,8 +170,6 @@ export const listScriptVersions = createServerFn({ method: 'GET' })
   .handler(async ({ data, context }) => {
     await loadIntent(context.db, context.organizationId, data.intentId)
 
-    // The code itself is deliberately absent: a history panel only needs the
-    // shape of each version, and scripts are large.
     return context.db
       .select({
         id: scriptVersion.id,
@@ -229,8 +210,6 @@ export const restoreScriptVersion = createServerFn({ method: 'POST' })
   .handler(async ({ data, context }) => {
     const row = await loadScriptVersion(context.db, context.organizationId, data.versionId)
 
-    // History is immutable, so restoring copies the code forward as a new
-    // version rather than moving the pointer backwards.
     await assertNoGenerationInFlight(context.db, row.intent.id, row.intent.status)
 
     return appendScriptVersion(context.db, {
@@ -243,14 +222,6 @@ export const restoreScriptVersion = createServerFn({ method: 'POST' })
     })
   })
 
-/**
- * Queues a run. Nothing executes in the request handler.
- *
- * The row is inserted first and the Workflow instance is named after it, so the
- * run id is the only handle anyone needs: the client polls it, the engine
- * writes to it, and creating the same run twice is a no-op rather than a second
- * browser session.
- */
 export const runIntent = createServerFn({ method: 'POST' })
   .middleware([orgMiddleware])
   .validator((data: unknown) => ({
@@ -279,19 +250,6 @@ export const runIntent = createServerFn({ method: 'POST' })
     })
   })
 
-/**
- * Asks the generator to write this intent's script.
- *
- * Enqueue-only, exactly like `runIntent`: the model, the browser and the
- * verification run are all a Workflow's business, and this returns as soon as
- * the job row exists. The job id is the handle for everything after — it names
- * the Workflow instance, it addresses the live channel the UI watches, and it
- * is the row `src/server.ts` checks before letting a socket near that channel.
- *
- * Refuses to start a second job while one is running. Two agents driving two
- * browsers towards the same intent would race to save conflicting versions of
- * it, and the one that lost would still have spent the tokens.
- */
 export const generateIntentScript = createServerFn({ method: 'POST' })
   .middleware([orgMiddleware])
   .validator((data: unknown) => ({
@@ -303,9 +261,6 @@ export const generateIntentScript = createServerFn({ method: 'POST' })
 
     await assertNoGenerationInFlight(context.db, row.intent.id, row.intent.status)
 
-    // The description is the whole brief. It is `notNull` and validated on the
-    // way in, so this only catches an intent whose description was emptied by
-    // some path that predates that rule.
     if (row.intent.description.trim().length < 10) {
       throw new ValidationError(
         'Describe what should happen, in a sentence or two, before generating a script.',
@@ -323,14 +278,6 @@ export const generateIntentScript = createServerFn({ method: 'POST' })
     })
   })
 
-/**
- * The newest generation job for an intent, or null.
- *
- * Two jobs at once: it is how a page reloaded mid-generation finds the channel
- * to reconnect to, and it is the polling fallback for when the socket will not
- * open. It is also where the stuck reason of the last failed attempt is read
- * from, which is the only place that sentence is ever shown.
- */
 export const getIntentGeneration = createServerFn({ method: 'GET' })
   .middleware([orgMiddleware])
   .validator((data: unknown) => ({ intentId: str(data, 'intentId') }))
@@ -357,7 +304,6 @@ export const getIntentGeneration = createServerFn({ method: 'GET' })
     return row ?? null
   })
 
-/** Readiness is a decision about a specific saved version, never a run verdict. */
 export const setTestReadiness = createServerFn({ method: 'POST' })
   .middleware([orgMiddleware])
   .validator((data: unknown) => ({

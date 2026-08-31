@@ -17,7 +17,7 @@ test('additive migrations preserve history and classify verification from record
     INSERT INTO run (id, intent_id, environment_id, project_id, script_version_id, status, trigger) VALUES ('verification', 'i', 'e', 'p', 'v', 'passed', 'manual'), ('regression', 'i', 'e', 'p', 'v', 'passed', 'manual');
     INSERT INTO generation_job (id, intent_id, project_id, environment_id, organization_id, status, script_version_id, run_id, stuck_reason, created_by) VALUES ('g', 'i', 'p', 'e', 'o', 'failed', 'v', 'verification', 'Incomplete expected behavior', 'u');
   `)
-  db.exec(baseline) // Existing db:push installations can adopt migration tracking.
+  db.exec(baseline)
   db.exec(readFileSync('migrations/0001_bent_nextwave.sql', 'utf8'))
   db.exec(readFileSync('migrations/0002_tricky_reavers.sql', 'utf8'))
   assert.equal(db.prepare('SELECT count(*) FROM run').pluck().get(), 2)

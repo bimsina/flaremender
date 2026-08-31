@@ -1,35 +1,3 @@
-/**
- * The project's chat, as an object.
- *
- * One Durable Object per project, addressed by the project id, and the only
- * thing in the system that runs a chat turn. Three jobs, and each one is the
- * reason the other two can be simple:
- *
- * - **It serialises turns.** A conversation with tools that create rows, launch
- *   Workflows and store credentials cannot have two of itself running at once,
- *   and a Durable Object is the cheapest correct way to say so. A second send
- *   while a turn is in flight is refused politely and stores nothing.
- * - **It streams.** Text arrives in fragments, tools announce themselves before
- *   they act, and cards appear the moment the row behind them exists. Sockets
- *   are hibernating, exactly as in `RunChannel`, so a project whose chat is open
- *   in a background tab costs nothing between turns.
- * - **It redacts.** The turn holds the decrypted environment variables of the
- *   project — it has to, because the whole point of credential lifting is that a
- *   value the user pastes into the chat ends up encrypted in an environment and
- *   nowhere else. So every string this object streams or persists goes through
- *   the run engine's scrubber first, and the moment `set_environment_variable`
- *   succeeds the scrubber is rebuilt around the new value and the message that
- *   carried it is rewritten in place.
- *
- * What it deliberately does *not* hold: any provider credential. The model is
- * resolved per turn through `resolveModel`, from the project's own choice down
- * to the instance default, exactly as a generation resolves it.
- *
- * Nothing is written to Durable Object storage. The conversation lives in D1 and
- * the live buffer lives in memory for the length of one turn, which is the only
- * time anything could arrive late enough to need replaying — a page that opens
- * between turns reads the whole history from the database instead.
- */
 import { DurableObject } from 'cloudflare:workers'
 import { type ModelMessage, stepCountIs, streamText } from 'ai'
 import { and, desc, eq, inArray, sql } from 'drizzle-orm'
@@ -53,37 +21,26 @@ import { type Scrubber, createScrubber } from '#/engine/runner/scrub.ts'
 import { createId } from '#/lib/ids.ts'
 import { decryptSecret } from '#/server/crypto.ts'
 
-/** How many past messages the model is shown. Older ones are simply dropped. */
 const HISTORY_LIMIT = 30
 
-/**
- * How many tool calls one turn may make. Generous enough to look something up,
- * act on it and report; short of the point where a confused model would work
- * its way through the whole project.
- */
 const MAX_TOOL_STEPS = 8
 
-/** How many live events one turn keeps for a page that connects mid-answer. */
 const MAX_BUFFERED = 2000
 
 const BUSY_MESSAGE = 'Still working on the previous message — give it a moment and send that again.'
 
-/** What one turn needs, assembled once at the start and dead at the end. */
 interface TurnSession {
   db: Db
   request: ChatTurnRequest
   userMessage: ChatMessageWire
   assistantMessageId: string
-  /** Decrypted environment values, and the redactor built from them. */
   secrets: Array<string>
   scrubber: Scrubber
   systemPrompt: string
   projectModelId: string | null
-  /** The assistant's message as it is being written. Rewritten by redaction. */
   parts: Array<ChatPart>
 }
 
-/** How a card reads in the transcript the model is shown next turn. */
 function describeCard(card: ChatCard): string {
   switch (card.kind) {
     case 'intent':
@@ -104,8 +61,6 @@ function describeCard(card: ChatCard): string {
       return `[exploration ${card.jobId} running on ${card.environmentName}${
         card.focus ? ` — focus: ${card.focus}` : ''
       }]`
-    // The ids are spelled out because approving a subset is the obvious next
-    // request, and this is where the model has to read them from.
     case 'plan':
       return `[plan ${card.planId} — "${card.title}" — proposed tests: ${card.items
         .map((item) => `${item.intentId ?? 'unknown'} "${item.title}"`)
@@ -122,7 +77,6 @@ function renderParts(parts: Array<ChatPart>): string {
     .join('\n')
 }
 
-/** Every string in a card, redacted. Titles are user text and can carry one. */
 function scrubCard(card: ChatCard, scrubber: Scrubber): ChatCard {
   switch (card.kind) {
     case 'intent':
@@ -160,15 +114,7 @@ function scrubParts(parts: Array<ChatPart>, scrubber: Scrubber): Array<ChatPart>
   )
 }
 
-/**
- * The redaction pass every outgoing event goes through.
- *
- * Written out field by field rather than as a walk over JSON, because the set of
- * strings that can carry a secret is small and knowing exactly which ones they
- * are is the point. A field added to `ChatEvent` without a line here is a field
- * the compiler will not complain about — so the rule is that every new string
- * field gets one.
- */
+/** Add every new outgoing string field to this redaction pass. */
 function scrubEvent(event: ChatEvent, scrubber: Scrubber): ChatEvent {
   switch (event.type) {
     case 'message.finished':
@@ -196,7 +142,6 @@ function scrubEvent(event: ChatEvent, scrubber: Scrubber): ChatEvent {
   }
 }
 
-/** Empty text is noise in a transcript; a card is never empty. */
 function tidyParts(parts: Array<ChatPart>): Array<ChatPart> {
   return parts
     .map((part) => (part.type === 'text' ? { ...part, text: part.text.trim() } : part))
@@ -204,53 +149,25 @@ function tidyParts(parts: Array<ChatPart>): Array<ChatPart> {
 }
 
 export class ProjectChat extends DurableObject<Cloudflare.Env> {
-  /**
-   * Whether a turn is running. In memory rather than in storage because it is
-   * only meaningful while this instance is alive: a turn cannot outlive the
-   * object that is awaiting it.
-   */
   #busy = false
 
-  /**
-   * The current turn's events, for a page that connects halfway through one.
-   *
-   * Deliberately not persisted. A text delta is a few bytes and there are
-   * hundreds per turn; writing each one to storage would cost more than the
-   * model call. Anything worth replaying after the turn ends is in D1.
-   */
   #events: Array<ChatEventEnvelope> = []
 
-  /**
-   * Seeded from the clock at the start of each turn rather than counted from
-   * zero, so a client whose socket survived an eviction never sees a sequence
-   * number it has already used.
-   */
+  /** Clock-based sequences avoid collisions when a client socket survives object eviction. */
   #seq = 0
 
   constructor(ctx: DurableObjectState, env: Cloudflare.Env) {
     super(ctx, env)
 
-    // Answered by the runtime without waking the object, which is the whole
-    // point of a keepalive.
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'))
   }
 
-  /**
-   * Take a message and answer it.
-   *
-   * Returns as soon as the user's message is durable — the model turn itself
-   * runs in the background and reports over the sockets, because a request
-   * handler cannot hold a connection open for the minute a generation takes to
-   * be launched and explained.
-   */
   async send(request: ChatTurnRequest): Promise<ChatTurnAck> {
     if (this.#busy) {
       await this.#emit({ type: 'busy', at: Date.now() })
       return { accepted: false, messageId: null, createdAt: null, reason: BUSY_MESSAGE }
     }
 
-    // Claimed before the first `await`, so two calls that arrive together
-    // cannot both get past this line.
     this.#busy = true
 
     let session: TurnSession
@@ -265,8 +182,6 @@ export class ProjectChat extends DurableObject<Cloudflare.Env> {
       this.#busy = false
     })
 
-    // Keeps the object alive while the model is thinking; without it the
-    // instance could be evicted the moment this method returns.
     this.ctx.waitUntil(work)
 
     return {
@@ -277,23 +192,7 @@ export class ProjectChat extends DurableObject<Cloudflare.Env> {
     }
   }
 
-  /**
-   * Say something nobody asked for.
-   *
-   * The one caller is a workflow that finished long after the turn that started
-   * it: an exploration takes minutes, and the plan it produces belongs in the
-   * conversation that asked for it rather than only on the Intents tab. So the
-   * workflow speaks here, through the object that owns the transcript.
-   *
-   * Two rules make that safe. It **redacts** — the parts were built by a
-   * workflow, and this object is the only thing holding the project's decrypted
-   * variables, so they go through a scrubber built here whatever the caller
-   * already did. And it **yields to a live turn**: broadcasting a finished
-   * message while the assistant is mid-answer would make every watching client
-   * discard the answer being written, so a busy object persists the message and
-   * says nothing, and the clients pick it up from the history — which the
-   * exploration card asks for the moment it sees the job finish.
-   */
+  /** Do not broadcast completion during a live turn: clients would discard its unfinished answer. */
   async announce(request: ChatAnnouncement): Promise<{ messageId: string }> {
     const db = createDb(this.env.DB)
 
@@ -352,12 +251,6 @@ export class ProjectChat extends DurableObject<Cloudflare.Env> {
     return { messageId }
   }
 
-  /**
-   * The WebSocket upgrade, reached only through `src/server.ts` — which has
-   * already established that the caller is signed in and that the project
-   * belongs to their organization. Nothing here re-checks that, so nothing else
-   * may route to this object.
-   */
   override async fetch(request: Request): Promise<Response> {
     if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
       return new Response('Expected a WebSocket upgrade.', { status: 426 })
@@ -369,8 +262,6 @@ export class ProjectChat extends DurableObject<Cloudflare.Env> {
 
     this.ctx.acceptWebSocket(server)
 
-    // A page that opens mid-answer sees the answer so far. Between turns this
-    // is empty and the history query is what fills the view.
     for (const envelope of this.#events) {
       try {
         server.send(JSON.stringify(envelope))
@@ -382,32 +273,20 @@ export class ProjectChat extends DurableObject<Cloudflare.Env> {
     return new Response(null, { status: 101, webSocket: client })
   }
 
-  /** The channel is one-way; `ping` never reaches here at all. */
   override webSocketMessage(): void {}
 
   override webSocketClose(ws: WebSocket, code: number, reason: string): void {
     try {
-      // 1006 is "no close frame", which a client cannot send back.
       ws.close(code === 1006 ? 1000 : code, reason)
-    } catch {
-      // Already gone.
-    }
+    } catch {}
   }
 
   override webSocketError(ws: WebSocket): void {
     try {
       ws.close(1011, 'Socket error.')
-    } catch {
-      // Already closed.
-    }
+    } catch {}
   }
 
-  /* ------------------------------------------------------------------ Turn */
-
-  /**
-   * Everything that has to be true before the model is called: the project's
-   * standing facts, the redactor, and the user's message safely in D1.
-   */
   async #openTurn(request: ChatTurnRequest): Promise<TurnSession> {
     this.#events = []
     this.#seq = Math.max(this.#seq, Date.now())
@@ -489,14 +368,9 @@ export class ProjectChat extends DurableObject<Cloudflare.Env> {
       parts: [],
     }
 
-    // Deliberately not broadcast. See the note on `ChatEvent`: this is the one
-    // string that can hold a credential the redactor has not been told about
-    // yet, and every other viewer learns of it only once the turn has ended and
-    // the redacted row is in D1.
     return session
   }
 
-  /** One `streamText` call, folded into a message. */
   async #runTurn(session: TurnSession): Promise<void> {
     const messageId = session.assistantMessageId
 
@@ -522,9 +396,6 @@ export class ProjectChat extends DurableObject<Cloudflare.Env> {
         )
       },
       liftSecret: (value) => this.#liftSecret(session, value),
-      // Read through the session rather than captured, so a tool that redacts
-      // after `liftSecret` has run uses the rebuilt scrubber and not the one
-      // that existed when the turn started.
       redact: (text) => session.scrubber.text(text),
     }
 
@@ -571,8 +442,6 @@ export class ProjectChat extends DurableObject<Cloudflare.Env> {
     if (failure) {
       console.error(`[project-chat] ${session.request.projectId} turn failed:`, failure)
 
-      // The failure belongs in the transcript, not only in a toast: a
-      // conversation that silently stops answering is unreadable a day later.
       if (session.parts.length === 0 || session.parts.at(-1)?.type === 'card') {
         session.parts.push({ type: 'text', text: `That did not go through — ${failure}` })
       }
@@ -587,30 +456,12 @@ export class ProjectChat extends DurableObject<Cloudflare.Env> {
     await this.#emit({ type: 'message.finished', message, at: Date.now() }, session)
   }
 
-  /* -------------------------------------------------------------- Redaction */
-
-  /**
-   * A credential has just been stored. Make it disappear.
-   *
-   * Two things happen, and the second is the one that matters: the redactor is
-   * rebuilt so nothing from here on can carry the value, and the message the
-   * user typed it into is rewritten in D1 and on every open socket. The value's
-   * whole life in this system is the few hundred milliseconds between the user
-   * pressing send and this call — after which it exists only as ciphertext.
-   *
-   * It did, once, cross the network to the configured model provider: it was in
-   * the user's message and in the tool call that stored it. That is inherent to
-   * lifting a credential out of a sentence, and it is the residual risk this
-   * feature accepts.
-   */
   async #liftSecret(session: TurnSession, value: string): Promise<void> {
     if (session.secrets.includes(value)) return
 
     session.secrets.push(value)
     session.scrubber = createScrubber(session.secrets)
 
-    // Anything the assistant has said so far this turn, too — a model that
-    // repeated the value before storing it must not leave it in the parts.
     session.parts = scrubParts(session.parts, session.scrubber)
 
     const redacted = scrubParts(session.userMessage.parts, session.scrubber)
@@ -631,8 +482,6 @@ export class ProjectChat extends DurableObject<Cloudflare.Env> {
       session,
     )
   }
-
-  /* ------------------------------------------------------------- Persistence */
 
   async #persistAssistantMessage(
     session: TurnSession,
@@ -662,14 +511,6 @@ export class ProjectChat extends DurableObject<Cloudflare.Env> {
     }
   }
 
-  /**
-   * The transcript the model is shown.
-   *
-   * Cards become one-line facts — `[test int_… — "Sign in" — passing]` — which
-   * is both the compaction the plan asks for and the reason the model never has
-   * to invent an id: every id it has ever been given is still in front of it,
-   * without the tool result it originally arrived in.
-   */
   async #loadHistory(session: TurnSession): Promise<Array<ModelMessage>> {
     const rows = await session.db
       .select({
@@ -690,13 +531,8 @@ export class ProjectChat extends DurableObject<Cloudflare.Env> {
       messages.push({ role: row.role, content })
     }
 
-    // The user's message for this turn is already in there — it was inserted
-    // before the model was called, on purpose, so a crash mid-turn still leaves
-    // a readable conversation.
     return messages
   }
-
-  /* ----------------------------------------------------------------- Wiring */
 
   async #loadSecrets(db: Db, environmentIds: Array<string>): Promise<Array<string>> {
     if (environmentIds.length === 0) return []
@@ -711,21 +547,12 @@ export class ProjectChat extends DurableObject<Cloudflare.Env> {
     for (const row of rows) {
       try {
         values.push(await decryptSecret(row.encryptedValue))
-      } catch {
-        // A value that will not decrypt cannot leak through this turn either;
-        // the environments UI is where an operator finds out about it.
-      }
+      } catch {}
     }
 
     return values
   }
 
-  /**
-   * How many tests the project has, and how many of those are still only
-   * proposals — which the assistant needs kept apart, because "you have four
-   * tests" and "you have four suggestions nobody has approved" are different
-   * answers to the same question.
-   */
   async #countIntents(db: Db, projectId: string): Promise<{ total: number; proposed: number }> {
     const [row] = await db
       .select({
@@ -748,12 +575,6 @@ export class ProjectChat extends DurableObject<Cloudflare.Env> {
     session.parts.push({ type: 'text', text })
   }
 
-  /**
-   * Records an event and tells everyone watching — redacted first, always.
-   *
-   * The session is optional only for the `busy` refusal, which happens before a
-   * turn exists and carries no text of its own.
-   */
   async #emit(event: ChatEvent, session?: TurnSession): Promise<void> {
     const safe = session ? scrubEvent(event, session.scrubber) : event
 
@@ -766,13 +587,9 @@ export class ProjectChat extends DurableObject<Cloudflare.Env> {
     for (const socket of this.ctx.getWebSockets()) {
       try {
         socket.send(payload)
-      } catch {
-        // A socket that died between `getWebSockets()` and here is not this
-        // object's problem — the close handler will tidy it up.
-      }
+      } catch {}
     }
   }
 }
 
-/** Exported so a caller can recognise the refusal without matching on prose. */
 export { BUSY_MESSAGE }

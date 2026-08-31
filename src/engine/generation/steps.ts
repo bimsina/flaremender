@@ -1,30 +1,3 @@
-/**
- * What a generation *is*, outside the workflow that orders it.
- *
- * Same split as `run-steps.ts`, and for the same reason: each function here is
- * written to be the body of a Workflow step, so each is re-runnable, returns
- * only what survives a JSON trip, and lets nothing live or secret cross a
- * boundary. Rows are written under deterministic ids and claimed with guarded
- * updates, so a step that commits and then fails on its way out does the same
- * thing the second time.
- *
- * The shape of the job is worth stating once, because the ordering is the part
- * that is easy to get wrong:
- *
- * 1. The intent is claimed (`'generating'`) and the browser is opened.
- * 2. The model builds a script, one verified fragment at a time.
- * 3. The assembled script is executed **fresh** — new session, new context,
- *    tracing on — through the ordinary run path. That run is the verdict, and
- *    it is a real run row: it shows up in the intent's history with artifacts,
- *    and is classified as generation verification. It does not supply the
- *    test's regression result or establish coverage.
- * 4. Whatever happened is recorded on the version, the intent and the job.
- *
- * A job that fails never discards work. The verified prefix is saved as an
- * agent-authored version with a note saying where it got stuck, so the person
- * who asked for it opens the editor onto something half-built rather than onto
- * nothing.
- */
 import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm'
 import { NonRetryableError } from 'cloudflare:workflows'
 
@@ -36,7 +9,6 @@ import { loadCredentialNames } from '#/engine/generation/loop.ts'
 import type { ExecutedRun, LoadedRun } from '#/engine/run-steps.ts'
 import { announceRun, persistRun } from '#/engine/run-steps.ts'
 
-/** Everything a turn needs about the job, and nothing that could go stale. */
 export interface LoadedGeneration {
   jobId: string
   intentId: string
@@ -45,52 +17,28 @@ export interface LoadedGeneration {
   organizationId: string
   userId: string
   projectName: string
-  /**
-   * What the project knows about this app that is not in this intent — how one
-   * signs in, what the docs said, what the explorer found. Redacted before it
-   * was ever written; see `project.context`.
-   */
   projectContext: string | null
-  /** The project's model choice; null falls through the resolution chain. */
   projectModelId: string | null
   environmentName: string
   baseUrl: string
   intentTitle: string
   intentDescription: string
-  /** Names only — a value has no business in a prompt or a workflow step. */
   credentialNames: Array<string>
-  /** The script being replaced, when the intent already had one. */
   currentScript: string | null
   previousVersionId: string | null
-  /** Restored if the job does not produce something worth pointing at. */
   previousStatus: IntentStatus
 }
 
-/** The rows the verification run needs to exist before it can be executed. */
 export interface PreparedVerification {
   versionId: string
   version: number
   runId: string
 }
 
-/**
- * A generation's rows are named after the job, not randomly.
- *
- * `prepare` is a retryable step that writes two rows and points nothing at them
- * until the verdict is in. Random ids would leave an orphan version and an
- * orphan run behind every time it committed and then failed on its way out.
- */
 function derivedId(prefix: string, jobId: string): string {
   return `${prefix}_${jobId.replace(/^gen_/, '')}`
 }
 
-/**
- * Resolves the job, claims the intent, and says so.
- *
- * Read back through the organization the caller was in at enqueue time, for the
- * same reason a run is: a job row retargeted between enqueue and execution must
- * resolve to nothing rather than to another tenant's intent.
- */
 export async function loadGeneration(
   env: Cloudflare.Env,
   params: { jobId: string; organizationId: string },
@@ -128,8 +76,6 @@ export async function loadGeneration(
       )[0]?.code ?? null)
     : null
 
-  // The status the intent had before it was claimed, so a job that produces
-  // nothing can put it back rather than inventing a verdict.
   const previousStatus: IntentStatus =
     row.intent.status === 'generating' ? 'draft' : row.intent.status
 
@@ -165,14 +111,6 @@ export async function loadGeneration(
   }
 }
 
-/**
- * Writes the version and the run the verification will use.
- *
- * The intent is deliberately *not* pointed at the new version here. A script
- * that has not been verified is not this intent's script yet, and a job that
- * dies between here and the verdict must not leave a live intent pointing at
- * code nobody has run.
- */
 export async function prepareVerification(
   env: Cloudflare.Env,
   loaded: LoadedGeneration,
@@ -209,8 +147,6 @@ export async function prepareVerification(
         version,
         code: input.code,
         author: 'agent',
-        // The person who asked for it — an agent version still belongs to
-        // somebody, and history reads better than "the system".
         createdBy: loaded.userId,
         note: input.note,
       })
@@ -226,9 +162,6 @@ export async function prepareVerification(
       projectId: loaded.projectId,
       scriptVersionId: versionId,
       status: 'queued',
-      // The trigger that already means "an agent produced this script and it is
-      // being proved". Adding a fourth trigger for the same event would split
-      // the history without telling anyone anything new.
       trigger: 'regenerate',
       purpose: 'generation-verification',
       environmentName: loaded.environmentName,
@@ -248,11 +181,6 @@ export async function prepareVerification(
   return { versionId, version, runId }
 }
 
-/**
- * Verification is persisted separately from regression results. Complete
- * scripts become ready even if an expectation fails. Partial scripts stay
- * drafts and replace the current code only when no previous version exists.
- */
 export async function persistGeneration(
   env: Cloudflare.Env,
   loaded: LoadedGeneration,
@@ -262,30 +190,12 @@ export async function persistGeneration(
     executed: ExecutedRun
     modelId: string | null
     turns: number
-    /**
-     * Why the job stopped short, if it did — the browser gave out, the script
-     * asserts nothing, the turn budget ran out, or the model said the flow
-     * cannot be performed here. Any of them disqualifies a pass, whatever the
-     * verification run then went on to say.
-     */
     stuckReason: string | null
   },
 ): Promise<{ outcome: RunOutcome; versionId: string; runId: string }> {
   const db = createDb(env.DB)
   const outcome = context.executed.result.outcome
 
-  /**
-   * A pass takes two independent things, and the run is only one of them.
-   *
-   * The run proves the script executes. It cannot prove the script is the one
-   * that was asked for, and a partial script is very often *more* likely to go
-   * green than a complete one: it stops before the hard part, or it asserts
-   * something trivially true. The clearest case is a model that finds the
-   * feature does not exist and writes `toHaveCount(0)` — perfectly valid code,
-   * reliably green, and the exact opposite of the intent.
-   *
-   * So whatever the job said about stopping short outranks the run.
-   */
   const green = outcome === 'passed' && context.stuckReason === null
 
   await persistRun(env, context.prepared.runId, context.loadedRun, context.executed)
@@ -355,14 +265,6 @@ export async function persistGeneration(
   }
 }
 
-/**
- * The job wrote nothing worth verifying.
- *
- * Rare, and always the model's doing rather than the engine's: it decided the
- * flow could not be performed, or every fragment it tried failed. There is no
- * script, so there is no version and no run — just an intent put back where it
- * was and a reason someone can read.
- */
 export async function abandonGeneration(
   env: Cloudflare.Env,
   loaded: LoadedGeneration,
@@ -398,13 +300,6 @@ export async function abandonGeneration(
   )
 }
 
-/**
- * The safety net. Reached only when a step exhausted its retries, which means
- * the intent is still claimed and nobody is coming back for it.
- *
- * Guarded on the non-terminal statuses so a late failure cannot rewrite a
- * verdict the job already earned.
- */
 export async function failGeneration(
   env: Cloudflare.Env,
   params: { jobId: string; intentId: string },
@@ -423,7 +318,6 @@ export async function failGeneration(
       and(eq(generationJob.id, params.jobId), inArray(generationJob.status, ['queued', 'running'])),
     )
 
-  // Keep the author's readiness decision if a failed job never replaced code.
   const [row] = await db
     .select({ readiness: intent.readiness })
     .from(intent)

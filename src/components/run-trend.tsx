@@ -1,16 +1,3 @@
-/**
- * A fortnight of runs, as one stacked bar per day.
- *
- * Every day in the window gets a column, including the ones nothing ran on: a
- * gap in a trend is information, and dropping empty days would silently
- * compress a quiet week into a busy one. The server fills those in, so this
- * component never does calendar arithmetic.
- *
- * The chart itself is drawn by the client-only half — ECharts is far too large
- * to ship in the Worker — so what renders on the server, and for the moment
- * before the chunk lands, is a box of exactly the right height inside exactly
- * the same card.
- */
 import { Text } from '@cloudflare/kumo'
 import { useMemo } from 'react'
 
@@ -21,13 +8,11 @@ import { useTheme } from '#/lib/theme.tsx'
 
 export type { RunTrendDay }
 
-/** Tall enough on the dashboard to read a shape; short enough in a tab to skim. */
 const FULL_PX = 180
 const COMPACT_PX = 132
 
 export function RunTrend({
   days,
-  /** The tab version: same chart, half the height, no caption competing with it. */
   compact = false,
 }: {
   days: Array<RunTrendDay>

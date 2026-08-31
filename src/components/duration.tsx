@@ -3,10 +3,6 @@ import { Fragment } from 'react'
 
 import { durationParts } from '#/lib/format.ts'
 
-/**
- * A duration with its units muted: `13 s 34 ms` reads as a number first and a
- * unit second, which is what makes a column of them scannable.
- */
 export function Duration({ ms }: { ms: number | null | undefined }) {
   const parts = durationParts(ms)
 

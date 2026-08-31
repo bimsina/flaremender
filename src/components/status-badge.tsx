@@ -5,12 +5,8 @@ import type { IntentStatus, RunStatus, ScriptAuthor, SuiteRunStatus } from '#/db
 type BadgeVariant = React.ComponentProps<typeof Badge>['variant']
 
 const INTENT: Record<IntentStatus, { label: string; variant: BadgeVariant }> = {
-  // Not yet a test: something the explorer suggested and nobody has agreed to.
-  // Its own colour rather than a shade of draft, because the two ask different
-  // things of the reader — a draft wants finishing, a proposal wants a verdict.
   proposed: { label: 'Proposed', variant: 'neutral' },
   draft: { label: 'Draft', variant: 'neutral' },
-  // Transient, and only ever set by a running `GenerateWorkflow`.
   generating: { label: 'Generating', variant: 'neutral' },
   ready: { label: 'Ready to run', variant: 'neutral' },
   passing: { label: 'Passing', variant: 'success' },
@@ -21,16 +17,11 @@ const RUN: Record<RunStatus, { label: string; variant: BadgeVariant }> = {
   queued: { label: 'Queued', variant: 'neutral' },
   running: { label: 'Running', variant: 'neutral' },
   passed: { label: 'Passed', variant: 'success' },
-  // A healed run passed, but only after a repair — never collapse the two.
   healed: { label: 'Healed', variant: 'neutral' },
   failed: { label: 'Failed', variant: 'error' },
   error: { label: 'Errored', variant: 'warning' },
 }
 
-/**
- * A suite's own verdict. No `healed`: healing happens to a member, and a suite
- * that contains one still reads as passed.
- */
 const SUITE: Record<SuiteRunStatus, { label: string; variant: BadgeVariant }> = {
   queued: { label: 'Queued', variant: 'neutral' },
   running: { label: 'Running', variant: 'neutral' },
@@ -44,7 +35,6 @@ const AUTHOR: Record<ScriptAuthor, { label: string; variant: BadgeVariant }> = {
   agent: { label: 'Agent', variant: 'neutral' },
 }
 
-/** Kumo maps dot colors only for these variants; others render a plain badge. */
 const DOT_VARIANTS = new Set(['success', 'warning', 'error', 'neutral'])
 
 function dotFor(variant: string | undefined): 'dot' | undefined {
@@ -78,7 +68,6 @@ export function SuiteRunStatusBadge({ status }: { status: SuiteRunStatus }) {
   )
 }
 
-/** Who wrote a script version. Phase 2 starts producing `'agent'` rows. */
 export function ScriptAuthorBadge({ author }: { author: ScriptAuthor }) {
   const meta = AUTHOR[author] ?? AUTHOR.user
   return (

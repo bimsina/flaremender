@@ -1,28 +1,3 @@
-/**
- * What an exploration *is*, outside the workflow that orders it.
- *
- * Same split as `run-steps.ts` and `generation/steps.ts`, and for the same
- * reason: each function here is written to be the body of a Workflow step, so
- * each is re-runnable, returns only what survives a JSON trip, and lets nothing
- * live or secret cross a boundary.
- *
- * The shape of the job:
- *
- * 1. The job row is claimed and the browser is opened on the environment.
- * 2. The model goes round the app, reads whatever docs it was pointed at, and
- *    ends with a list of tests it thinks are worth having.
- * 3. Those become **real intent rows** in `'proposed'` — not a JSON blob on the
- *    job, not a message in a transcript. They can be edited, deleted and
- *    approved by anybody, from the chat or from the Intents tab, and nothing
- *    about them is different from an intent somebody typed except that they are
- *    excluded from everything that runs until approved.
- * 4. What the explorer *learned* is appended to `project.context`, redacted, so
- *    the next generation and the next conversation start from it.
- *
- * An exploration that proposes nothing is a failure with a readable reason, not
- * an error: the site was down, or the front door could not be opened, and the
- * person who asked should be told which.
- */
 import { and, asc, eq, inArray } from 'drizzle-orm'
 import { NonRetryableError } from 'cloudflare:workflows'
 import { env as workerEnv } from 'cloudflare:workers'
@@ -37,7 +12,6 @@ import { announceRun } from '#/engine/run-steps.ts'
 import { createScrubber } from '#/engine/runner/scrub.ts'
 import { appendProjectContext, createIntentRecord } from '#/server/actions.ts'
 
-/** Everything a turn needs about the job, and nothing that could go stale. */
 export interface LoadedExploration {
   jobId: string
   projectId: string
@@ -46,26 +20,15 @@ export interface LoadedExploration {
   userId: string
   projectName: string
   projectDescription: string | null
-  /** The project's model choice; null falls through the resolution chain. */
   projectModelId: string | null
-  /** Redacted standing knowledge, from `project.context`. */
   projectContext: string | null
   environmentName: string
   baseUrl: string
-  /** Names only — a value has no business in a prompt or a workflow step. */
   credentialNames: Array<string>
-  /** What the project already tests, so nothing is proposed twice. */
   existingTitles: Array<string>
   focus: string | null
 }
 
-/**
- * Resolves the job, claims it, and says so.
- *
- * Read back through the organization the caller was in at enqueue time, for the
- * same reason a run is: a job row retargeted between enqueue and execution must
- * resolve to nothing rather than to another tenant's project.
- */
 export async function loadExploration(
   env: Cloudflare.Env,
   params: { jobId: string; organizationId: string; focus: string | null },
@@ -133,17 +96,6 @@ export interface PersistedExploration {
   titles: Array<string>
 }
 
-/**
- * Writes the plan down: the intents, the context, the job's verdict, and a
- * message in the project's chat carrying the reviewable card.
- *
- * Everything the model produced is scrubbed here, at the last point where the
- * plaintext credentials still exist in this isolate. The prompt tells it never
- * to write a value into a proposal; this is what makes that true rather than
- * hopeful, and it covers the summary that goes into `project.context` as well —
- * that column is read into every future prompt, so a value that got in there
- * would be read out for ever.
- */
 export async function persistExploration(
   env: Cloudflare.Env,
   loaded: LoadedExploration,
@@ -221,19 +173,6 @@ export async function persistExploration(
   }
 }
 
-/**
- * Puts the plan in the conversation.
- *
- * The exploration was almost certainly started from the chat, and it finishes
- * minutes later when that turn is long over — so the workflow speaks into the
- * project's chat itself rather than the assistant somehow being made to wait.
- * The `ProjectChat` object persists it and, if nothing else is happening in
- * there, broadcasts it to whoever is watching.
- *
- * Best effort: a plan that reached the database but not the transcript is a
- * cosmetic loss — the intents are on the Intents tab, and the exploration card
- * in the chat re-reads the history when it sees the job finish.
- */
 async function announceChatPlan(
   loaded: LoadedExploration,
   created: Array<{ id: string; title: string; description: string }>,
@@ -274,13 +213,6 @@ async function announceChatPlan(
   }
 }
 
-/**
- * The exploration produced no plan.
- *
- * Never an error — it is nearly always the site being unreachable or a sign-in
- * that could not be completed, both of which the person who asked needs to read
- * rather than be shielded from.
- */
 export async function abandonExploration(
   env: Cloudflare.Env,
   loaded: LoadedExploration,
@@ -313,11 +245,6 @@ export async function abandonExploration(
   )
 }
 
-/**
- * The safety net. Reached only when a step exhausted its retries, which means
- * nobody is coming back for this job. Guarded on the non-terminal statuses so a
- * late failure cannot rewrite a verdict the job already earned.
- */
 export async function failExploration(
   env: Cloudflare.Env,
   jobId: string,

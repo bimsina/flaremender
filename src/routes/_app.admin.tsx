@@ -20,8 +20,6 @@ function AdminLayout() {
   const location = useLocation()
   const navigate = useNavigate()
 
-  // Longest-prefix wins; `/admin` itself is the fallback rather than a match,
-  // because every tab's path starts with it.
   const current =
     TABS.map((tab) => tab.value)
       .filter((value) => value !== '/admin')

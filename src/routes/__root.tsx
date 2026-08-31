@@ -19,8 +19,6 @@ interface RouterContext {
 export const Route = createRootRouteWithContext<RouterContext>()({
   beforeLoad: async ({ context }) => {
     const [session, theme] = await Promise.all([
-      // fetchQuery, not ensureQueryData: guards below must see the current
-      // session, never a stale one being revalidated in the background.
       context.queryClient.fetchQuery(sessionQuery()),
       context.queryClient.ensureQueryData({ ...themeQuery(), revalidateIfStale: true }),
     ])
@@ -45,8 +43,6 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   const { theme } = Route.useRouteContext()
-  // `system` can only be resolved in the browser, so render light and let the
-  // pre-paint script correct it before anything is visible.
   const initialMode = theme === 'dark' ? 'dark' : 'light'
 
   return (
@@ -62,8 +58,6 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           </AppLinkProvider>
         </ThemeProvider>
         <TanStackDevtools
-          // Fixed, not floating: the floating trigger persists dragged coords in
-          // localStorage and ends up parked over the sidebar's org switcher.
           config={{ position: 'bottom-right', triggerMode: 'fixed' }}
           plugins={[
             { name: 'Tanstack Router', render: <TanStackRouterDevtoolsPanel /> },

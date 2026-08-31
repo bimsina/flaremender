@@ -1,8 +1,3 @@
-/**
- * Spike: real Browser Rendering through `@cloudflare/playwright`, inline in a
- * request. Proves the `remote: true` BROWSER binding, assertions, tracing and
- * aria snapshots all work under `vite dev`. Dev only.
- */
 import fs from 'node:fs'
 import { type Browser, launch } from '@cloudflare/playwright'
 import { expect } from '@cloudflare/playwright/test'
@@ -33,7 +28,6 @@ async function handler() {
     const screenshot = await page.screenshot()
     const ariaSnapshot = await page.locator('body').ariaSnapshot()
 
-    // `fs` inside a Worker only supports /tmp, which is where the trace lands.
     await context.tracing.stop({ path: TRACE_PATH })
     const trace = await fs.promises.readFile(TRACE_PATH)
 

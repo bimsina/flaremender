@@ -102,8 +102,6 @@ assert.match(xml, /tests="12" failures="2" errors="3" skipped="0"/)
 assert.ok(!JSON.stringify(report).includes('encryptedValue'))
 assert.ok(!JSON.stringify(report).includes('scriptUsed'))
 
-// Optional fresh-AI acceptance project: nine complete scenarios and one
-// deliberately impossible feature. Verification must not count as regression.
 const aiProjectId = process.env.FLAREMENDER_AI_PROJECT_ID
 if (aiProjectId) {
   const aiSuite = db
@@ -157,7 +155,6 @@ if (aiProjectId) {
   )
 }
 
-// A separate session creates its own temporary organization. It never changes the browser's session.
 const createdResponse = await request('/api/auth/organization/create', {
   name: 'Report isolation audit',
   slug: `report-isolation-${Date.now()}`,

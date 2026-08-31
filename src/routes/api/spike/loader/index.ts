@@ -1,24 +1,8 @@
-/**
- * Spike: Dynamic Workers. Loads a code string with `env.LOADER.load()` and
- * proves two things at once — the dynamic Worker really executes, and a
- * BROWSER binding handed to it through the load options' `env` survives the
- * crossing.
- *
- * Actually driving Playwright from inside the dynamic Worker needs the library
- * bundled into the module string, which is a later milestone. This only checks
- * that the binding arrives intact.
- *
- * Dev only.
- */
 import { createFileRoute } from '@tanstack/react-router'
 import { env } from 'cloudflare:workers'
 
 import { devOnly } from '#/routes/api/spike/-dev-only.ts'
 
-/**
- * Runs inside the dynamic Worker. Plain JS — there is no build step, so this
- * cannot be TypeScript and cannot import anything from the host bundle.
- */
 const DYNAMIC_MODULE = `
 export default {
   fetch(request, env) {
@@ -63,8 +47,6 @@ async function handler({ request }: { request: Request }) {
   const startedAt = Date.now()
 
   try {
-    // Verified against `WorkerLoader` in worker-configuration.d.ts:
-    // `load(code: WorkerLoaderWorkerCode): WorkerStub` — one argument, no id.
     const worker = env.LOADER.load({
       compatibilityDate: '2025-09-02',
       mainModule: 'index.js',
@@ -73,7 +55,6 @@ async function handler({ request }: { request: Request }) {
         BROWSER: env.BROWSER,
         HOST_MESSAGE: 'passed through from the host worker',
       },
-      // The dynamic Worker gets no ambient network access; bindings still work.
       globalOutbound: null,
     })
 
@@ -101,8 +82,6 @@ async function handler({ request }: { request: Request }) {
   }
 }
 
-// A directory route: `api/spike/loader.ts` would be read as a deprecated
-// `.loader` suffix by the router CLI and collapse to `/api/spike`.
 export const Route = createFileRoute('/api/spike/loader/')({
   server: { handlers: { GET: handler } },
 })

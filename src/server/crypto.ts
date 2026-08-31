@@ -1,12 +1,3 @@
-/**
- * Symmetric encryption for stored secrets — environment variables and provider
- * API keys.
- *
- * AES-256-GCM over WebCrypto; the key is the SHA-256 of `ENCRYPTION_KEY`, so
- * the operator can use any passphrase. Envelopes are self-describing
- * (`v1.<iv>.<ciphertext+tag>`) so the format can move on without a migration.
- * Plaintext never reaches the client: it only flows into the engine.
- */
 import { env } from 'cloudflare:workers'
 
 export class CryptoError extends Error {
@@ -19,18 +10,9 @@ export class CryptoError extends Error {
 const ENVELOPE_VERSION = 'v1'
 const IV_BYTES = 12
 
-/**
- * Keyed by the secret itself so a rotated key can't silently reuse the old
- * `CryptoKey`; the *promise* is cached so concurrent calls import once.
- */
+/** Key the cached promise by the secret so rotation cannot reuse an old CryptoKey. */
 const keys = new Map<string, Promise<CryptoKey>>()
 
-/**
- * The operator's passphrase, or a clear complaint that there isn't one.
- *
- * Exported because signing (`sign.ts`) derives from the same secret: one thing
- * for the operator to set, one message when they haven't.
- */
 export function readEncryptionKey(): string {
   const secret = env.ENCRYPTION_KEY
   if (typeof secret !== 'string' || secret.length === 0) {
@@ -53,7 +35,6 @@ function getKey(secret: string): Promise<CryptoKey> {
     ])
   })()
 
-  // Don't let one failed import poison the isolate for every later call.
   pending.catch(() => keys.delete(secret))
   keys.set(secret, pending)
   return pending
@@ -113,7 +94,6 @@ export async function decryptSecret(envelope: string): Promise<string> {
   return new TextDecoder().decode(plaintext)
 }
 
-/** What the UI shows instead of a value it must never receive. */
 export function maskSecret(value: string): string {
   const dots = '••••'
   return value.length <= 4 ? dots : `${dots}${value.slice(-4)}`

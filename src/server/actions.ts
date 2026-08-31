@@ -1,28 +1,6 @@
 import { enqueueWork } from './enqueue.ts'
 import { isRunnableIntent } from './test-policy.ts'
-/**
- * What the product *does*, with nobody in particular asking.
- *
- * Every one of these was, until the chat arrived, the body of a server
- * function. Now there are two callers — a request handler with a session, and a
- * tool call inside the `ProjectChat` Durable Object — and the rule the plan sets
- * is that they must be the same code: a test created by typing into the chat and
- * one created by filling in the dialog have to be the same row, made the same
- * way, with the same guards. So the guards live here and the callers keep only
- * what is genuinely theirs — validating input, and knowing who is asking.
- *
- * Three things every function here assumes, because its callers guarantee them:
- *
- * - **The organization has already been checked.** Callers resolve rows through
- *   `server/scope.ts` (a request) or through the project the Durable Object was
- *   authorized on (a chat turn). Nothing here re-derives a tenant.
- * - **Input has already been validated.** Titles are trimmed, crons are parsed,
- *   URLs are normalised. `ValidationError` still escapes from here, but only for
- *   rules that need the database to check — "this project has no environment",
- *   "that environment belongs to somewhere else".
- * - **Nothing executes.** Runs, suites and generations are enqueued: a row, then
- *   a Workflow instance named after it, then a return.
- */
+/** Callers must validate input and authorize the organization before invoking these shared actions. */
 import { env } from 'cloudflare:workers'
 import { and, eq, inArray, ne, sql } from 'drizzle-orm'
 
@@ -43,19 +21,9 @@ import { encryptSecret, maskSecret } from './crypto.ts'
 import { loadDefaultEnvironment } from './scope.ts'
 import { ValidationError } from './validate.ts'
 
-/**
- * The filter every "this project as a suite" query wears.
- *
- * A proposed intent is a suggestion nobody has agreed to yet, so it must not be
- * run, scheduled, or counted among the project's tests. Written once, here,
- * because the failure mode of forgetting it in one query is a "run all" that
- * quietly executes a test the user never approved.
- */
 export { isAdoptedIntent, isRunnableIntent } from './test-policy.ts'
-/** The row every "run this somewhere" path needs, resolved the same way twice. */
 export type TargetEnvironment = typeof environment.$inferSelect
 
-/** Shell-style, because that is how the harness exposes variables to a script. */
 export function assertVariableName(value: string): string {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) {
     throw new ValidationError(
@@ -65,14 +33,6 @@ export function assertVariableName(value: string): string {
   return value
 }
 
-/**
- * Which environment a run, suite or generation points at.
- *
- * `environmentId` null means "the project's default". A named environment is
- * accepted only if it belongs to *this* project: the caller has already proved
- * it belongs to the organization, and without this check a sibling project's id
- * would silently retarget the work.
- */
 export async function resolveTargetEnvironment(
   db: Db,
   projectId: string,
@@ -91,7 +51,6 @@ export async function resolveTargetEnvironment(
   return target
 }
 
-/** The version an intent would run today, or null while it has no script. */
 export async function loadCurrentVersion(db: Db, currentVersionId: string | null) {
   if (!currentVersionId) return null
 
@@ -104,15 +63,7 @@ export async function loadCurrentVersion(db: Db, currentVersionId: string | null
   return row ?? null
 }
 
-/**
- * Appends a script version and points the intent at it, atomically.
- *
- * Every save starts a draft and clears the current result. Historical runs
- * remain attached to the immutable versions they executed.
- */
 export { appendScriptVersion } from './script-records.ts'
-
-/* ------------------------------------------------------------------ Intents */
 
 export async function createIntentRecord(
   db: Db,
@@ -121,16 +72,9 @@ export async function createIntentRecord(
     title: string
     description: string
     createdBy: string
-    /**
-     * `'draft'` unless the explorer is writing it, in which case `'proposed'`:
-     * a real row, in the project, excluded from everything that runs until
-     * somebody approves it.
-     */
     status?: IntentStatus
   },
 ) {
-  // Deliberately no script: an intent starts as a description, and the first
-  // save — by hand, or by the generator — is what makes it runnable.
   const status = input.status ?? 'draft'
 
   const row = {
@@ -146,13 +90,6 @@ export async function createIntentRecord(
   return { id: row.id, title: row.title, status }
 }
 
-/**
- * Approval: proposed intents become ordinary ones.
- *
- * Guarded on the status rather than blindly setting it, so approving a list
- * that has already been approved — a double-clicked button, a retried step —
- * cannot drag an intent that has since passed back to `'draft'`.
- */
 export async function adoptProposedIntents(
   db: Db,
   projectId: string,
@@ -175,7 +112,6 @@ export async function adoptProposedIntents(
   return adopted.length
 }
 
-/** Absent keys are left alone; `schedule: null` clears the cron expression. */
 export async function updateIntentRecord(
   db: Db,
   input: {
@@ -209,14 +145,6 @@ export async function deleteIntentRecord(db: Db, intentId: string) {
   return { ok: true as const }
 }
 
-/**
- * Queues a run. Nothing executes in the caller.
- *
- * The row is inserted first and the Workflow instance is named after it, so the
- * run id is the only handle anyone needs: the client polls it, the engine writes
- * to it, and creating the same run twice is a no-op rather than a second
- * browser session.
- */
 export async function queueIntentRun(
   db: Db,
   input: {
@@ -248,9 +176,6 @@ export async function queueIntentRun(
 
   await db.insert(run).values(row)
 
-  // The organization comes from the session, not from the run row: the Workflow
-  // re-checks it, and a value the client could influence would make that check
-  // meaningless.
   await enqueueWork(
     () =>
       env.RUN_WORKFLOW.create({
@@ -272,13 +197,6 @@ export async function queueIntentRun(
   return { runId: row.id, environmentId: input.environment.id, status: row.status }
 }
 
-/**
- * Refuses to start a second generation while one is running.
- *
- * Two agents driving two browsers towards the same intent would race to save
- * conflicting versions of it, and the one that lost would still have spent the
- * tokens.
- */
 export async function assertNoGenerationInFlight(db: Db, intentId: string, status: IntentStatus) {
   if (status === 'generating') {
     throw new ValidationError('A script is already being generated for this test.')
@@ -300,13 +218,6 @@ export async function assertNoGenerationInFlight(db: Db, intentId: string, statu
   }
 }
 
-/**
- * Queues a generation job. Enqueue-only, exactly like `queueIntentRun`.
- *
- * The job id is the handle for everything after — it names the Workflow
- * instance, it addresses the live channel the UI watches, and it is the row
- * `src/server.ts` checks before letting a socket near that channel.
- */
 export async function queueGeneration(
   db: Db,
   input: {
@@ -357,27 +268,9 @@ export async function queueGeneration(
   return { jobId: row.id, environmentId: input.environment.id }
 }
 
-/* ------------------------------------------------------------ Project context */
-
-/**
- * How much standing knowledge about an app is worth carrying.
- *
- * Four kilobytes is roughly a page of prose, and it is prepended to every chat
- * turn and every generation's opening message — so the cost of a larger cap is
- * paid on every model call this project ever makes, for text that is by
- * definition background rather than the task.
- */
 export const MAX_PROJECT_CONTEXT_CHARS = 4000
 
-/**
- * Replaces what the project knows about itself.
- *
- * The caller redacts. That is not a detail: the first paragraph of a project's
- * context is very often the sentence a user typed a password into, and the value
- * has to be `***` by the time it reaches this function — which is why the chat
- * tool runs it through the turn's scrubber and the explorer through the run
- * engine's, rather than either being trusted to have been careful.
- */
+/** Callers must redact project context before persisting it. */
 export async function setProjectContextRecord(
   db: Db,
   projectId: string,
@@ -389,15 +282,6 @@ export async function setProjectContextRecord(
   return { length: value?.length ?? 0 }
 }
 
-/**
- * Adds a section to it, oldest first, and drops the front when it will not fit.
- *
- * Appending rather than replacing is what makes a second exploration worth
- * running: the first one's notes about how to sign in are still true. Trimming
- * from the front rather than refusing to write is the same judgement in the
- * other direction — the newest thing anyone learned about the app is the part
- * worth keeping.
- */
 export async function appendProjectContext(
   db: Db,
   projectId: string,
@@ -420,9 +304,6 @@ export async function appendProjectContext(
   return setProjectContextRecord(db, projectId, trimmed)
 }
 
-/* --------------------------------------------------------------- Exploration */
-
-/** One exploration at a time per project — they would fight over the browser. */
 export async function assertNoExplorationInFlight(db: Db, projectId: string): Promise<void> {
   const [inFlight] = await db
     .select({ id: generationJob.id })
@@ -441,13 +322,6 @@ export async function assertNoExplorationInFlight(db: Db, projectId: string): Pr
   }
 }
 
-/**
- * Queues an exploration. Enqueue-only, exactly like every other job here.
- *
- * The row is a `generation_job` with no `intentId`, because an exploration is
- * about the project rather than about one test — and it is what authorizes the
- * live socket, so it has to exist before the workflow does.
- */
 export async function queueExploration(
   db: Db,
   input: {
@@ -455,7 +329,6 @@ export async function queueExploration(
     organizationId: string
     environment: TargetEnvironment
     createdBy: string
-    /** What the user asked it to concentrate on, when they said. */
     focus: string | null
   },
 ) {
@@ -501,26 +374,9 @@ export async function queueExploration(
   return { jobId: row.id, environmentId: input.environment.id }
 }
 
-/* ---------------------------------------------------------- Batch generation */
-
-/**
- * How many tests one approval may generate.
- *
- * Bounded by Workflows' 1,024 steps per instance rather than by taste: a
- * generation costs about thirty steps, so fifteen members and the batch's own
- * bookkeeping sit comfortably inside it. It also matches the ceiling the
- * explorer proposes under, so approving a whole plan always fits.
- */
+/** Keep batch size within the Workflow step limit; each generation consumes multiple steps. */
 export const MAX_BATCH_INTENTS = 15
 
-/**
- * Approves a plan and starts writing its scripts.
- *
- * Two things in one call because they are one decision: the intents stop being
- * proposals and the machine that turns them into tests starts. Sequential from
- * there — see `BatchGenerateWorkflow` — because Browser Rendering allows very
- * few concurrent sessions and a fan-out would spend its time collecting 429s.
- */
 export async function queueBatchGeneration(
   db: Db,
   input: {
@@ -604,16 +460,6 @@ export async function queueBatchGeneration(
   }
 }
 
-/* ------------------------------------------------------------------- Suites */
-
-/**
- * How many intents in a project a "run all" would actually execute.
- *
- * `isAdoptedIntent` is belt and braces here — a proposed intent has no script,
- * so the version check already excludes it — but the two conditions mean
- * different things and the suite's own membership query needs both, so they are
- * stated together in both places rather than one being left implied.
- */
 export async function countRunnableIntents(db: Db, projectId: string): Promise<number> {
   const [row] = await db
     .select({ count: sql<number>`count(*)` })
@@ -623,12 +469,6 @@ export async function countRunnableIntents(db: Db, projectId: string): Promise<n
   return Number(row?.count ?? 0)
 }
 
-/**
- * Queues a suite. The membership is deliberately *not* fixed here — the
- * workflow's `load` step decides it, from the same query, at the moment it
- * starts. Counting runnable intents first is only a guard against queueing a
- * suite that would have nothing to do.
- */
 export async function queueSuiteRun(
   db: Db,
   input: {
@@ -680,9 +520,6 @@ export async function queueSuiteRun(
   return { suiteRunId: row.id, environmentId: input.environment.id, total: runnable }
 }
 
-/* ------------------------------------------------------------- Environments */
-
-/** Clears `isDefault` on every sibling; pair it with the row that wins. */
 function clearDefaults(db: Db, projectId: string, keepId: string) {
   return db
     .update(environment)
@@ -705,7 +542,6 @@ export async function createEnvironmentRecord(
     .from(environment)
     .where(eq(environment.projectId, input.projectId))
 
-  // A project always has a default; the first environment has no competition.
   const isDefault = siblings.length === 0 || input.isDefault
 
   const row = {
@@ -741,13 +577,6 @@ export async function updateEnvironmentRecord(
   return { changed: true as const }
 }
 
-/**
- * Stores one credential, encrypted.
- *
- * Upserts on the `(environmentId, name)` unique index: setting a variable twice
- * replaces the value rather than failing or duplicating the row. The plaintext
- * exists only in this call — what comes back is a mask.
- */
 export async function setEnvironmentVariableRecord(
   db: Db,
   input: { environmentId: string; name: string; value: string },
