@@ -1,3 +1,4 @@
+import { Table, TablePagination, useTablePagination } from '#/components/table.tsx'
 import {
   Badge,
   Banner,
@@ -25,7 +26,7 @@ import { useMutation, useQueryClient, useSuspenseQuery } from '@tanstack/react-q
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 
-import { ListRow, ListToolbar } from '#/components/list.tsx'
+import { ListToolbar } from '#/components/list.tsx'
 import { PageBody, PageHeader, StatTile } from '#/components/page.tsx'
 import { RelativeTime } from '#/components/relative-time.tsx'
 import { projectsQuery } from '#/lib/queries.ts'
@@ -80,6 +81,7 @@ function Projects() {
       return true
     })
   }, [projects, search, filter])
+  const pagination = useTablePagination(visible, `${search}:${filter}`)
 
   return (
     <>
@@ -126,89 +128,116 @@ function Projects() {
               />
             </section>
 
-            <ListToolbar
-              value={search}
-              onValueChange={setSearch}
-              placeholder="Search projects"
-              onRefresh={() => {
-                void queryClient.invalidateQueries({ queryKey: projectsQuery().queryKey })
-              }}
+            <Table
+              label="Projects"
+              footer={<TablePagination {...pagination} />}
+              toolbar={
+                <ListToolbar
+                  value={search}
+                  onValueChange={setSearch}
+                  placeholder="Search projects"
+                  onRefresh={() => {
+                    void queryClient.invalidateQueries({ queryKey: projectsQuery().queryKey })
+                  }}
+                >
+                  <Select
+                    aria-label="Filter projects"
+                    className="w-44"
+                    items={FILTERS}
+                    value={filter}
+                    onValueChange={(value: Filter | null) => setFilter(value ?? 'all')}
+                  />
+                </ListToolbar>
+              }
             >
-              <Select
-                aria-label="Filter projects"
-                className="w-44"
-                items={FILTERS}
-                value={filter}
-                onValueChange={(value: Filter | null) => setFilter(value ?? 'all')}
-              />
-            </ListToolbar>
-
-            {visible.length === 0 ? (
-              <Empty
-                size="sm"
-                icon={<FolderIcon size={32} className="text-kumo-inactive" />}
-                title="No projects found"
-                description="No project matches this search. Try different words or clear the filter."
-              />
-            ) : (
-              <ul className="grid gap-3">
-                {visible.map((project) => (
-                  <li key={project.id}>
-                    <ListRow
-                      icon={<FolderIcon size={18} />}
-                      title={
-                        <Link
-                          to="/projects/$projectId"
-                          params={{ projectId: project.id }}
-                          className="truncate font-medium text-kumo-default hover:text-kumo-link"
-                        >
-                          {project.name}
-                        </Link>
-                      }
-                      subtitle={
-                        <Text variant="secondary" size="base" truncate>
-                          {project.description ?? `/${project.slug}`}
-                        </Text>
-                      }
-                      meta={
-                        <Text as="span" variant="secondary" size="base">
-                          Updated <RelativeTime value={project.updatedAt} />
-                        </Text>
-                      }
-                      actions={<ProjectActions projectId={project.id} />}
-                      footer={
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <Text as="span" variant="mono-secondary" truncate>
-                            {project.defaultEnvironment?.baseUrl ?? 'No environment'}
+              <Table.Header>
+                <Table.Row>
+                  <Table.Head className="min-w-72">Project</Table.Head>
+                  <Table.Head>Health</Table.Head>
+                  <Table.Head className="text-right">Tests</Table.Head>
+                  <Table.Head>Default environment</Table.Head>
+                  <Table.Head>Updated</Table.Head>
+                  <Table.Head className="w-0">
+                    <span className="sr-only">Actions</span>
+                  </Table.Head>
+                </Table.Row>
+              </Table.Header>
+              <Table.Body>
+                {pagination.items.map((project) => (
+                  <Table.Row key={project.id}>
+                    <Table.Cell className="max-w-md">
+                      <div className="flex items-start gap-3">
+                        <span className="flex h-lh shrink-0 items-center text-kumo-subtle">
+                          <FolderIcon size={16} />
+                        </span>
+                        <div className="grid min-w-0 gap-1">
+                          <Link
+                            to="/projects/$projectId"
+                            params={{ projectId: project.id }}
+                            className="table-link"
+                          >
+                            {project.name}
+                          </Link>
+                          <Text variant="secondary" truncate>
+                            {project.description ?? `/${project.slug}`}
                           </Text>
-                          <div className="flex shrink-0 items-center gap-2">
-                            <Badge variant="neutral">
-                              {project.intentCount} test{project.intentCount === 1 ? '' : 's'}
-                            </Badge>
-                            {project.passingCount > 0 ? (
-                              <Badge variant="success" appearance="dot">
-                                {project.passingCount} passing
-                              </Badge>
-                            ) : null}
-                            {project.failingCount > 0 ? (
-                              <Badge variant="error" appearance="dot">
-                                {project.failingCount} failing
-                              </Badge>
-                            ) : null}
-
-                            {project.proposedCount > 0 ? (
-                              <Badge variant="neutral" appearance="dot">
-                                {project.proposedCount} proposed
-                              </Badge>
-                            ) : null}
-                          </div>
                         </div>
-                      }
-                    />
-                  </li>
+                      </div>
+                    </Table.Cell>
+                    <Table.Cell>
+                      <div className="flex flex-wrap gap-1.5">
+                        {project.passingCount > 0 ? (
+                          <Badge variant="success" className="rounded-md text-base">
+                            {project.passingCount} passing
+                          </Badge>
+                        ) : null}
+                        {project.failingCount > 0 ? (
+                          <Badge variant="error" className="rounded-md text-base">
+                            {project.failingCount} failing
+                          </Badge>
+                        ) : null}
+                        {project.proposedCount > 0 ? (
+                          <Badge variant="secondary" className="rounded-md text-base">
+                            {project.proposedCount} proposed
+                          </Badge>
+                        ) : null}
+                        {project.passingCount === 0 &&
+                        project.failingCount === 0 &&
+                        project.proposedCount === 0 ? (
+                          <Text variant="secondary">
+                            {project.intentCount === 0 ? 'No tests' : 'Not run yet'}
+                          </Text>
+                        ) : null}
+                      </div>
+                    </Table.Cell>
+                    <Table.Cell className="text-right tabular-nums">
+                      {project.intentCount}
+                    </Table.Cell>
+                    <Table.Cell className="max-w-64">
+                      <Text variant="secondary" truncate>
+                        {project.defaultEnvironment?.baseUrl ?? 'No environment'}
+                      </Text>
+                    </Table.Cell>
+                    <Table.Cell className="whitespace-nowrap text-kumo-subtle">
+                      <RelativeTime value={project.updatedAt} />
+                    </Table.Cell>
+                    <Table.Cell>
+                      <ProjectActions projectId={project.id} />
+                    </Table.Cell>
+                  </Table.Row>
                 ))}
-              </ul>
-            )}
+                {pagination.items.length === 0 ? (
+                  <Table.Empty
+                    columns={6}
+                    message="No projects match your filters"
+                    onClear={() => {
+                      setSearch('')
+                      setFilter('all')
+                    }}
+                  />
+                ) : null}
+              </Table.Body>
+            </Table>
           </>
         )}
       </PageBody>

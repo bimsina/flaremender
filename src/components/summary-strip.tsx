@@ -15,11 +15,23 @@ export function SummaryStrip({
   items: Array<SummaryItem>
   className?: string
 }) {
+  const columns = items.filter((item) => !item.wide).length
   return (
     <div
       className={cn('overflow-hidden rounded-lg bg-kumo-base ring ring-kumo-hairline', className)}
     >
-      <div className="grid grid-cols-2 divide-x divide-y divide-kumo-hairline md:grid-cols-3 xl:grid-cols-6">
+      <div
+        className={cn(
+          'grid grid-cols-2 divide-x divide-y divide-kumo-hairline md:grid-cols-3',
+          columns === 3
+            ? 'xl:grid-cols-3'
+            : columns === 4
+              ? 'xl:grid-cols-4'
+              : columns === 5
+                ? 'xl:grid-cols-5'
+                : 'xl:grid-cols-6',
+        )}
+      >
         {items.map((item) => (
           <div
             key={item.key}

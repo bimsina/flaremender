@@ -17,7 +17,7 @@ export function ListRow({
   footer?: React.ReactNode
 }) {
   return (
-    <LayerCard className="px-5 py-4">
+    <LayerCard className="px-5 py-4 hover:ring-kumo-line">
       <div className="grid gap-3">
         <div className="flex items-start justify-between gap-4">
           <div className="flex min-w-0 items-start gap-3">
@@ -29,7 +29,7 @@ export function ListRow({
               {subtitle}
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {meta}
             {actions}
           </div>
@@ -59,8 +59,8 @@ export function ListToolbar({
   refreshing?: boolean
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <InputGroup className="min-w-56 flex-1">
+    <div className="flex min-w-0 flex-wrap items-center gap-2">
+      <InputGroup className="min-w-0 basis-64 flex-1">
         <InputGroup.Addon>
           <MagnifyingGlassIcon size={16} />
         </InputGroup.Addon>
@@ -92,7 +92,7 @@ export function Section({
   children: React.ReactNode
 }) {
   return (
-    <section className="grid gap-3">
+    <section className="grid min-w-0 grid-cols-1 gap-3">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="grid gap-1.5">
           <Text as="h2" variant="heading">

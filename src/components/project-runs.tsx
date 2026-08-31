@@ -1,11 +1,12 @@
-import { Button, Empty, LayerCard, LinkButton, Loader, Select, Table, Text } from '@cloudflare/kumo'
+import { Table, TablePagination, useTablePagination } from '#/components/table.tsx'
+import { Button, Empty, LinkButton, Loader, Select, Text } from '@cloudflare/kumo'
 import { CaretDownIcon, ClockIcon, PlayIcon, StackIcon } from '@phosphor-icons/react'
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { Fragment, useMemo, useState } from 'react'
 
 import { Duration } from '#/components/duration.tsx'
-import { InlineEmpty, Section } from '#/components/list.tsx'
+import { InlineEmpty, ListToolbar, Section } from '#/components/list.tsx'
 import { RelativeTime } from '#/components/relative-time.tsx'
 import { RunDetailPanel } from '#/components/run-detail.tsx'
 import { RunStatusSummary } from '#/components/run-status-summary.tsx'
@@ -99,6 +100,7 @@ export function ProjectRunsTab({
   const [environmentId, setEnvironmentId] = useState<string>('all')
   const [trigger, setTrigger] = useState<TriggerFilter>('all')
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
 
   const { data: recent } = useSuspenseQuery(projectRunsQuery(projectId))
   const { data: suiteRuns } = useSuspenseQuery(suiteRunsQuery(projectId))
@@ -141,7 +143,23 @@ export function ProjectRunsTab({
     [environments],
   )
 
-  const filtered = status !== 'all' || environmentId !== 'all' || trigger !== 'all'
+  const visibleEntries = entries.filter((entry) => {
+    const text =
+      entry.kind === 'run'
+        ? `${entry.id} ${entry.run.intentTitle} ${entry.run.environmentName}`
+        : `${entry.id} suite ${entry.suite.environmentName}`
+    return text.toLowerCase().includes(search.trim().toLowerCase())
+  })
+  const pagination = useTablePagination(
+    visibleEntries,
+    `${status}:${environmentId}:${trigger}:${search}`,
+  )
+  const clearFilters = () => {
+    setSearch('')
+    setStatus('all')
+    setEnvironmentId('all')
+    setTrigger('all')
+  }
 
   if (recent.length === 0 && suiteRuns.length === 0) {
     return (
@@ -158,7 +176,7 @@ export function ProjectRunsTab({
       title="Runs"
       description="Every execution in this project, newest first. Suites open into the runs inside them."
     >
-      <div className="grid gap-4">
+      <div className="grid min-w-0 grid-cols-1 gap-4">
         {liveSuiteRunId ? (
           <SuiteProgress key={liveSuiteRunId} suiteRunId={liveSuiteRunId} projectId={projectId} />
         ) : null}
@@ -167,80 +185,83 @@ export function ProjectRunsTab({
 
         <RunTrend days={trend} compact />
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Select
-            aria-label="Filter by status"
-            className="w-40"
-            items={STATUS_FILTERS}
-            value={status}
-            onValueChange={(value: StatusFilter | null) => setStatus(value ?? 'all')}
-          />
-          <Select
-            aria-label="Filter by environment"
-            className="w-52"
-            items={environmentItems}
-            value={environmentId}
-            onValueChange={(value: string | null) => setEnvironmentId(value ?? 'all')}
-          />
-          <Select
-            aria-label="Filter by trigger"
-            className="w-40"
-            items={TRIGGER_FILTERS}
-            value={trigger}
-            onValueChange={(value: TriggerFilter | null) => setTrigger(value ?? 'all')}
-          />
-          {isPending ? <Loader size="sm" /> : null}
-        </div>
-
-        {entries.length === 0 ? (
-          <LayerCard className="px-5 py-4">
-            <InlineEmpty
-              message={
-                filtered ? 'No runs match these filters.' : 'Nothing has run in this project yet.'
-              }
-            />
-          </LayerCard>
-        ) : (
-          <LayerCard className="p-0">
-            <div className="overflow-x-auto">
-              <Table>
-                <Table.Header>
-                  <Table.Row>
-                    <Table.Head className="w-0" />
-                    <Table.Head>Status</Table.Head>
-                    <Table.Head>Started</Table.Head>
-                    <Table.Head>Run</Table.Head>
-                    <Table.Head>What ran</Table.Head>
-                    <Table.Head>Environment</Table.Head>
-                    <Table.Head>Trigger</Table.Head>
-                    <Table.Head className="text-right">Duration</Table.Head>
-                  </Table.Row>
-                </Table.Header>
-                <Table.Body>
-                  {entries.map((entry) =>
-                    entry.kind === 'suite' ? (
-                      <SuiteEntry
-                        key={entry.id}
-                        projectId={projectId}
-                        suite={entry.suite}
-                        open={expanded === entry.id}
-                        onToggle={() => setExpanded(expanded === entry.id ? null : entry.id)}
-                      />
-                    ) : (
-                      <RunEntry
-                        key={entry.id}
-                        projectId={projectId}
-                        run={entry.run}
-                        open={expanded === entry.id}
-                        onToggle={() => setExpanded(expanded === entry.id ? null : entry.id)}
-                      />
-                    ),
-                  )}
-                </Table.Body>
-              </Table>
-            </div>
-          </LayerCard>
-        )}
+        <Table
+          label="Project runs"
+          footer={<TablePagination {...pagination} />}
+          toolbar={
+            <ListToolbar
+              value={search}
+              onValueChange={setSearch}
+              placeholder="Search runs or tests"
+            >
+              <Select
+                aria-label="Filter by status"
+                className="w-40"
+                items={STATUS_FILTERS}
+                value={status}
+                onValueChange={(value: StatusFilter | null) => setStatus(value ?? 'all')}
+              />
+              <Select
+                aria-label="Filter by environment"
+                className="w-52"
+                items={environmentItems}
+                value={environmentId}
+                onValueChange={(value: string | null) => setEnvironmentId(value ?? 'all')}
+              />
+              <Select
+                aria-label="Filter by trigger"
+                className="w-40"
+                items={TRIGGER_FILTERS}
+                value={trigger}
+                onValueChange={(value: TriggerFilter | null) => setTrigger(value ?? 'all')}
+              />
+              {isPending ? <Loader size="sm" /> : null}
+            </ListToolbar>
+          }
+        >
+          <Table.Header>
+            <Table.Row>
+              <Table.Head className="w-0">
+                <span className="sr-only">Expand details</span>
+              </Table.Head>
+              <Table.Head>Status</Table.Head>
+              <Table.Head>Started</Table.Head>
+              <Table.Head>Run</Table.Head>
+              <Table.Head className="min-w-64">What ran</Table.Head>
+              <Table.Head>Environment</Table.Head>
+              <Table.Head>Trigger</Table.Head>
+              <Table.Head className="text-right">Duration</Table.Head>
+            </Table.Row>
+          </Table.Header>
+          <Table.Body>
+            {pagination.items.map((entry) =>
+              entry.kind === 'suite' ? (
+                <SuiteEntry
+                  key={entry.id}
+                  projectId={projectId}
+                  suite={entry.suite}
+                  open={expanded === entry.id}
+                  onToggle={() => setExpanded(expanded === entry.id ? null : entry.id)}
+                />
+              ) : (
+                <RunEntry
+                  key={entry.id}
+                  projectId={projectId}
+                  run={entry.run}
+                  open={expanded === entry.id}
+                  onToggle={() => setExpanded(expanded === entry.id ? null : entry.id)}
+                />
+              ),
+            )}
+            {pagination.items.length === 0 ? (
+              <Table.Empty
+                columns={COLUMNS}
+                message={isPending ? 'Loading runs…' : 'No runs match your filters'}
+                onClear={isPending ? undefined : clearFilters}
+              />
+            ) : null}
+          </Table.Body>
+        </Table>
       </div>
     </Section>
   )
@@ -265,13 +286,15 @@ function RunEntry({
 }) {
   return (
     <Fragment>
-      <Table.Row>
+      <Table.Row data-expanded={open}>
         <Table.Cell>
           <Button
             variant="ghost"
             shape="square"
             size="sm"
             aria-label={open ? 'Hide run detail' : 'Show run detail'}
+            aria-expanded={open}
+            aria-controls={`run-detail-${run.id}`}
             onClick={onToggle}
           >
             <Caret open={open} />
@@ -289,23 +312,23 @@ function RunEntry({
             </Text>
           </div>
         </Table.Cell>
-        <Table.Cell>
+        <Table.Cell className="whitespace-nowrap text-kumo-subtle">
           <RelativeTime value={run.startedAt} />
         </Table.Cell>
         <Table.Cell>
           <Link
             to="/projects/$projectId/runs/$runId"
             params={{ projectId, runId: run.id }}
-            className="font-mono text-kumo-link hover:underline"
+            className="table-link font-mono text-[0.9em]"
           >
             {shortId(run.id)}
           </Link>
         </Table.Cell>
-        <Table.Cell>
+        <Table.Cell className="min-w-64 max-w-md">
           <Link
             to="/projects/$projectId/intents/$intentId"
             params={{ projectId, intentId: run.intentId }}
-            className="text-kumo-link hover:underline"
+            className="table-link"
           >
             {run.intentTitle}
           </Link>{' '}
@@ -313,19 +336,21 @@ function RunEntry({
             v{run.version}
           </Text>
         </Table.Cell>
-        <Table.Cell>{run.environmentName}</Table.Cell>
+        <Table.Cell className="whitespace-nowrap text-kumo-subtle">
+          {run.environmentName}
+        </Table.Cell>
         <Table.Cell>
           <Text as="span" variant="secondary" size="base">
             {TRIGGER_LABEL[run.trigger] ?? run.trigger}
           </Text>
         </Table.Cell>
-        <Table.Cell className="text-right">
+        <Table.Cell className="text-right whitespace-nowrap tabular-nums">
           <Duration ms={run.durationMs} />
         </Table.Cell>
       </Table.Row>
       {open ? (
         <Table.Row>
-          <Table.Cell colSpan={COLUMNS} className="bg-kumo-recessed">
+          <Table.Cell id={`run-detail-${run.id}`} colSpan={COLUMNS} className="bg-kumo-recessed">
             <RunDetailPanel runId={run.id} projectId={projectId} />
           </Table.Cell>
         </Table.Row>
@@ -350,13 +375,15 @@ function SuiteEntry({
 
   return (
     <Fragment>
-      <Table.Row>
+      <Table.Row data-expanded={open}>
         <Table.Cell>
           <Button
             variant="ghost"
             shape="square"
             size="sm"
             aria-label={open ? 'Hide suite members' : 'Show suite members'}
+            aria-expanded={open}
+            aria-controls={`suite-detail-${suite.id}`}
             onClick={onToggle}
           >
             <Caret open={open} />
@@ -365,7 +392,7 @@ function SuiteEntry({
         <Table.Cell>
           <SuiteRunStatusBadge status={suite.status} />
         </Table.Cell>
-        <Table.Cell>
+        <Table.Cell className="whitespace-nowrap text-kumo-subtle">
           <RelativeTime value={suite.startedAt} />
         </Table.Cell>
         <Table.Cell>
@@ -385,8 +412,10 @@ function SuiteEntry({
             {suite.errorCount > 0 ? ` · ${suite.errorCount} errored` : ''}
           </Text>
         </Table.Cell>
-        <Table.Cell>{suite.environmentName}</Table.Cell>
-        <Table.Cell>
+        <Table.Cell className="whitespace-nowrap text-kumo-subtle">
+          {suite.environmentName}
+        </Table.Cell>
+        <Table.Cell className="whitespace-nowrap">
           <span className="flex items-center gap-1.5">
             {suite.trigger === 'schedule' ? (
               <span className="h-lh flex items-center text-kumo-subtle">
@@ -398,13 +427,17 @@ function SuiteEntry({
             </Text>
           </span>
         </Table.Cell>
-        <Table.Cell className="text-right">
+        <Table.Cell className="text-right whitespace-nowrap tabular-nums">
           <Duration ms={spanMs} />
         </Table.Cell>
       </Table.Row>
       {open ? (
         <Table.Row>
-          <Table.Cell colSpan={COLUMNS} className="bg-kumo-recessed">
+          <Table.Cell
+            id={`suite-detail-${suite.id}`}
+            colSpan={COLUMNS}
+            className="bg-kumo-recessed"
+          >
             <SuiteMembers projectId={projectId} suiteRunId={suite.id} />
           </Table.Cell>
         </Table.Row>

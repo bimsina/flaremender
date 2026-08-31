@@ -127,8 +127,8 @@ export function RunTrendChart({
   const { chart, host } = useFitToWidth()
 
   return (
-    <div className="grid gap-2">
-      <div ref={host}>
+    <div className="grid min-w-0 grid-cols-1 gap-2">
+      <div ref={host} className="min-w-0 overflow-hidden">
         <TimeseriesChart
           ref={chart}
           echarts={echarts}
@@ -203,8 +203,8 @@ export function DurationTrendChart({
   )
 
   return (
-    <div className="grid gap-2">
-      <div ref={host}>
+    <div className="grid min-w-0 grid-cols-1 gap-2">
+      <div ref={host} className="min-w-0 overflow-hidden">
         <Chart
           ref={chart}
           echarts={echarts}

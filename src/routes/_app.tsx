@@ -39,7 +39,7 @@ function AppLayout() {
 
   return (
     <Sidebar.Provider defaultOpen className="h-svh">
-      <Sidebar>
+      <Sidebar className="[--sidebar-active-bg:var(--color-kumo-recessed)] [--sidebar-bg:var(--color-kumo-canvas)]">
         <Sidebar.Header
           className={cn(
             'group-not-data-[state=collapsed]/sidebar:px-3.5',

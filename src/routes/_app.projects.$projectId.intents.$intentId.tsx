@@ -1,3 +1,4 @@
+import { Table, TablePagination, useTablePagination } from '#/components/table.tsx'
 import {
   Badge,
   Banner,
@@ -11,7 +12,6 @@ import {
   LayerCard,
   Loader,
   Select,
-  Table,
   Tabs,
   Text,
   useKumoToastManager,
@@ -39,7 +39,7 @@ import { CodeEditor } from '#/components/code-editor.tsx'
 import { Duration } from '#/components/duration.tsx'
 import { DurationTrend } from '#/components/duration-trend.tsx'
 import { GenerationLivePanel } from '#/components/generation-live-panel.tsx'
-import { ListRow, Section } from '#/components/list.tsx'
+import { ListRow, ListToolbar, Section } from '#/components/list.tsx'
 import { PageBody, PageHeader } from '#/components/page.tsx'
 import { RelativeTime } from '#/components/relative-time.tsx'
 import { RunDetailPanel } from '#/components/run-detail.tsx'
@@ -864,6 +864,16 @@ type RunRowData = {
 
 function RunsTab({ projectId, runs }: { projectId: string; runs: Array<RunRowData> }) {
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
+  const [status, setStatus] = useState('all')
+  const visibleRuns = runs.filter(
+    (run) =>
+      (status === 'all' || run.status === status) &&
+      `${run.id} ${run.environmentName} v${run.version}`
+        .toLowerCase()
+        .includes(search.trim().toLowerCase()),
+  )
+  const pagination = useTablePagination(visibleRuns, `${search}:${status}`)
 
   if (runs.length === 0) {
     return (
@@ -880,100 +890,139 @@ function RunsTab({ projectId, runs }: { projectId: string; runs: Array<RunRowDat
       title="Runs"
       description="Regression summary excludes draft checks and generation verification. All executions appear below, newest first."
     >
-      <div className="grid gap-4">
+      <div className="grid min-w-0 grid-cols-1 gap-4">
         <RunStatusSummary runs={runs.filter((row) => row.purpose === 'regression')} />
 
         <DurationTrend runs={runs.filter((row) => row.purpose === 'regression')} />
 
-        <LayerCard className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <Table.Header>
-                <Table.Row>
-                  <Table.Head className="w-0" />
-                  <Table.Head>Status</Table.Head>
-                  <Table.Head>Started</Table.Head>
-                  <Table.Head>Run</Table.Head>
-                  <Table.Head>Environment</Table.Head>
-                  <Table.Head>Version</Table.Head>
-                  <Table.Head className="text-right">Duration</Table.Head>
-                </Table.Row>
-              </Table.Header>
-              <Table.Body>
-                {runs.map((row) => {
-                  const open = expanded === row.id
-                  return (
-                    <Fragment key={row.id}>
-                      <Table.Row>
-                        <Table.Cell>
-                          <Button
-                            variant="ghost"
-                            shape="square"
-                            size="sm"
-                            aria-label={open ? 'Hide run detail' : 'Show run detail'}
-                            onClick={() => setExpanded(open ? null : row.id)}
-                          >
-                            <CaretDownIcon
-                              size={14}
-                              className={open ? 'rotate-180' : '-rotate-90'}
-                            />
-                          </Button>
-                        </Table.Cell>
-                        <Table.Cell>
-                          <div className="grid gap-1">
-                            <RunStatusBadge status={row.status} />
-                            <Text variant="secondary">
-                              {row.purpose === 'draft-check'
-                                ? 'Draft check'
-                                : row.purpose === 'generation-verification'
-                                  ? 'Verification'
-                                  : 'Regression'}
-                            </Text>
-                          </div>
-                        </Table.Cell>
-                        <Table.Cell>
-                          <RelativeTime value={row.startedAt} />
-                        </Table.Cell>
-                        <Table.Cell>
-                          <span className="flex items-center gap-1.5">
-                            <Text as="span" variant="mono-secondary">
-                              {shortId(row.id)}
-                            </Text>
+        <Table
+          label="Test runs"
+          footer={<TablePagination {...pagination} />}
+          toolbar={
+            <ListToolbar
+              value={search}
+              onValueChange={setSearch}
+              placeholder="Search run ID or environment"
+            >
+              <Select
+                aria-label="Filter test runs by status"
+                className="w-40"
+                value={status}
+                onValueChange={(value: string | null) => setStatus(value ?? 'all')}
+                items={{
+                  all: 'All statuses',
+                  passed: 'Passed',
+                  failed: 'Failed',
+                  error: 'Errored',
+                  healed: 'Healed',
+                  queued: 'Queued',
+                  running: 'Running',
+                }}
+              />
+            </ListToolbar>
+          }
+        >
+          <Table.Header>
+            <Table.Row>
+              <Table.Head className="w-0">
+                <span className="sr-only">Expand details</span>
+              </Table.Head>
+              <Table.Head>Status</Table.Head>
+              <Table.Head>Started</Table.Head>
+              <Table.Head>Run</Table.Head>
+              <Table.Head>Environment</Table.Head>
+              <Table.Head>Version</Table.Head>
+              <Table.Head className="text-right">Duration</Table.Head>
+            </Table.Row>
+          </Table.Header>
+          <Table.Body>
+            {pagination.items.map((row) => {
+              const open = expanded === row.id
+              return (
+                <Fragment key={row.id}>
+                  <Table.Row data-expanded={open}>
+                    <Table.Cell>
+                      <Button
+                        variant="ghost"
+                        shape="square"
+                        size="sm"
+                        aria-label={open ? 'Hide run detail' : 'Show run detail'}
+                        aria-expanded={open}
+                        aria-controls={`test-run-detail-${row.id}`}
+                        onClick={() => setExpanded(open ? null : row.id)}
+                      >
+                        <CaretDownIcon size={14} className={open ? 'rotate-180' : '-rotate-90'} />
+                      </Button>
+                    </Table.Cell>
+                    <Table.Cell>
+                      <div className="grid gap-1">
+                        <RunStatusBadge status={row.status} />
+                        <Text variant="secondary">
+                          {row.purpose === 'draft-check'
+                            ? 'Draft check'
+                            : row.purpose === 'generation-verification'
+                              ? 'Verification'
+                              : 'Regression'}
+                        </Text>
+                      </div>
+                    </Table.Cell>
+                    <Table.Cell className="whitespace-nowrap text-kumo-subtle">
+                      <RelativeTime value={row.startedAt} />
+                    </Table.Cell>
+                    <Table.Cell>
+                      <span className="flex items-center gap-1.5">
+                        <Text as="span" variant="mono-secondary">
+                          {shortId(row.id)}
+                        </Text>
 
-                            {row.trigger === 'schedule' ? (
-                              <span
-                                className="flex items-center text-kumo-subtle"
-                                title="Started by the schedule"
-                              >
-                                <ClockIcon size={13} aria-label="Started by the schedule" />
-                              </span>
-                            ) : null}
+                        {row.trigger === 'schedule' ? (
+                          <span
+                            className="flex items-center text-kumo-subtle"
+                            title="Started by the schedule"
+                          >
+                            <ClockIcon size={13} aria-label="Started by the schedule" />
                           </span>
-                        </Table.Cell>
-                        <Table.Cell>{row.environmentName}</Table.Cell>
-                        <Table.Cell>
-                          <Text as="span" variant="mono-secondary">
-                            v{row.version}
-                          </Text>
-                        </Table.Cell>
-                        <Table.Cell className="text-right">
-                          <Duration ms={row.durationMs} />
-                        </Table.Cell>
-                      </Table.Row>
-                      {open ? (
-                        <Table.Row>
-                          <Table.Cell colSpan={7} className="bg-kumo-recessed">
-                            <RunDetailPanel runId={row.id} projectId={projectId} />
-                          </Table.Cell>
-                        </Table.Row>
-                      ) : null}
-                    </Fragment>
-                  )
-                })}
-              </Table.Body>
-            </Table>
-          </div>
-        </LayerCard>
+                        ) : null}
+                      </span>
+                    </Table.Cell>
+                    <Table.Cell className="whitespace-nowrap text-kumo-subtle">
+                      {row.environmentName}
+                    </Table.Cell>
+                    <Table.Cell>
+                      <Text as="span" variant="mono-secondary">
+                        v{row.version}
+                      </Text>
+                    </Table.Cell>
+                    <Table.Cell className="text-right whitespace-nowrap tabular-nums">
+                      <Duration ms={row.durationMs} />
+                    </Table.Cell>
+                  </Table.Row>
+                  {open ? (
+                    <Table.Row>
+                      <Table.Cell
+                        id={`test-run-detail-${row.id}`}
+                        colSpan={7}
+                        className="bg-kumo-recessed"
+                      >
+                        <RunDetailPanel runId={row.id} projectId={projectId} />
+                      </Table.Cell>
+                    </Table.Row>
+                  ) : null}
+                </Fragment>
+              )
+            })}
+            {pagination.items.length === 0 ? (
+              <Table.Empty
+                columns={7}
+                message="No runs match your filters"
+                onClear={() => {
+                  setSearch('')
+                  setStatus('all')
+                }}
+              />
+            ) : null}
+          </Table.Body>
+        </Table>
       </div>
     </Section>
   )

@@ -18,18 +18,18 @@ export function PageHeader({
 }) {
   return (
     <header className="sticky top-0 z-10 border-b border-kumo-line bg-kumo-canvas">
-      <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
+      <div className="w-full px-4 text-left sm:px-6 lg:px-8">
         <div
           className={cn(
-            'flex flex-wrap items-end justify-between gap-4 pt-4',
-            tabs ? 'pb-3' : 'pb-4',
+            'flex flex-wrap items-center justify-between gap-4 pt-6',
+            tabs ? 'pb-5' : 'pb-6',
           )}
         >
           <div className="flex min-w-0 items-end gap-3">
             <Sidebar.Trigger className="mb-1 md:hidden" />
             <div className="grid min-w-0 gap-1.5">
               {breadcrumbs}
-              <Text as="h1" variant="heading" size="lg">
+              <Text as="h1" variant="heading" DANGEROUS_className="text-2xl">
                 {title}
               </Text>
               {description ? <Text variant="secondary">{description}</Text> : null}
@@ -60,7 +60,10 @@ export function PageBody({
 }) {
   return (
     <div
-      className={cn('mx-auto w-full max-w-6xl flex-1 content-start px-4 py-6 sm:px-6', className)}
+      className={cn(
+        'min-w-0 w-full flex-1 grid-cols-1 content-start px-4 py-6 sm:px-6 lg:px-8',
+        className,
+      )}
     >
       {children}
     </div>
@@ -77,11 +80,11 @@ export function StatTile({
   hint?: React.ReactNode
 }) {
   return (
-    <div className="grid gap-1.5 rounded-lg bg-kumo-base px-5 py-4 ring ring-kumo-hairline">
+    <div className="grid content-start gap-1.5 rounded-lg bg-kumo-base px-5 py-4 ring ring-kumo-hairline">
       <Text as="span" variant="secondary" size="base">
         {label}
       </Text>
-      <Text as="span" variant="heading" size="lg">
+      <Text as="span" variant="heading" DANGEROUS_className="text-2xl tabular-nums">
         {value}
       </Text>
       {hint ? (

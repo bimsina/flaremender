@@ -26,7 +26,7 @@ export function RunTrend({
   const height = compact ? COMPACT_PX : FULL_PX
 
   return (
-    <div className="grid gap-3 rounded-lg bg-kumo-base px-5 py-4 ring ring-kumo-hairline">
+    <div className="grid min-w-0 grid-cols-1 gap-3 rounded-lg bg-kumo-base px-5 py-4 ring ring-kumo-hairline">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <Text as="h3" variant="heading">
           Last 14 days

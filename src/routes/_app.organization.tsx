@@ -1,3 +1,4 @@
+import { Table, TablePagination, useTablePagination } from '#/components/table.tsx'
 import {
   Badge,
   Banner,
@@ -10,7 +11,6 @@ import {
   LayerCard,
   Loader,
   Select,
-  Table,
   Text,
   useKumoToastManager,
 } from '@cloudflare/kumo'
@@ -30,6 +30,7 @@ import { createFileRoute, useNavigate, useRouter } from '@tanstack/react-router'
 import { useState } from 'react'
 
 import { MenuRadioItem } from '#/components/menu-radio-item.tsx'
+import { ListToolbar } from '#/components/list.tsx'
 import { PageBody, PageHeader } from '#/components/page.tsx'
 import { authClient } from '#/lib/auth-client.ts'
 import { formatDate } from '#/lib/format.ts'
@@ -62,9 +63,23 @@ function OrganizationPage() {
   const [inviting, setInviting] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [leaving, setLeaving] = useState(false)
+  const [search, setSearch] = useState('')
+  const [roleFilter, setRoleFilter] = useState('all')
 
   const members = org?.members ?? []
   const invitations = (org?.invitations ?? []).filter((i) => i.status === 'pending')
+  const visibleMembers = members.filter(
+    (member) =>
+      (roleFilter === 'all' || member.role === roleFilter) &&
+      `${member.user.name} ${member.user.email}`
+        .toLowerCase()
+        .includes(search.trim().toLowerCase()),
+  )
+  const memberPagination = useTablePagination(
+    visibleMembers,
+    `${activeOrgId}:${search}:${roleFilter}`,
+  )
+  const invitationPagination = useTablePagination(invitations, activeOrgId ?? '')
 
   return (
     <>
@@ -136,59 +151,83 @@ function OrganizationPage() {
               <Loader size={20} />
             </LayerCard>
           ) : (
-            <LayerCard className="p-0">
-              <div className="overflow-x-auto">
-                <Table>
-                  <Table.Header>
-                    <Table.Row>
-                      <Table.Head>Name</Table.Head>
-                      <Table.Head>Email</Table.Head>
-                      <Table.Head>Role</Table.Head>
-                      <Table.Head>Joined</Table.Head>
-                      <Table.Head className="w-0" />
-                    </Table.Row>
-                  </Table.Header>
-                  <Table.Body>
-                    {members.map((member) => (
-                      <Table.Row key={member.id}>
-                        <Table.Cell>
-                          <span className="flex items-center gap-2">
-                            {member.user.name}
-                            {member.userId === session.user.id ? (
-                              <Badge variant="neutral">You</Badge>
-                            ) : null}
-                          </span>
-                        </Table.Cell>
-                        <Table.Cell>
-                          <Text as="span" variant="secondary">
-                            {member.user.email}
-                          </Text>
-                        </Table.Cell>
-                        <Table.Cell>
-                          <Badge variant={member.role === 'owner' ? 'primary' : 'neutral'}>
-                            {ROLES[member.role as keyof typeof ROLES] ?? member.role}
+            <Table
+              label="Members"
+              footer={<TablePagination {...memberPagination} />}
+              toolbar={
+                <ListToolbar value={search} onValueChange={setSearch} placeholder="Search members">
+                  <Select
+                    aria-label="Filter members by role"
+                    className="w-40"
+                    items={{ all: 'All roles', ...ROLES }}
+                    value={roleFilter}
+                    onValueChange={(value: string | null) => setRoleFilter(value ?? 'all')}
+                  />
+                </ListToolbar>
+              }
+            >
+              <Table.Header>
+                <Table.Row>
+                  <Table.Head>Name</Table.Head>
+                  <Table.Head>Email</Table.Head>
+                  <Table.Head>Role</Table.Head>
+                  <Table.Head>Joined</Table.Head>
+                  <Table.Head className="w-0">
+                    <span className="sr-only">Actions</span>
+                  </Table.Head>
+                </Table.Row>
+              </Table.Header>
+              <Table.Body>
+                {memberPagination.items.map((member) => (
+                  <Table.Row key={member.id}>
+                    <Table.Cell>
+                      <span className="flex items-center gap-2 font-medium whitespace-nowrap">
+                        {member.user.name}
+                        {member.userId === session.user.id ? (
+                          <Badge variant="secondary" className="rounded-md text-base">
+                            You
                           </Badge>
-                        </Table.Cell>
-                        <Table.Cell>{formatDate(member.createdAt)}</Table.Cell>
-                        <Table.Cell>
-                          <MemberActions
-                            memberId={member.id}
-                            memberName={member.user.name}
-                            memberEmail={member.user.email}
-                            role={member.role}
-                            disabled={
-                              !canManage ||
-                              member.role === 'owner' ||
-                              member.userId === session.user.id
-                            }
-                          />
-                        </Table.Cell>
-                      </Table.Row>
-                    ))}
-                  </Table.Body>
-                </Table>
-              </div>
-            </LayerCard>
+                        ) : null}
+                      </span>
+                    </Table.Cell>
+                    <Table.Cell>
+                      <Text as="span" variant="secondary">
+                        {member.user.email}
+                      </Text>
+                    </Table.Cell>
+                    <Table.Cell>
+                      <Badge variant="secondary" className="rounded-md text-base">
+                        {ROLES[member.role as keyof typeof ROLES] ?? member.role}
+                      </Badge>
+                    </Table.Cell>
+                    <Table.Cell className="whitespace-nowrap text-kumo-subtle">
+                      {formatDate(member.createdAt)}
+                    </Table.Cell>
+                    <Table.Cell>
+                      <MemberActions
+                        memberId={member.id}
+                        memberName={member.user.name}
+                        memberEmail={member.user.email}
+                        role={member.role}
+                        disabled={
+                          !canManage || member.role === 'owner' || member.userId === session.user.id
+                        }
+                      />
+                    </Table.Cell>
+                  </Table.Row>
+                ))}
+                {memberPagination.items.length === 0 ? (
+                  <Table.Empty
+                    columns={5}
+                    message="No members match your filters"
+                    onClear={() => {
+                      setSearch('')
+                      setRoleFilter('all')
+                    }}
+                  />
+                ) : null}
+              </Table.Body>
+            </Table>
           )}
         </section>
 
@@ -214,38 +253,39 @@ function OrganizationPage() {
               }
             />
           ) : (
-            <LayerCard className="p-0">
-              <div className="overflow-x-auto">
-                <Table>
-                  <Table.Header>
-                    <Table.Row>
-                      <Table.Head>Email</Table.Head>
-                      <Table.Head>Role</Table.Head>
-                      <Table.Head>Expires</Table.Head>
-                      <Table.Head className="w-0" />
-                    </Table.Row>
-                  </Table.Header>
-                  <Table.Body>
-                    {invitations.map((invitation) => (
-                      <Table.Row key={invitation.id}>
-                        <Table.Cell>{invitation.email}</Table.Cell>
-                        <Table.Cell>
-                          <Badge variant="neutral">
-                            {ROLES[invitation.role as keyof typeof ROLES] ?? invitation.role}
-                          </Badge>
-                        </Table.Cell>
-                        <Table.Cell>
-                          <RelativeTime value={invitation.expiresAt} />
-                        </Table.Cell>
-                        <Table.Cell>
-                          <InvitationActions invitationId={invitation.id} disabled={!canManage} />
-                        </Table.Cell>
-                      </Table.Row>
-                    ))}
-                  </Table.Body>
-                </Table>
-              </div>
-            </LayerCard>
+            <Table
+              label="Pending invitations"
+              footer={<TablePagination {...invitationPagination} />}
+            >
+              <Table.Header>
+                <Table.Row>
+                  <Table.Head>Email</Table.Head>
+                  <Table.Head>Role</Table.Head>
+                  <Table.Head>Expires</Table.Head>
+                  <Table.Head className="w-0">
+                    <span className="sr-only">Actions</span>
+                  </Table.Head>
+                </Table.Row>
+              </Table.Header>
+              <Table.Body>
+                {invitationPagination.items.map((invitation) => (
+                  <Table.Row key={invitation.id}>
+                    <Table.Cell>{invitation.email}</Table.Cell>
+                    <Table.Cell>
+                      <Badge variant="secondary" className="rounded-md text-base">
+                        {ROLES[invitation.role as keyof typeof ROLES] ?? invitation.role}
+                      </Badge>
+                    </Table.Cell>
+                    <Table.Cell>
+                      <RelativeTime value={invitation.expiresAt} />
+                    </Table.Cell>
+                    <Table.Cell>
+                      <InvitationActions invitationId={invitation.id} disabled={!canManage} />
+                    </Table.Cell>
+                  </Table.Row>
+                ))}
+              </Table.Body>
+            </Table>
           )}
         </section>
       </PageBody>

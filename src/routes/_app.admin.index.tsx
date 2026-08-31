@@ -1,3 +1,4 @@
+import { Table, TablePagination, useTablePagination } from '#/components/table.tsx'
 import {
   Badge,
   Banner,
@@ -5,16 +6,12 @@ import {
   Dialog,
   DropdownMenu,
   Input,
-  LayerCard,
-  Loader,
   Select,
-  Table,
   Text,
   useKumoToastManager,
 } from '@cloudflare/kumo'
 import {
   DotsThreeIcon,
-  MagnifyingGlassIcon,
   ProhibitIcon,
   TrashIcon,
   UserCircleIcon,
@@ -24,6 +21,7 @@ import {
 import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
+import { ListToolbar } from '#/components/list.tsx'
 
 import { MenuRadioItem } from '#/components/menu-radio-item.tsx'
 import { PageBody, StatTile } from '#/components/page.tsx'
@@ -75,6 +73,8 @@ function AdminUsers() {
     },
   })
 
+  const pagination = useTablePagination(users.data ?? [], search)
+
   return (
     <PageBody className="grid gap-8">
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -93,21 +93,6 @@ function AdminUsers() {
             <Text variant="secondary">Promote, ban or remove accounts across the instance.</Text>
           </div>
           <div className="flex items-center gap-2">
-            <Input
-              aria-label="Search by email"
-              placeholder="Search by email"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              className="w-56"
-            />
-            <Button
-              variant="secondary"
-              shape="square"
-              aria-label="Search"
-              onClick={() => void users.refetch()}
-            >
-              <MagnifyingGlassIcon size={16} />
-            </Button>
             <Button variant="primary" onClick={() => setCreating(true)}>
               New user
             </Button>
@@ -123,68 +108,83 @@ function AdminUsers() {
           />
         ) : null}
 
-        {users.isPending ? (
-          <LayerCard className="flex items-center justify-center px-5 py-10">
-            <Loader size={20} />
-          </LayerCard>
-        ) : (
-          <LayerCard className="p-0">
-            <div className="overflow-x-auto">
-              <Table>
-                <Table.Header>
-                  <Table.Row>
-                    <Table.Head>Name</Table.Head>
-                    <Table.Head>Email</Table.Head>
-                    <Table.Head>Role</Table.Head>
-                    <Table.Head>Status</Table.Head>
-                    <Table.Head>Joined</Table.Head>
-                    <Table.Head className="w-0" />
-                  </Table.Row>
-                </Table.Header>
-                <Table.Body>
-                  {(users.data ?? []).map((user) => (
-                    <Table.Row key={user.id}>
-                      <Table.Cell>
-                        <span className="flex items-center gap-2">
-                          <UserCircleIcon size={16} className="text-kumo-subtle" />
-                          {user.name}
-                          {user.id === session.user.id ? (
-                            <Badge variant="neutral">You</Badge>
-                          ) : null}
-                        </span>
-                      </Table.Cell>
-                      <Table.Cell>
-                        <Text as="span" variant="secondary">
-                          {user.email}
-                        </Text>
-                      </Table.Cell>
-                      <Table.Cell>
-                        <Badge variant={user.role === 'admin' ? 'primary' : 'neutral'}>
-                          {user.role ?? 'user'}
-                        </Badge>
-                      </Table.Cell>
-                      <Table.Cell>
-                        {user.banned ? (
-                          <Badge variant="error" appearance="dot">
-                            Banned
-                          </Badge>
-                        ) : (
-                          <Badge variant="success" appearance="dot">
-                            Active
-                          </Badge>
-                        )}
-                      </Table.Cell>
-                      <Table.Cell>{formatDate(user.createdAt)}</Table.Cell>
-                      <Table.Cell>
-                        <UserActions user={user} isSelf={user.id === session.user.id} />
-                      </Table.Cell>
-                    </Table.Row>
-                  ))}
-                </Table.Body>
-              </Table>
-            </div>
-          </LayerCard>
-        )}
+        <Table
+          label="Users"
+          footer={<TablePagination {...pagination} />}
+          toolbar={
+            <ListToolbar
+              value={search}
+              onValueChange={setSearch}
+              placeholder="Search by email"
+              onRefresh={() => void users.refetch()}
+              refreshing={users.isFetching}
+            />
+          }
+        >
+          <Table.Header>
+            <Table.Row>
+              <Table.Head>Name</Table.Head>
+              <Table.Head>Email</Table.Head>
+              <Table.Head>Role</Table.Head>
+              <Table.Head>Status</Table.Head>
+              <Table.Head>Joined</Table.Head>
+              <Table.Head className="w-0">
+                <span className="sr-only">Actions</span>
+              </Table.Head>
+            </Table.Row>
+          </Table.Header>
+          <Table.Body>
+            {pagination.items.map((user) => (
+              <Table.Row key={user.id}>
+                <Table.Cell>
+                  <span className="flex items-center gap-2 font-medium whitespace-nowrap">
+                    <UserCircleIcon size={16} className="text-kumo-subtle" />
+                    {user.name}
+                    {user.id === session.user.id ? (
+                      <Badge variant="secondary" className="rounded-md text-base">
+                        You
+                      </Badge>
+                    ) : null}
+                  </span>
+                </Table.Cell>
+                <Table.Cell>
+                  <Text as="span" variant="secondary">
+                    {user.email}
+                  </Text>
+                </Table.Cell>
+                <Table.Cell>
+                  <Badge variant="secondary" className="rounded-md text-base">
+                    {user.role ?? 'user'}
+                  </Badge>
+                </Table.Cell>
+                <Table.Cell>
+                  {user.banned ? (
+                    <Badge variant="error" className="rounded-md text-base">
+                      Banned
+                    </Badge>
+                  ) : (
+                    <Badge variant="success" className="rounded-md text-base">
+                      Active
+                    </Badge>
+                  )}
+                </Table.Cell>
+                <Table.Cell className="whitespace-nowrap text-kumo-subtle">
+                  {formatDate(user.createdAt)}
+                </Table.Cell>
+                <Table.Cell>
+                  <UserActions user={user} isSelf={user.id === session.user.id} />
+                </Table.Cell>
+              </Table.Row>
+            ))}
+            {pagination.items.length === 0 ? (
+              <Table.Empty
+                columns={6}
+                message={users.isPending ? 'Loading users…' : 'No users found'}
+                onClear={search && !users.isPending ? () => setSearch('') : undefined}
+              />
+            ) : null}
+          </Table.Body>
+        </Table>
       </section>
 
       <CreateUserDialog open={creating} onOpenChange={setCreating} />
