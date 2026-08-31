@@ -1,3 +1,5 @@
+import { AuthError } from './auth-error.ts'
+export { AuthError } from './auth-error.ts'
 import { env } from 'cloudflare:workers'
 import { createMiddleware, createServerOnlyFn } from '@tanstack/react-start'
 import { getRequest } from '@tanstack/react-start/server'
@@ -12,16 +14,6 @@ export const getDb = createServerOnlyFn(() => createDb(env.DB))
 export const readSession = createServerOnlyFn(() =>
   getAuth().api.getSession({ headers: getRequest().headers }),
 )
-
-export class AuthError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-  ) {
-    super(message)
-    this.name = 'AuthError'
-  }
-}
 
 export const authMiddleware = createMiddleware({ type: 'function' }).server(async ({ next }) => {
   const result = await readSession()

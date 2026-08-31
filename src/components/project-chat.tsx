@@ -89,9 +89,9 @@ export function ProjectChatTab({ projectId }: { projectId: string }) {
 
         <Composer value={draft} onValueChange={setDraft} onSubmit={submit} busy={chat.busy} />
 
-        <Text variant="secondary" size="xs">
-          Actions here are the same ones the rest of the app runs. Credentials you paste are stored
-          encrypted and removed from the transcript.
+        <Text variant="secondary" size="base">
+          Store credentials in Environments. Chat messages are sent to the selected AI provider;
+          detected credentials are encrypted and redacted from the saved transcript.
         </Text>
       </div>
     </div>
@@ -114,18 +114,29 @@ function Transcript({
   onSuggestion: (text: string) => void
 }) {
   const bottom = useRef<HTMLDivElement>(null)
+  const following = useRef(true)
+  useEffect(() => {
+    const container = bottom.current?.closest('main')
+    if (!container) return
+    const track = () => {
+      following.current =
+        container.scrollHeight - container.scrollTop - container.clientHeight < 180
+    }
+    container.addEventListener('scroll', track, { passive: true })
+    return () => container.removeEventListener('scroll', track)
+  }, [empty])
 
   // Layout effect rather than effect: scrolling after paint shows one frame of
   // the previous position, which reads as a jump on every token.
   useLayoutEffect(() => {
-    bottom.current?.scrollIntoView({ block: 'end' })
+    if (following.current) bottom.current?.scrollIntoView({ block: 'end' })
   }, [messages, pending])
 
   if (loading && empty) {
     return (
       <div className="flex flex-1 items-center justify-center gap-2">
         <Loader size="sm" />
-        <Text as="span" variant="secondary" size="xs">
+        <Text as="span" variant="secondary" size="base">
           Loading the conversation…
         </Text>
       </div>
@@ -186,7 +197,7 @@ function MessageRow({ message, projectId }: { message: ChatMessageWire; projectI
             <PartView key={index} part={part} projectId={projectId} />
           ))}
         </div>
-        <Text as="span" variant="secondary" size="xs">
+        <Text as="span" variant="secondary" size="base">
           {message.createdByName ?? 'You'} · <RelativeTime value={message.createdAt} />
         </Text>
       </div>
@@ -199,7 +210,7 @@ function MessageRow({ message, projectId }: { message: ChatMessageWire; projectI
         <PartView key={index} part={part} projectId={projectId} />
       ))}
       {message.status === 'error' ? (
-        <Text as="span" variant="secondary" size="xs">
+        <Text as="span" variant="secondary" size="base">
           The assistant did not finish this turn.
         </Text>
       ) : null}
@@ -227,7 +238,7 @@ function PendingRow({ pending, projectId }: { pending: PendingMessage; projectId
       {pending.parts.length === 0 && unfinished.length === 0 ? (
         <div className="flex items-center gap-2">
           <Loader size="sm" />
-          <Text as="span" variant="secondary" size="xs">
+          <Text as="span" variant="secondary" size="base">
             Thinking…
           </Text>
         </div>
@@ -255,7 +266,7 @@ function ToolRow({ call }: { call: LiveToolCall }) {
           <XIcon size={12} weight="bold" className="text-kumo-danger" />
         )}
       </span>
-      <Text as="span" variant="secondary" size="xs">
+      <Text as="span" variant="secondary" size="base">
         {call.ok === false && call.detail ? `${call.summary} — ${call.detail}` : call.summary}
       </Text>
     </li>
@@ -373,7 +384,9 @@ function Composer({
           ref={field}
           className="flex-1"
           aria-label="Message"
-          placeholder={busy ? 'Working…' : 'Ask for a test, or paste your URL and credentials'}
+          placeholder={
+            busy ? 'Working…' : 'Describe a test, paste an app URL, or ask to run the suite'
+          }
           autoResize
           minRows={1}
           maxRows={8}

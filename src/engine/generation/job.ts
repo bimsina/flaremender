@@ -23,7 +23,7 @@
  *   That proves each step in isolation and proves nothing about the whole: a
  *   flow assembled from twenty such fragments has never been executed from a
  *   cold browser in one go. So it is — through the ordinary run path, fresh
- *   session, tracing on. Only that run may make an intent `'passing'`.
+ *   session, tracing on. This verification remains separate from regression.
  *
  * The caps exist because the failure mode of an agent loop is not stopping. A
  * generation is bounded by turns, by tool calls per turn, by fragment size, by

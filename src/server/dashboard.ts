@@ -1,7 +1,7 @@
 import { createServerFn } from '@tanstack/react-start'
-import { and, count, desc, eq, gte, sql } from 'drizzle-orm'
+import { and, count, desc, eq, gte, inArray, sql } from 'drizzle-orm'
 
-import { attempt, environment, intent, project, run } from '#/db/schema/app.ts'
+import { attempt, environment, intent, project, run, scriptVersion } from '#/db/schema/app.ts'
 import { orgMiddleware } from './auth.ts'
 import { assertProject } from './scope.ts'
 import { has, str } from './validate.ts'
@@ -36,9 +36,11 @@ export const getOrgOverview = createServerFn({ method: 'GET' })
         durationMs: sql<number | null>`sum(${attempt.durationMs})`,
         startedAt: run.startedAt,
         trigger: run.trigger,
+        purpose: run.purpose,
+        version: scriptVersion.version,
         intentId: run.intentId,
         intentTitle: intent.title,
-        environmentName: environment.name,
+        environmentName: sql<string>`coalesce(${run.environmentName}, ${environment.name})`,
         projectId: project.id,
         projectName: project.name,
       })
@@ -46,6 +48,7 @@ export const getOrgOverview = createServerFn({ method: 'GET' })
       .innerJoin(intent, eq(intent.id, run.intentId))
       .innerJoin(project, eq(project.id, run.projectId))
       .innerJoin(environment, eq(environment.id, run.environmentId))
+      .innerJoin(scriptVersion, eq(scriptVersion.id, run.scriptVersionId))
       .leftJoin(attempt, eq(attempt.runId, run.id))
       .where(eq(project.organizationId, context.organizationId))
       .groupBy(run.id)
@@ -57,14 +60,14 @@ export const getOrgOverview = createServerFn({ method: 'GET' })
     // the two would hide exactly the signal the healing loop exists to produce.
     const [runTotals] = await context.db
       .select({
-        runs: count(run.id),
+        runs: sql<number>`sum(case when ${run.status} in ('passed','healed','failed','error') then 1 else 0 end)`,
         passed: sql<number>`sum(case when ${run.status} = 'passed' then 1 else 0 end)`,
         healed: sql<number>`sum(case when ${run.status} = 'healed' then 1 else 0 end)`,
         failed: sql<number>`sum(case when ${run.status} in ('failed','error') then 1 else 0 end)`,
       })
       .from(run)
       .innerJoin(project, eq(project.id, run.projectId))
-      .where(eq(project.organizationId, context.organizationId))
+      .where(and(eq(project.organizationId, context.organizationId), eq(run.purpose, 'regression')))
 
     return {
       projects: Number(totals?.projects ?? 0),
@@ -125,6 +128,7 @@ export const getDailyRunCounts = createServerFn({ method: 'GET' })
     const since = startOfToday - (TREND_DAYS - 1) * 86_400_000
 
     const filters = [
+      eq(run.purpose, 'regression'),
       eq(project.organizationId, context.organizationId),
       gte(run.startedAt, new Date(since)),
     ]
@@ -167,4 +171,38 @@ export const getDailyRunCounts = createServerFn({ method: 'GET' })
         total: Number(row?.total ?? 0),
       }
     })
+  })
+
+export const getProjectOverview = createServerFn({ method: 'GET' })
+  .middleware([orgMiddleware])
+  .validator((data: unknown) => ({
+    projectId: str(data, 'projectId'),
+    environmentId: has(data, 'environmentId') ? str(data, 'environmentId') : null,
+  }))
+  .handler(async ({ data, context }) => {
+    await assertProject(context.db, context.organizationId, data.projectId)
+    const filters = [eq(run.projectId, data.projectId), eq(run.purpose, 'regression')]
+    if (data.environmentId) filters.push(eq(run.environmentId, data.environmentId))
+    const readRows = (failuresOnly: boolean) =>
+      context.db
+        .select({
+          id: run.id,
+          status: run.status,
+          startedAt: run.startedAt,
+          intentId: intent.id,
+          title: intent.title,
+          scriptVersionId: run.scriptVersionId,
+          version: scriptVersion.version,
+          environmentName: sql<string>`coalesce(${run.environmentName}, ${environment.name})`,
+          errorMessage: run.errorMessage,
+        })
+        .from(run)
+        .innerJoin(intent, eq(intent.id, run.intentId))
+        .innerJoin(scriptVersion, eq(scriptVersion.id, run.scriptVersionId))
+        .innerJoin(environment, eq(environment.id, run.environmentId))
+        .where(and(...filters, failuresOnly ? inArray(run.status, ['failed', 'error']) : undefined))
+        .orderBy(desc(run.startedAt), desc(run.id))
+        .limit(failuresOnly ? 5 : 8)
+    const [recent, failures] = await Promise.all([readRows(false), readRows(true)])
+    return { recent, failures }
   })

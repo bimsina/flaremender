@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reliability lab</title>
+<style>
+body { font: 16px system-ui; max-width: 720px; margin: 40px auto; padding: 24px; color: #172238; background: #f6f8fb; }
+section { background: white; border: 1px solid #ccd3df; border-radius: 8px; padding: 20px; margin: 20px 0; }
+label { display: grid; gap: 6px; margin: 12px 0; } input,button { font: inherit; padding: 8px 12px; }
+button { cursor: pointer; } li { margin: 12px 0; } li button { margin-left: 8px; }
+[role=alert] { color: #a32323; } [hidden] { display: none; }
+</style>
+<h1>Reliability lab</h1>
+<p>A local fixture. Every browser context starts with its own empty data.</p>
+<section id="signed-out">
+  <h2>Sign in</h2>
+  <p>Fixture account: demo@lab.test / fixtures-only</p>
+  <form id="login" novalidate>
+    <label>Email <input name="email" type="email" autocomplete="username"></label>
+    <label>Password <input name="password" type="password" autocomplete="current-password"></label>
+    <button>Sign in</button>
+  </form>
+  <p role="alert" id="login-error"></p>
+</section>
+<section id="signed-in" hidden>
+  <h2>Welcome, demo</h2><button id="logout">Sign out</button>
+</section>
+<section>
+  <h2>Tasks</h2>
+  <form id="task-form" novalidate>
+    <label>Task name <input name="name" maxlength="80"></label>
+    <label><span><input type="checkbox" name="delay"> Delay saving</span></label>
+    <button id="save">Add task</button>
+  </form>
+  <p role="alert" id="task-error"></p>
+  <p role="status" id="status">Ready</p>
+  <p id="count">0 tasks</p>
+  <ul id="tasks"></ul>
+</section>
+<script>
+const login = document.querySelector('#login');
+const form = document.querySelector('#task-form');
+const error = document.querySelector('#task-error');
+const status = document.querySelector('#status');
+const list = document.querySelector('#tasks');
+let tasks = JSON.parse(localStorage.getItem('lab-tasks') || '[]');
+let editing = null;
+function session() {
+  const active = sessionStorage.getItem('lab-session') === 'demo';
+  document.querySelector('#signed-in').hidden = !active;
+  document.querySelector('#signed-out').hidden = active;
+}
+login.addEventListener('submit', event => {
+  event.preventDefault();
+  if (login.elements.email.value !== 'demo@lab.test' || login.elements.password.value !== 'fixtures-only') {
+    document.querySelector('#login-error').textContent = 'Email or password is incorrect'; return;
+  }
+  sessionStorage.setItem('lab-session', 'demo'); session();
+});
+document.querySelector('#logout').onclick = () => { sessionStorage.removeItem('lab-session'); session(); };
+function render() {
+  localStorage.setItem('lab-tasks', JSON.stringify(tasks));
+  list.replaceChildren();
+  document.querySelector('#count').textContent = `${tasks.length} task${tasks.length === 1 ? '' : 's'}`;
+  for (const [index, value] of tasks.entries()) {
+    const item = document.createElement('li');
+    const text = document.createElement('span'); text.textContent = value;
+    const edit = document.createElement('button'); edit.textContent = 'Edit'; edit.setAttribute('aria-label', `Edit ${value}`);
+    edit.onclick = () => { editing = index; form.elements.name.value = value; document.querySelector('#save').textContent = 'Save task'; };
+    const remove = document.createElement('button'); remove.textContent = 'Delete'; remove.setAttribute('aria-label', `Delete ${value}`);
+    remove.onclick = () => { tasks.splice(index, 1); status.textContent = 'Task deleted'; render(); };
+    item.append(text, edit, remove); list.append(item);
+  }
+}
+form.addEventListener('submit', async event => {
+  event.preventDefault(); error.textContent = '';
+  const name = form.elements.name.value.trim();
+  if (!name) { error.textContent = 'Enter a task name'; return; }
+  if (tasks.some((item, index) => index !== editing && item.toLowerCase() === name.toLowerCase())) { error.textContent = 'A task with that name already exists'; return; }
+  const button = document.querySelector('#save'); button.disabled = true; status.textContent = 'Saving…';
+  if (form.elements.delay.checked) await new Promise(resolve => setTimeout(resolve, 700));
+  if (editing === null) tasks.push(name); else tasks[editing] = name;
+  editing = null; form.elements.name.value = ''; button.textContent = 'Add task'; button.disabled = false;
+  status.textContent = 'Task saved'; render();
+});
+session(); render();
+</script>
+</html>

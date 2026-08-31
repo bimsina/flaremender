@@ -41,7 +41,7 @@ const FILTERS = {
   all: 'All projects',
   failing: 'Has failures',
   passing: 'All passing',
-  empty: 'No intents yet',
+  empty: 'No tests yet',
 } as const
 
 type Filter = keyof typeof FILTERS
@@ -85,7 +85,7 @@ function Projects() {
     <>
       <PageHeader
         title="Projects"
-        description="Each project owns its environments, its intents and their run history."
+        description="Each project owns its environments, its tests and their run history."
         actions={
           <Button variant="primary" icon={<PlusIcon size={16} />} onClick={() => setCreating(true)}>
             Create project
@@ -98,7 +98,7 @@ function Projects() {
           <Empty
             icon={<FolderIcon size={48} className="text-kumo-inactive" />}
             title="No projects found"
-            description="A project is a set of environments plus the intents that run against them."
+            description="A project is a set of environments plus the tests that run against them."
             contents={
               <Button
                 variant="primary"
@@ -113,7 +113,7 @@ function Projects() {
           <>
             <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <StatTile label="Projects" value={projects.length} />
-              <StatTile label="Intents" value={totals.intents} />
+              <StatTile label="Tests" value={totals.intents} />
               <StatTile
                 label="Passing"
                 value={totals.passing}
@@ -166,12 +166,12 @@ function Projects() {
                         </Link>
                       }
                       subtitle={
-                        <Text variant="secondary" size="xs" truncate>
+                        <Text variant="secondary" size="base" truncate>
                           {project.description ?? `/${project.slug}`}
                         </Text>
                       }
                       meta={
-                        <Text as="span" variant="secondary" size="xs">
+                        <Text as="span" variant="secondary" size="base">
                           Updated <RelativeTime value={project.updatedAt} />
                         </Text>
                       }
@@ -183,7 +183,7 @@ function Projects() {
                           </Text>
                           <div className="flex shrink-0 items-center gap-2">
                             <Badge variant="neutral">
-                              {project.intentCount} intent{project.intentCount === 1 ? '' : 's'}
+                              {project.intentCount} test{project.intentCount === 1 ? '' : 's'}
                             </Badge>
                             {project.passingCount > 0 ? (
                               <Badge variant="success" appearance="dot">
@@ -200,7 +200,7 @@ function Projects() {
                                 waiting for a person, not a test this project
                                 has. */}
                             {project.proposedCount > 0 ? (
-                              <Badge variant="purple" appearance="dot">
+                              <Badge variant="neutral" appearance="dot">
                                 {project.proposedCount} proposed
                               </Badge>
                             ) : null}
@@ -241,7 +241,7 @@ function ProjectActions({ projectId }: { projectId: string }) {
       />
       <DropdownMenu.Content>
         <DropdownMenu.Item icon={TestTubeIcon} onClick={() => open('intents')}>
-          Intents
+          Tests
         </DropdownMenu.Item>
         <DropdownMenu.Item icon={StackIcon} onClick={() => open('environments')}>
           Environments

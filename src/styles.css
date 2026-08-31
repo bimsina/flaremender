@@ -15,3 +15,17 @@ body,
 body {
   margin: 0;
 }
+
+/* Keyboard focus is visible on links as well as composed controls. */
+a:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--color-kumo-focus);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+.project-tabs {
+  scrollbar-width: thin;
+}
+.project-tabs [role='tablist'] {
+  min-width: max-content;
+}

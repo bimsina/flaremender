@@ -1,7 +1,9 @@
-import { Button, Empty, LayerCard, Table, Text } from '@cloudflare/kumo'
+import { LinkButton, Empty, LayerCard, Table, Text } from '@cloudflare/kumo'
 import { ArrowRightIcon, FolderIcon, PlusIcon } from '@phosphor-icons/react'
 import { useSuspenseQuery } from '@tanstack/react-query'
-import { Link, createFileRoute } from '@tanstack/react-router'
+import { Link, createLink, createFileRoute } from '@tanstack/react-router'
+
+const RouterLinkButton = createLink(LinkButton)
 
 import { PageBody, PageHeader, StatTile } from '#/components/page.tsx'
 import { RunTrend } from '#/components/run-trend.tsx'
@@ -41,11 +43,9 @@ function Dashboard() {
           activeOrg ? `Suite health for ${activeOrg.name}.` : 'Suite health for this organization.'
         }
         actions={
-          <Link to="/projects">
-            <Button variant="primary" icon={<PlusIcon size={16} />}>
-              New project
-            </Button>
-          </Link>
+          <RouterLinkButton to="/projects" variant="primary" icon={PlusIcon}>
+            New project
+          </RouterLinkButton>
         }
       />
 
@@ -53,7 +53,7 @@ function Dashboard() {
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatTile label="Projects" value={data.projects} />
           <StatTile
-            label="Intents"
+            label="Tests"
             value={data.intents}
             hint={`${data.passing} passing · ${data.failing} failing`}
           />
@@ -72,7 +72,7 @@ function Dashboard() {
             hint={
               data.pending === 0
                 ? `${data.failedRuns} failed`
-                : `${data.failedRuns} failed · ${data.pending} never run`
+                : `${data.failedRuns} failed · ${data.pending} awaiting regression`
             }
           />
         </section>
@@ -87,11 +87,9 @@ function Dashboard() {
               </Text>
               <Text variant="secondary">The last few executions across every project.</Text>
             </div>
-            <Link to="/projects">
-              <Button variant="ghost" size="sm" icon={<ArrowRightIcon size={14} />}>
-                All projects
-              </Button>
-            </Link>
+            <RouterLinkButton to="/projects" variant="ghost" size="sm" icon={ArrowRightIcon}>
+              All projects
+            </RouterLinkButton>
           </div>
 
           {data.recentRuns.length === 0 ? (
@@ -99,13 +97,11 @@ function Dashboard() {
               size="sm"
               icon={<FolderIcon size={32} className="text-kumo-inactive" />}
               title="Nothing has run yet"
-              description="Create a project, describe an intent, write its script, then run it."
+              description="Create a project, describe a test, write its script, then run it."
               contents={
-                <Link to="/projects">
-                  <Button variant="primary" icon={<PlusIcon size={16} />}>
-                    Create a project
-                  </Button>
-                </Link>
+                <RouterLinkButton to="/projects" variant="primary" icon={PlusIcon}>
+                  Create a project
+                </RouterLinkButton>
               }
             />
           ) : (
@@ -114,7 +110,7 @@ function Dashboard() {
                 <Table>
                   <Table.Header>
                     <Table.Row>
-                      <Table.Head>Intent</Table.Head>
+                      <Table.Head>Test</Table.Head>
                       <Table.Head>Project</Table.Head>
                       <Table.Head>Environment</Table.Head>
                       <Table.Head>Status</Table.Head>
@@ -128,8 +124,8 @@ function Dashboard() {
                       <Table.Row key={run.id}>
                         <Table.Cell>
                           <Link
-                            to="/projects/$projectId/intents/$intentId"
-                            params={{ projectId: run.projectId, intentId: run.intentId }}
+                            to="/projects/$projectId/runs/$runId"
+                            params={{ projectId: run.projectId, runId: run.id }}
                             className="text-kumo-link underline underline-offset-2"
                           >
                             {run.intentTitle}
@@ -151,6 +147,16 @@ function Dashboard() {
                         </Table.Cell>
                         <Table.Cell>
                           <RunStatusBadge status={run.status} />
+                          <div className="mt-1">
+                            <Text variant="secondary">
+                              {run.purpose === 'draft-check'
+                                ? 'Draft check'
+                                : run.purpose === 'generation-verification'
+                                  ? 'Verification'
+                                  : 'Regression'}{' '}
+                              · v{run.version}
+                            </Text>
+                          </div>
                         </Table.Cell>
                         <Table.Cell>
                           <Text as="span" variant="mono-secondary">

@@ -6,7 +6,7 @@
  * already aggregates so the healing loop can append attempts without a rewrite.
  */
 import { createServerFn } from '@tanstack/react-start'
-import { and, asc, desc, eq, sql } from 'drizzle-orm'
+import { and, desc, eq, sql } from 'drizzle-orm'
 
 import {
   RUN_STATUSES,
@@ -18,6 +18,7 @@ import {
   scriptVersion,
 } from '#/db/schema/app.ts'
 import { runIdFromKey } from '#/engine/runner/artifacts.ts'
+import { readRunReport } from './reports.server.ts'
 import { orgMiddleware } from './auth.ts'
 import { assertProject, loadIntent, loadRun } from './scope.ts'
 import { SIGNATURE_TTL_SECONDS, signArtifactKey } from './sign.ts'
@@ -48,13 +49,14 @@ export const listRuns = createServerFn({ method: 'GET' })
         id: run.id,
         status: run.status,
         trigger: run.trigger,
+        purpose: run.purpose,
         // Null for a run started on its own; the UI labels the rest as part of
         // a "Run all" rather than leaving them looking spontaneous.
         suiteRunId: run.suiteRunId,
         startedAt: run.startedAt,
         finishedAt: run.finishedAt,
         environmentId: run.environmentId,
-        environmentName: environment.name,
+        environmentName: sql<string>`coalesce(${run.environmentName}, ${environment.name})`,
         scriptVersionId: run.scriptVersionId,
         version: scriptVersion.version,
         attemptCount: sql<number>`count(${attempt.id})`,
@@ -113,13 +115,14 @@ export const listProjectRuns = createServerFn({ method: 'GET' })
         id: run.id,
         status: run.status,
         trigger: run.trigger,
+        purpose: run.purpose,
         suiteRunId: run.suiteRunId,
         startedAt: run.startedAt,
         finishedAt: run.finishedAt,
         intentId: run.intentId,
         intentTitle: intent.title,
         environmentId: run.environmentId,
-        environmentName: environment.name,
+        environmentName: sql<string>`coalesce(${run.environmentName}, ${environment.name})`,
         scriptVersionId: run.scriptVersionId,
         version: scriptVersion.version,
         attemptCount: sql<number>`count(${attempt.id})`,
@@ -151,57 +154,7 @@ export const getRun = createServerFn({ method: 'GET' })
   .middleware([orgMiddleware])
   .validator((data: unknown) => ({ runId: str(data, 'runId') }))
   .handler(async ({ data, context }) => {
-    const scoped = await loadRun(context.db, context.organizationId, data.runId)
-
-    const [row] = await context.db
-      .select({
-        run,
-        environmentName: environment.name,
-        baseUrl: environment.baseUrl,
-        version: scriptVersion.version,
-        intentId: intent.id,
-        intentTitle: intent.title,
-      })
-      .from(run)
-      .innerJoin(environment, eq(environment.id, run.environmentId))
-      .innerJoin(scriptVersion, eq(scriptVersion.id, run.scriptVersionId))
-      .innerJoin(intent, eq(intent.id, run.intentId))
-      .where(eq(run.id, scoped.run.id))
-      .limit(1)
-
-    const attempts = await context.db
-      .select({
-        id: attempt.id,
-        attemptNumber: attempt.attemptNumber,
-        outcome: attempt.outcome,
-        diagnosis: attempt.diagnosis,
-        scriptVersionId: attempt.scriptVersionId,
-        // The exact text that ran, not the version's current code: restoring or
-        // re-saving must not rewrite what an old attempt is shown to have done.
-        scriptUsed: attempt.scriptUsed,
-        healApplied: attempt.healApplied,
-        artifactKeys: attempt.artifactKeys,
-        logs: attempt.logs,
-        errorMessage: attempt.errorMessage,
-        durationMs: attempt.durationMs,
-        createdAt: attempt.createdAt,
-      })
-      .from(attempt)
-      .where(eq(attempt.runId, scoped.run.id))
-      .orderBy(asc(attempt.attemptNumber))
-
-    return {
-      run: row!.run,
-      environment: {
-        id: row!.run.environmentId,
-        name: row!.environmentName,
-        baseUrl: row!.baseUrl,
-      },
-      scriptVersion: { id: row!.run.scriptVersionId, version: row!.version },
-      intent: { id: row!.intentId, title: row!.intentTitle },
-      project: { id: scoped.project.id, name: scoped.project.name },
-      attempts,
-    }
+    return readRunReport(context.db, context.organizationId, data.runId)
   })
 
 /**

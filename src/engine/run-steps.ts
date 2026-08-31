@@ -30,17 +30,10 @@
 import { and, eq, inArray } from 'drizzle-orm'
 import { NonRetryableError } from 'cloudflare:workflows'
 
+import { recordRunError, recordRunResult } from './run-records.ts'
 import { createDb } from '#/db/index.ts'
-import type { ArtifactKeys, RunStatus } from '#/db/schema/app.ts'
-import {
-  attempt,
-  environment,
-  environmentVariable,
-  intent,
-  project,
-  run,
-  scriptVersion,
-} from '#/db/schema/app.ts'
+import type { ArtifactKeys, RunPurpose, RunStatus } from '#/db/schema/app.ts'
+import { environment, environmentVariable, project, run, scriptVersion } from '#/db/schema/app.ts'
 import type { RunEvent, RunOutcome, RunResult } from '#/engine/contract.ts'
 import { artifactPrefix, writeArtifacts } from '#/engine/runner/artifacts.ts'
 import { executeInDynamicWorker, releaseBrowserSession } from '#/engine/runner/loader.ts'
@@ -56,11 +49,14 @@ export interface LoadedRun {
   code: string
   baseUrl: string
   prefix: string
+  purpose: RunPurpose
+  startedAt: number
 }
 
 export interface ExecutedRun {
   result: RunResult
   artifactKeys: ArtifactKeys
+  artifactWarnings?: Array<string>
   /**
    * The Browser Rendering session this run used, when it was told to keep one
    * alive. Null for a standalone run, which takes a session and ends it.
@@ -84,9 +80,6 @@ export interface SessionReuse {
   /** Leave it running afterwards, because another member is coming. */
   keepAlive: boolean
 }
-
-/** One attempt per run until the healing loop appends more. */
-const ATTEMPT_NUMBER = 1
 
 /**
  * The retry policy for the one step that touches the outside world. Shared so a
@@ -157,8 +150,14 @@ export async function loadRun(
 
   await db
     .update(run)
-    .set({ status: 'running', artifactPrefix: prefix, workflowInstanceId: runId })
-    .where(eq(run.id, runId))
+    .set({
+      status: 'running',
+      artifactPrefix: prefix,
+      workflowInstanceId: runId,
+      environmentName: row.run.environmentName ?? row.environment.name,
+      baseUrl: row.run.baseUrl ?? row.environment.baseUrl,
+    })
+    .where(and(eq(run.id, runId), inArray(run.status, ['queued', 'running'])))
 
   await announceRun(env, runId, { type: 'run.started', runId, at: Date.now() })
 
@@ -168,7 +167,9 @@ export async function loadRun(
     environmentId: row.run.environmentId,
     scriptVersionId: row.run.scriptVersionId,
     code: row.scriptVersion.code,
-    baseUrl: row.environment.baseUrl,
+    baseUrl: row.run.baseUrl ?? row.environment.baseUrl,
+    purpose: row.run.purpose,
+    startedAt: row.run.startedAt.getTime(),
     prefix,
   }
 }
@@ -214,6 +215,7 @@ export async function executeRun(
   const scrubber = createScrubber(Object.values(creds))
 
   let result: RunResult
+  let captureWarnings: Array<string> = []
   let screenshot: ArrayBuffer | null = null
   let trace: ArrayBuffer | null = null
   // Reported back even when the script blew up, so a suite always knows which
@@ -258,6 +260,7 @@ export async function executeRun(
       )
     }
 
+    captureWarnings = response.artifactWarnings ?? []
     result = response.result
     screenshot = response.screenshot
     trace = response.trace
@@ -299,9 +302,12 @@ export async function executeRun(
     result: scrubbed,
   })
 
-  for (const failure of failures) scrubbed.logs.push(`[engine] artifact upload failed — ${failure}`)
-
-  return { result: scrubbed, artifactKeys: keys, sessionId }
+  return {
+    result: scrubbed,
+    artifactKeys: keys,
+    artifactWarnings: [...captureWarnings, ...failures].map(scrubber.text),
+    sessionId,
+  }
 }
 
 /**
@@ -343,45 +349,13 @@ export async function persistRun(
   executed: ExecutedRun,
 ): Promise<{ runId: string; status: RunStatus }> {
   const db = createDb(env.DB)
-  const status = OUTCOME_TO_RUN_STATUS[executed.result.outcome]
-
-  // Every line of an error is indented, not just its first: the UI reads this
-  // column back into steps, and a Playwright error runs to a dozen lines whose
-  // second onwards would otherwise be indistinguishable from console output.
-  const transcript = [
-    ...executed.result.steps.map((step) => {
-      const head = `${step.ok ? '✓' : '✘'} ${step.label} (${step.durationMs}ms)`
-      if (!step.error) return head
-      return [head, ...step.error.split('\n').map((line) => `    ${line}`)].join('\n')
-    }),
-    ...(executed.result.logs.length > 0 ? ['', ...executed.result.logs] : []),
-  ].join('\n')
-
-  await db.batch([
-    // Deterministic id + do-nothing: `persist` is a retryable step, and the
-    // `(runId, attemptNumber)` unique index would otherwise turn a retry into
-    // a permanent failure.
-    db
-      .insert(attempt)
-      .values({
-        id: `att_${runId.replace(/^run_/, '')}_${ATTEMPT_NUMBER}`,
-        runId,
-        attemptNumber: ATTEMPT_NUMBER,
-        outcome: executed.result.outcome,
-        scriptVersionId: loaded.scriptVersionId,
-        scriptUsed: loaded.code,
-        artifactKeys: executed.artifactKeys,
-        logs: transcript,
-        errorMessage: executed.result.errorMessage,
-        durationMs: executed.result.durationMs,
-      })
-      .onConflictDoNothing(),
-    db.update(run).set({ status, finishedAt: new Date() }).where(eq(run.id, runId)),
-    db
-      .update(intent)
-      .set({ status: status === 'passed' ? 'passing' : 'failing', lastRunId: runId })
-      .where(eq(intent.id, loaded.intentId)),
-  ])
+  const status = await recordRunResult(
+    db,
+    runId,
+    loaded,
+    executed,
+    OUTCOME_TO_RUN_STATUS[executed.result.outcome],
+  )
 
   await announceRun(
     env,
@@ -389,7 +363,12 @@ export async function persistRun(
     {
       type: 'run.finished',
       runId,
-      outcome: executed.result.outcome,
+      outcome:
+        status === 'passed' || status === 'healed'
+          ? 'passed'
+          : status === 'failed'
+            ? 'failed'
+            : 'error',
       errorMessage: executed.result.errorMessage,
       at: Date.now(),
     },
@@ -414,10 +393,11 @@ export async function persistRunError(
   // Guarded on the non-terminal statuses so a late failure — an artifact
   // upload that threw after `persist` committed, say — cannot rewrite a
   // verdict the run already earned.
-  await db
-    .update(run)
-    .set({ status: 'error', finishedAt: new Date() })
-    .where(and(eq(run.id, runId), inArray(run.status, ['queued', 'running'])))
+  const stored = await recordRunError(
+    db,
+    runId,
+    'Execution could not finish. The browser or workflow was unavailable.',
+  )
 
   console.error(`[run-steps] ${runId} failed:`, error)
 
@@ -430,8 +410,13 @@ export async function persistRunError(
     {
       type: 'run.finished',
       runId,
-      outcome: 'error',
-      errorMessage: 'The run could not be completed.',
+      outcome:
+        stored.status === 'passed' || stored.status === 'healed'
+          ? 'passed'
+          : stored.status === 'failed'
+            ? 'failed'
+            : 'error',
+      errorMessage: stored.errorMessage,
       at: Date.now(),
     },
     { final: true },

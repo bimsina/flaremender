@@ -339,6 +339,7 @@ export default class Harness extends WorkerEntrypoint<HarnessEnv> {
     let screenshot: ArrayBuffer | null = null
     let trace: ArrayBuffer | null = null
     let tracing = false
+    const artifactWarnings: Array<string> = []
 
     const restoreConsole = captureConsole(push)
 
@@ -358,7 +359,7 @@ export default class Harness extends WorkerEntrypoint<HarnessEnv> {
           await session.context.tracing.start({ screenshots: true, snapshots: true })
           tracing = true
         } catch (error) {
-          push(`[harness] tracing unavailable: ${messageOf(error)}`)
+          artifactWarnings.push(`Tracing could not start: ${messageOf(error)}`)
         }
       }
 
@@ -420,7 +421,7 @@ export default class Harness extends WorkerEntrypoint<HarnessEnv> {
             bytes.byteOffset + bytes.byteLength,
           ) as ArrayBuffer
         } catch (screenshotError) {
-          push(`[harness] failure screenshot unavailable: ${messageOf(screenshotError)}`)
+          artifactWarnings.push(`Failure screenshot unavailable: ${messageOf(screenshotError)}`)
         }
       }
     } finally {
@@ -435,7 +436,7 @@ export default class Harness extends WorkerEntrypoint<HarnessEnv> {
             bytes.byteOffset + bytes.byteLength,
           ) as ArrayBuffer
         } catch (error) {
-          push(`[harness] trace unavailable: ${messageOf(error)}`)
+          artifactWarnings.push(`Trace unavailable: ${messageOf(error)}`)
         }
       }
 
@@ -465,6 +466,7 @@ export default class Harness extends WorkerEntrypoint<HarnessEnv> {
 
     return {
       result,
+      artifactWarnings: scrubber.lines(artifactWarnings),
       errorKind,
       screenshot,
       trace,

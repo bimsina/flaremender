@@ -1,6 +1,7 @@
 import { relations, sql } from 'drizzle-orm'
 import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 
+import type { RunResult } from '#/engine/contract.ts'
 import type { ChatMessageStatus, ChatPart, ChatRole } from '#/engine/chat/contract.ts'
 import type { Provider } from '#/lib/models.ts'
 import { organization, user } from './auth.ts'
@@ -16,9 +17,9 @@ const now = sql`(cast(unixepoch('subsecond') * 1000 as integer))`
  * row — it can be read, edited and deleted like any other — but it is not part
  * of the suite: it is excluded from "run all", from the scheduler, and from the
  * counts that answer "how many tests does this project have". Approving it flips
- * it to `'draft'`, at which point it is an ordinary intent waiting for a script.
+ * it to `'draft'`, at which point it is waiting for a reviewed script.
  *
- * A hand-written script goes straight from `'draft'` to `'ready'` on first save;
+ * Every hand-written version starts as a draft and requires explicit readiness;
  * `'generating'` is the transient state an intent sits in while a
  * `GenerateWorkflow` is driving a browser on its behalf, and is always replaced
  * by whatever the verification run decided.
@@ -75,6 +76,9 @@ export type RunStatus = (typeof RUN_STATUSES)[number]
 
 /** What kicked a run off, so the timeline can explain itself. */
 export const RUN_TRIGGERS = ['manual', 'regenerate', 'schedule'] as const
+export const RUN_PURPOSES = ['regression', 'draft-check', 'generation-verification'] as const
+export type RunPurpose = (typeof RUN_PURPOSES)[number]
+
 export type RunTrigger = (typeof RUN_TRIGGERS)[number]
 
 /**
@@ -248,6 +252,7 @@ export const intent = sqliteTable(
     /** Plain English, written by a human. Never overwritten by the generator. */
     description: text('description').notNull(),
     status: text('status').$type<IntentStatus>().default('draft').notNull(),
+    readiness: text('readiness').$type<'draft' | 'ready'>().default('draft').notNull(),
     /**
      * Points at the `scriptVersion` that runs today. Deliberately *not* a
      * foreign key: `scriptVersion.intentId` already references this table, and
@@ -325,6 +330,9 @@ export const suiteRun = sqliteTable(
       .references(() => environment.id, { onDelete: 'cascade' }),
     status: text('status').$type<SuiteRunStatus>().default('queued').notNull(),
     trigger: text('trigger').$type<SuiteTrigger>().default('manual').notNull(),
+    environmentName: text('environment_name'),
+    baseUrl: text('base_url'),
+    errorMessage: text('error_message'),
     /** Members the suite set out to run; the three below sum to it once done. */
     totalCount: integer('total_count').default(0).notNull(),
     passedCount: integer('passed_count').default(0).notNull(),
@@ -365,6 +373,10 @@ export const run = sqliteTable(
     suiteRunId: text('suite_run_id').references(() => suiteRun.id, { onDelete: 'set null' }),
     status: text('status').$type<RunStatus>().default('queued').notNull(),
     trigger: text('trigger').$type<RunTrigger>().default('manual').notNull(),
+    purpose: text('purpose').$type<RunPurpose>().default('regression').notNull(),
+    environmentName: text('environment_name'),
+    baseUrl: text('base_url'),
+    errorMessage: text('error_message'),
     /** Set only when an agent was involved (generation or healing). */
     modelId: text('model_id'),
     workflowInstanceId: text('workflow_instance_id'),
@@ -401,6 +413,8 @@ export const attempt = sqliteTable(
     scriptUsed: text('script_used').notNull(),
     healApplied: text('heal_applied', { mode: 'json' }).$type<HealApplied>(),
     artifactKeys: text('artifact_keys', { mode: 'json' }).$type<ArtifactKeys>(),
+    result: text('result', { mode: 'json' }).$type<RunResult>(),
+    artifactWarnings: text('artifact_warnings', { mode: 'json' }).$type<Array<string>>(),
     logs: text('logs'),
     errorMessage: text('error_message'),
     durationMs: integer('duration_ms'),

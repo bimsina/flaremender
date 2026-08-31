@@ -16,8 +16,8 @@
  * 3. The assembled script is executed **fresh** — new session, new context,
  *    tracing on — through the ordinary run path. That run is the verdict, and
  *    it is a real run row: it shows up in the intent's history with artifacts,
- *    and it is what makes the intent `'passing'`. A generation cannot award
- *    itself a pass; only a run can.
+ *    and is classified as generation verification. It does not supply the
+ *    test's regression result or establish coverage.
  * 4. Whatever happened is recorded on the version, the intent and the job.
  *
  * A job that fails never discards work. The verified prefix is saved as an
@@ -25,7 +25,7 @@
  * who asked for it opens the editor onto something half-built rather than onto
  * nothing.
  */
-import { and, desc, eq, inArray } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm'
 import { NonRetryableError } from 'cloudflare:workflows'
 
 import { createDb } from '#/db/index.ts'
@@ -230,6 +230,9 @@ export async function prepareVerification(
       // being proved". Adding a fourth trigger for the same event would split
       // the history without telling anyone anything new.
       trigger: 'regenerate',
+      purpose: 'generation-verification',
+      environmentName: loaded.environmentName,
+      baseUrl: loaded.baseUrl,
       modelId: input.modelId,
       startedAt: new Date(),
     })
@@ -246,21 +249,9 @@ export async function prepareVerification(
 }
 
 /**
- * Records the verdict, everywhere it belongs.
- *
- * The verification run is persisted exactly as any other run — attempt row,
- * artifacts, run status, the intent's badge — and then the *generation's* own
- * policy is applied on top of it, which is the only part that is not just a
- * run:
- *
- * - **Green.** The new version becomes the intent's script. The intent is
- *   `'passing'` because a run said so, not because a generator did.
- * - **Not green, and there was no script before.** The half-built version
- *   becomes current anyway: something to open and fix beats an empty editor,
- *   and `'failing'` is the honest badge for it.
- * - **Not green, and there was a working script.** The old version stays
- *   current and the intent's old status comes back. A failed regeneration must
- *   never cost someone a script that worked.
+ * Verification is persisted separately from regression results. Complete
+ * scripts become ready even if an expectation fails. Partial scripts stay
+ * drafts and replace the current code only when no previous version exists.
  */
 export async function persistGeneration(
   env: Cloudflare.Env,
@@ -299,33 +290,31 @@ export async function persistGeneration(
 
   await persistRun(env, context.prepared.runId, context.loadedRun, context.executed)
 
-  const keepNewVersion = green || loaded.previousVersionId === null
+  const keepNewVersion = context.stuckReason === null || loaded.previousVersionId === null
 
   await db
     .update(intent)
     .set({
       currentVersionId: keepNewVersion ? context.prepared.versionId : loaded.previousVersionId,
-      // `persistRun` has already written a verdict from the run's point of
-      // view, and it is overwritten here because the run's verdict is not the
-      // whole story:
-      //
-      // - green, and the new version is current: the run is right.
-      // - the run went red: `'failing'`, which is what the run said anyway.
-      // - the run went green but the job stopped short: `'draft'`. It is not
-      //   failing — the steps it did write all work — but calling it passing
-      //   would be a lie, and it is exactly what a draft is: something to go
-      //   and finish, with a note saying where it got to.
-      // - the old script is being kept: the run said nothing about *it*, so the
-      //   intent goes back to what it was.
+      readiness: keepNewVersion ? (context.stuckReason === null ? 'ready' : 'draft') : undefined,
+      lastRunId: keepNewVersion ? null : undefined,
       status: keepNewVersion
-        ? green
-          ? 'passing'
-          : outcome === 'passed'
-            ? 'draft'
-            : 'failing'
+        ? context.stuckReason === null
+          ? 'ready'
+          : 'draft'
         : loaded.previousStatus,
     })
-    .where(eq(intent.id, loaded.intentId))
+    .where(
+      and(
+        eq(intent.id, loaded.intentId),
+        or(
+          loaded.previousVersionId
+            ? eq(intent.currentVersionId, loaded.previousVersionId)
+            : isNull(intent.currentVersionId),
+          eq(intent.currentVersionId, context.prepared.versionId),
+        ),
+      ),
+    )
 
   const reason = green
     ? null
@@ -352,14 +341,18 @@ export async function persistGeneration(
     {
       type: 'run.finished',
       runId: loaded.jobId,
-      outcome,
+      outcome: green ? 'passed' : outcome === 'passed' ? 'failed' : outcome,
       errorMessage: reason,
       at: Date.now(),
     },
     { final: true },
   )
 
-  return { outcome, versionId: context.prepared.versionId, runId: context.prepared.runId }
+  return {
+    outcome: green ? 'passed' : outcome === 'passed' ? 'failed' : outcome,
+    versionId: context.prepared.versionId,
+    runId: context.prepared.runId,
+  }
 }
 
 /**
@@ -430,19 +423,16 @@ export async function failGeneration(
       and(eq(generationJob.id, params.jobId), inArray(generationJob.status, ['queued', 'running'])),
     )
 
-  // Only if it is still claimed: a job that got as far as a verdict has already
-  // set the status it earned, and this must not undo it. An intent that still
-  // has a script is `'ready'` rather than `'draft'` — the failure was the
-  // generator's, and the script it already had is untouched and still runnable.
+  // Keep the author's readiness decision if a failed job never replaced code.
   const [row] = await db
-    .select({ currentVersionId: intent.currentVersionId })
+    .select({ readiness: intent.readiness })
     .from(intent)
     .where(eq(intent.id, params.intentId))
     .limit(1)
 
   await db
     .update(intent)
-    .set({ status: row?.currentVersionId ? 'ready' : 'draft' })
+    .set({ status: row?.readiness === 'ready' ? 'ready' : 'draft' })
     .where(and(eq(intent.id, params.intentId), eq(intent.status, 'generating')))
 
   console.error(`[generation] ${params.jobId} failed:`, error)

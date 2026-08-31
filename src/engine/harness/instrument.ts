@@ -123,6 +123,7 @@ export function createInstrumentation(options: {
   startIndex?: number
 }): Instrumentation {
   const steps: Array<RunStep> = []
+  const completed = new Map<number, RunStep>()
 
   /**
    * Start order, not finish order. Scripts are sequential awaits in practice, so
@@ -141,7 +142,12 @@ export function createInstrumentation(options: {
         : { error: options.redact(error instanceof Error ? error.message : String(error)) }),
     }
 
-    steps.push(step)
+    completed.set(index, step)
+    steps.splice(
+      0,
+      steps.length,
+      ...[...completed].sort(([a], [b]) => a - b).map(([, value]) => value),
+    )
     options.onStep?.(index, step)
   }
 

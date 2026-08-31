@@ -29,6 +29,7 @@ import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiSpikeBrowserRouteImport } from './routes/api/spike/browser'
 import { Route as ApiSpikeWorkflowStatusRouteImport } from './routes/api/spike/workflow-status'
 import { Route as AppProjectsProjectIdIndexRouteImport } from './routes/_app.projects.$projectId.index'
+import { Route as ApiReportsKindIdRouteImport } from './routes/api/reports.$kind.$id'
 import { Route as ApiSpikeLoaderIndexRouteImport } from './routes/api/spike/loader/index'
 import { Route as AppProjectsProjectIdIntentsIntentIdRouteImport } from './routes/_app.projects.$projectId.intents.$intentId'
 import { Route as AppProjectsProjectIdRunsRunIdRouteImport } from './routes/_app.projects.$projectId.runs.$runId'
@@ -134,6 +135,11 @@ const AppProjectsProjectIdIndexRoute =
     path: '/projects/$projectId/',
     getParentRoute: () => AppRoute,
   } as any)
+const ApiReportsKindIdRoute = ApiReportsKindIdRouteImport.update({
+  id: '/api/reports/$kind/$id',
+  path: '/api/reports/$kind/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiSpikeLoaderIndexRoute = ApiSpikeLoaderIndexRouteImport.update({
   id: '/api/spike/loader/',
   path: '/api/spike/loader/',
@@ -176,6 +182,7 @@ export interface FileRoutesByFullPath {
   '/api/spike/workflow-status': typeof ApiSpikeWorkflowStatusRoute
   '/admin/': typeof AppAdminIndexRoute
   '/projects/': typeof AppProjectsIndexRoute
+  '/api/reports/$kind/$id': typeof ApiReportsKindIdRoute
   '/projects/$projectId/': typeof AppProjectsProjectIdIndexRoute
   '/api/spike/loader/': typeof ApiSpikeLoaderIndexRoute
   '/projects/$projectId/intents/$intentId': typeof AppProjectsProjectIdIntentsIntentIdRoute
@@ -199,6 +206,7 @@ export interface FileRoutesByTo {
   '/api/spike/workflow-status': typeof ApiSpikeWorkflowStatusRoute
   '/admin': typeof AppAdminIndexRoute
   '/projects': typeof AppProjectsIndexRoute
+  '/api/reports/$kind/$id': typeof ApiReportsKindIdRoute
   '/projects/$projectId': typeof AppProjectsProjectIdIndexRoute
   '/api/spike/loader': typeof ApiSpikeLoaderIndexRoute
   '/projects/$projectId/intents/$intentId': typeof AppProjectsProjectIdIntentsIntentIdRoute
@@ -226,6 +234,7 @@ export interface FileRoutesById {
   '/api/spike/workflow-status': typeof ApiSpikeWorkflowStatusRoute
   '/_app/admin/': typeof AppAdminIndexRoute
   '/_app/projects/': typeof AppProjectsIndexRoute
+  '/api/reports/$kind/$id': typeof ApiReportsKindIdRoute
   '/_app/projects/$projectId/': typeof AppProjectsProjectIdIndexRoute
   '/api/spike/loader/': typeof ApiSpikeLoaderIndexRoute
   '/_app/projects/$projectId/intents/$intentId': typeof AppProjectsProjectIdIntentsIntentIdRoute
@@ -252,6 +261,7 @@ export interface FileRouteTypes {
     | '/api/spike/workflow-status'
     | '/admin/'
     | '/projects/'
+    | '/api/reports/$kind/$id'
     | '/projects/$projectId/'
     | '/api/spike/loader/'
     | '/projects/$projectId/intents/$intentId'
@@ -275,6 +285,7 @@ export interface FileRouteTypes {
     | '/api/spike/workflow-status'
     | '/admin'
     | '/projects'
+    | '/api/reports/$kind/$id'
     | '/projects/$projectId'
     | '/api/spike/loader'
     | '/projects/$projectId/intents/$intentId'
@@ -301,6 +312,7 @@ export interface FileRouteTypes {
     | '/api/spike/workflow-status'
     | '/_app/admin/'
     | '/_app/projects/'
+    | '/api/reports/$kind/$id'
     | '/_app/projects/$projectId/'
     | '/api/spike/loader/'
     | '/_app/projects/$projectId/intents/$intentId'
@@ -318,6 +330,7 @@ export interface RootRouteChildren {
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiSpikeBrowserRoute: typeof ApiSpikeBrowserRoute
   ApiSpikeWorkflowStatusRoute: typeof ApiSpikeWorkflowStatusRoute
+  ApiReportsKindIdRoute: typeof ApiReportsKindIdRoute
   ApiSpikeLoaderIndexRoute: typeof ApiSpikeLoaderIndexRoute
 }
 
@@ -463,6 +476,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProjectsProjectIdIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/api/reports/$kind/$id': {
+      id: '/api/reports/$kind/$id'
+      path: '/api/reports/$kind/$id'
+      fullPath: '/api/reports/$kind/$id'
+      preLoaderRoute: typeof ApiReportsKindIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/spike/loader/': {
       id: '/api/spike/loader/'
       path: '/api/spike/loader'
@@ -560,6 +580,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiSpikeBrowserRoute: ApiSpikeBrowserRoute,
   ApiSpikeWorkflowStatusRoute: ApiSpikeWorkflowStatusRoute,
+  ApiReportsKindIdRoute: ApiReportsKindIdRoute,
   ApiSpikeLoaderIndexRoute: ApiSpikeLoaderIndexRoute,
 }
 export const routeTree = rootRouteImport

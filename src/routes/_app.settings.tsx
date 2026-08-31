@@ -54,19 +54,19 @@ function Settings() {
             <LayerCard className="px-5 py-4">
               <dl className="grid gap-4 sm:grid-cols-2">
                 <div className="grid gap-1.5">
-                  <Text as="dt" variant="secondary" size="xs">
+                  <Text as="dt" variant="secondary" size="base">
                     Email
                   </Text>
                   <Text as="dd">{session.user.email}</Text>
                 </div>
                 <div className="grid gap-1.5">
-                  <Text as="dt" variant="secondary" size="xs">
+                  <Text as="dt" variant="secondary" size="base">
                     Member since
                   </Text>
                   <Text as="dd">{formatDate(session.user.createdAt)}</Text>
                 </div>
                 <div className="grid gap-1.5">
-                  <Text as="dt" variant="secondary" size="xs">
+                  <Text as="dt" variant="secondary" size="base">
                     Instance role
                   </Text>
                   <dd>
@@ -76,7 +76,7 @@ function Settings() {
                   </dd>
                 </div>
                 <div className="grid gap-1.5">
-                  <Text as="dt" variant="secondary" size="xs">
+                  <Text as="dt" variant="secondary" size="base">
                     Organizations
                   </Text>
                   <Text as="dd">{session.organizations.length}</Text>

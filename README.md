@@ -1,8 +1,9 @@
 # Flaremender
 
 An open-source, Cloudflare-native natural language test runner. Describe a test
-in plain English, get a Playwright spec, run it in a Cloudflare browser, and let
-a failure feed itself back into the next generation until it passes.
+in plain English, generate a Playwright script, and run it in a Cloudflare browser.
+You can also write and version scripts manually. Automatic self-healing is a
+subsequent milestone; current failures remain failures until a new run verifies a repair.
 
 ## Stack
 
@@ -29,13 +30,18 @@ Schema lives in `src/db/schema/`. `auth.ts` is generated — never edit it by ha
 
 ```bash
 pnpm auth:generate   # regenerate src/db/schema/auth.ts from auth.config.ts
-pnpm db:push         # apply src/db/schema to the local D1 database
+pnpm db:migrate      # apply additive migrations to local D1 only
 pnpm db:studio       # browse the local database
 ```
 
 `auth.config.ts` exists only for code generation; the runtime configuration is
 `src/lib/auth.ts`. Keep their plugin lists in sync or the generated schema will
 drift from what the app needs.
+
+Use migrations for an existing database. The baseline also adopts databases
+created with the original schema without deleting their history. Do not run
+`db:push` before migrations: pushing the new columns first would bypass the
+readiness and historical verification backfills.
 
 ### Making yourself an admin
 
@@ -130,8 +136,9 @@ secret: that is a visual leak no string replacement can fix.
 
 ### The project chat
 
-Every project's default tab is a chat, and it is a console rather than a
-chatbot: the assistant carries requests out with tools that call the same
+Projects open on Overview, with environment context, ready tests, drafts and
+regression results. Chat remains the primary place to create tests with AI:
+the assistant carries requests out with tools that call the same
 org-scoped functions in `src/server/actions.ts` the dialogs and buttons call, and
 answers with **cards** — an intent, a live generation, a run, a suite, an
 environment — each of which links to the row it names. Nothing exists only inside
@@ -206,6 +213,21 @@ project have" — `isAdoptedIntent` in `server/actions.ts` is the one filter all
 them wear. Approving flips it to `'draft'` and generates; dismissing deletes it,
 because a rejected suggestion is not a state worth keeping and the next
 exploration will propose it again if it was a good idea.
+
+**Readiness is separate from outcome.** Manual saves and restores create draft
+versions. Draft checks and generation verification are labeled and excluded
+from suites, schedules and regression pass rates. Authors explicitly mark a
+manual version ready; the assertion warning is only a hint about coverage.
+Complete generated tests may be ready even when they detect a real failure.
+Incomplete generated scripts stay drafts. Older runs keep their version and
+environment snapshots and cannot certify a newly edited version.
+
+Authenticated JSON and JUnit exports are available from run and suite reports.
+They use persisted results, exclude source code and environment variables, and
+mark draft checks and generation verification as skipped JUnit cases.
+
+See [the local reliability walkthrough](docs/reliability-walkthrough.md) for
+repeatable fixtures, verification commands and the remaining milestone gates.
 
 **`project.context`** is what the agents know about the app beyond any one
 intent: the chat writes it with `set_project_context`, an exploration appends

@@ -23,6 +23,7 @@ import type { GenerationJobStatus } from '#/db/schema/app.ts'
 import type { RunOutcome } from '#/engine/contract.ts'
 import {
   intentGenerationQuery,
+  jobQuery,
   intentQuery,
   runsQuery,
   scriptVersionsQuery,
@@ -53,22 +54,26 @@ export interface GenerationLive {
 
 export function useGenerationLive(jobId: string | null, intentId: string): GenerationLive {
   const queryClient = useQueryClient()
-  const { envelopes, transport } = useChannelFeed(jobId)
+  const poll = useQuery({
+    ...jobQuery(jobId ?? ''),
+    enabled: jobId !== null,
+    refetchInterval: (query) =>
+      query.state.data && TERMINAL.has(query.state.data.status) ? false : POLL_INTERVAL_MS,
+  })
+  const unavailable = jobId !== null && (poll.isError || (poll.isSuccess && poll.data === null))
+  const { envelopes, transport } = useChannelFeed(
+    unavailable || (poll.data && TERMINAL.has(poll.data.status)) ? null : jobId,
+  )
 
   const live = useMemo(() => reduceFeed(envelopes), [envelopes])
 
   const socketFinished = live.outcome !== null
 
-  const poll = useQuery({
-    ...intentGenerationQuery(intentId),
-    enabled: jobId !== null && transport === 'polling' && !socketFinished,
-    refetchInterval: POLL_INTERVAL_MS,
-  })
-
   // Only this job's status counts: a stale row for an earlier generation would
   // otherwise report the panel finished the moment it opened.
   const polledStatus = poll.data?.id === jobId ? (poll.data?.status ?? null) : null
-  const finished = socketFinished || (polledStatus !== null && TERMINAL.has(polledStatus))
+  const finished =
+    unavailable || socketFinished || (polledStatus !== null && TERMINAL.has(polledStatus))
 
   useEffect(() => {
     if (jobId === null || !finished) return
@@ -85,8 +90,16 @@ export function useGenerationLive(jobId: string | null, intentId: string): Gener
     transport,
     started: live.started || polledStatus !== null,
     finished,
-    outcome: live.outcome,
-    errorMessage: live.errorMessage,
+    outcome: unavailable
+      ? 'error'
+      : polledStatus === 'succeeded'
+        ? 'passed'
+        : polledStatus === 'failed'
+          ? 'failed'
+          : live.outcome,
+    errorMessage: unavailable
+      ? 'Job history is unavailable.'
+      : (poll.data?.stuckReason ?? live.errorMessage),
     status: polledStatus,
   }
 }

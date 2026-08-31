@@ -294,7 +294,7 @@ function InstanceSetupStep() {
           >
             Skip for now
           </Button>
-          <Text variant="secondary" size="xs">
+          <Text variant="secondary" size="base">
             Everything here can be changed later in Administration → Settings.
           </Text>
         </div>

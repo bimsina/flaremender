@@ -1,3 +1,5 @@
+import type { RunResult } from '#/engine/contract.ts'
+
 /**
  * Reading an attempt's transcript back.
  *
@@ -69,4 +71,19 @@ export function parseTranscript(text: string | null | undefined): Transcript {
   }
 
   return { steps, logs }
+}
+
+/** Prefer structured evidence; retain the reader for historical text-only attempts. */
+export function readTranscript(
+  attempt: { result?: RunResult | null; logs?: string | null } | null | undefined,
+): Transcript {
+  if (!attempt?.result) return parseTranscript(attempt?.logs)
+  return {
+    steps: attempt.result.steps.map((step, index) => ({
+      ...step,
+      index,
+      error: step.error ?? null,
+    })),
+    logs: attempt.result.logs,
+  }
 }

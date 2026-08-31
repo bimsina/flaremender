@@ -81,7 +81,7 @@ function StepRow({
       <div className="flex items-start gap-3">
         {offsetMs === null ? null : (
           <span className="flex h-lh w-14 shrink-0 items-center justify-end tabular-nums">
-            <Text as="span" variant="secondary" size="xs">
+            <Text as="span" variant="secondary" size="base">
               +{Math.round(offsetMs / 100) / 10}s
             </Text>
           </span>
@@ -98,7 +98,7 @@ function StepRow({
         </span>
 
         <span className="flex h-lh shrink-0 items-center">
-          <Text as="span" size="xs">
+          <Text as="span" size="base">
             <Duration ms={step.durationMs} />
           </Text>
         </span>
@@ -107,7 +107,7 @@ function StepRow({
       {step.error ? (
         <div className={cn('grid gap-2', offsetMs === null ? 'pl-8' : 'pl-25')}>
           {expanded ? null : (
-            <Text as="span" variant="error" size="xs">
+            <Text as="span" variant="error" size="base">
               {step.error.split('\n')[0]}
             </Text>
           )}

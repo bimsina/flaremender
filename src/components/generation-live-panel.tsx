@@ -39,7 +39,7 @@ export function GenerationLivePanel({ jobId, intentId }: { jobId: string; intent
               {live.finished
                 ? succeeded
                   ? 'Script generated and verified'
-                  : 'Generation did not finish'
+                  : 'Generation needs attention'
                 : 'Writing the script'}
             </Text>
           </div>
@@ -47,7 +47,7 @@ export function GenerationLivePanel({ jobId, intentId }: { jobId: string; intent
           <div className="flex items-center gap-2">
             {live.finished ? (
               <Badge variant={succeeded ? 'success' : 'error'} appearance="dot">
-                {succeeded ? 'Verified' : 'Incomplete'}
+                {succeeded ? 'Verified' : 'Needs attention'}
               </Badge>
             ) : (
               <Badge variant="neutral" appearance="dot">
@@ -74,14 +74,14 @@ export function GenerationLivePanel({ jobId, intentId }: { jobId: string; intent
             {live.logs.map((entry) => (
               <li key={entry.seq} className="flex items-start gap-2">
                 <span className="mt-[0.35em] size-1.5 shrink-0 rounded-full bg-kumo-accent" />
-                <Text as="span" size="xs" variant="secondary">
+                <Text as="span" size="base" variant="secondary">
                   {entry.line}
                 </Text>
               </li>
             ))}
           </ol>
         ) : (
-          <Text variant="secondary" size="xs">
+          <Text variant="secondary" size="base">
             {live.transport === 'polling'
               ? 'Live progress is unavailable, so this is being read from the job itself.'
               : live.started
@@ -92,7 +92,7 @@ export function GenerationLivePanel({ jobId, intentId }: { jobId: string; intent
 
         {live.steps.length > 0 ? (
           <div className="grid gap-2 border-t border-kumo-hairline pt-3">
-            <Text as="h4" variant="secondary" size="xs">
+            <Text as="h4" variant="secondary" size="base">
               Executed against the live page
             </Text>
             <StepList steps={live.steps} />

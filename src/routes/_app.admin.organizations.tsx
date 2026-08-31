@@ -132,7 +132,7 @@ function MemberList({ organizationId }: { organizationId: string }) {
               Banned
             </Badge>
           ) : null}
-          <Text as="span" variant="secondary" size="xs">
+          <Text as="span" variant="secondary" size="base">
             joined {formatDate(member.createdAt)}
           </Text>
         </li>

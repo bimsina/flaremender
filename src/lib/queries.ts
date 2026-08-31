@@ -12,6 +12,7 @@ import {
   listAllowedModels,
 } from '#/server/instance.ts'
 import {
+  getJob,
   getIntent,
   getIntentGeneration,
   getScriptVersion,
@@ -250,4 +251,10 @@ export const adminMembershipsQuery = (organizationId: string) =>
     queryKey: ['admin', 'memberships', organizationId] as const,
     queryFn: () => listAllMemberships({ data: { organizationId } }),
     enabled: organizationId.length > 0,
+  })
+
+export const jobQuery = (jobId: string) =>
+  queryOptions({
+    queryKey: ['job', jobId] as const,
+    queryFn: () => getJob({ data: { jobId } }),
   })

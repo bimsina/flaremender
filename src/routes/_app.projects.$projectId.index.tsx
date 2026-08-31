@@ -34,6 +34,7 @@ import { useMemo, useState } from 'react'
 import { EnvironmentsPanel } from '#/components/environments-panel.tsx'
 import { InlineEmpty, ListRow, ListToolbar, Section, SettingRow } from '#/components/list.tsx'
 import { PageBody, PageHeader } from '#/components/page.tsx'
+import { ProjectOverview } from '#/components/project-overview.tsx'
 import { ProjectChatTab } from '#/components/project-chat.tsx'
 import { ProjectRunsTab } from '#/components/project-runs.tsx'
 import { RelativeTime } from '#/components/relative-time.tsx'
@@ -62,12 +63,10 @@ import { deleteProject, setProjectModel, updateProject } from '#/server/projects
 import { runSuite } from '#/server/suites.ts'
 
 /**
- * Chat comes first and is the default: the project's own console, from which
- * everything else in the project can be described rather than assembled. The
- * manual tabs are unchanged and always one click away — they are the parallel
- * view of exactly the same rows.
+ * Overview is the project entry point. Existing explicit tab links keep their
+ * original values, including `intents`, while the interface calls them Tests.
  */
-const TABS = ['chat', 'intents', 'runs', 'environments', 'settings'] as const
+const TABS = ['overview', 'chat', 'intents', 'runs', 'environments', 'settings'] as const
 type Tab = (typeof TABS)[number]
 
 function isTab(value: unknown): value is Tab {
@@ -118,7 +117,7 @@ export const Route = createFileRoute('/_app/projects/$projectId/')({
 function ProjectDetail() {
   const { projectId } = Route.useParams()
   const search = Route.useSearch()
-  const tab = search.tab ?? 'chat'
+  const tab = search.tab ?? 'overview'
   const navigate = useNavigate({ from: Route.fullPath })
 
   const { data: project } = useSuspenseQuery(projectQuery(projectId))
@@ -134,7 +133,9 @@ function ProjectDetail() {
   /** Explicitly watched suite — set the moment one is queued from this page. */
   const [watchingSuite, setWatchingSuite] = useState<string | null>(null)
 
-  const runnableCount = intents.filter((row) => row.currentVersion > 0).length
+  const runnableCount = intents.filter(
+    (row) => row.currentVersion > 0 && row.readiness === 'ready' && row.status !== 'proposed',
+  ).length
 
   const defaultEnvironment = environments.find((row) => row.isDefault) ?? environments[0] ?? null
   const targetEnvironmentId = environmentId ?? defaultEnvironment?.id ?? null
@@ -161,7 +162,7 @@ function ProjectDetail() {
       toast.add({
         variant: 'info',
         title: 'Suite queued',
-        description: `${runnableCount} intent${runnableCount === 1 ? '' : 's'} will run one after another.`,
+        description: `${runnableCount} test${runnableCount === 1 ? '' : 's'} will run one after another.`,
       })
     },
     onError: (error: Error) => {
@@ -192,7 +193,7 @@ function ProjectDetail() {
       disabled={runAllDisabled}
       onClick={() => suite.mutate()}
     >
-      Run all
+      Run suite
     </Button>
   )
 
@@ -212,8 +213,9 @@ function ProjectDetail() {
           <Tabs
             variant="underline"
             tabs={[
+              { value: 'overview', label: 'Overview' },
               { value: 'chat', label: 'Chat' },
-              { value: 'intents', label: 'Intents' },
+              { value: 'intents', label: 'Tests' },
               { value: 'runs', label: 'Runs' },
               { value: 'environments', label: 'Environments' },
               { value: 'settings', label: 'Settings' },
@@ -244,7 +246,7 @@ function ProjectDetail() {
                 <Tooltip
                   content={
                     runnableCount === 0
-                      ? 'Save a script on at least one intent first.'
+                      ? 'Mark at least one saved test ready first.'
                       : 'Add an environment before running anything.'
                   }
                   render={<span className="inline-flex" />}
@@ -259,7 +261,7 @@ function ProjectDetail() {
                 icon={<PlusIcon size={16} />}
                 onClick={() => setAddingIntent(true)}
               >
-                New intent
+                New test
               </Button>
             </>
           ) : null
@@ -267,6 +269,18 @@ function ProjectDetail() {
       />
 
       <PageBody className={tab === 'chat' ? 'flex min-h-0 flex-col' : 'grid gap-6'}>
+        {tab === 'overview' ? (
+          <ProjectOverview
+            projectId={projectId}
+            tests={intents}
+            environments={environments}
+            environmentId={targetEnvironmentId}
+            onEnvironmentChange={setEnvironmentId}
+            onCreateManual={() => setAddingIntent(true)}
+            onRun={() => suite.mutate()}
+            running={suite.isPending}
+          />
+        ) : null}
         {tab === 'chat' ? <ProjectChatTab projectId={projectId} /> : null}
         {tab === 'intents' ? (
           <IntentsTab
@@ -301,15 +315,16 @@ type IntentRow = {
   title: string
   description: string
   status: IntentStatus
-  /** Five-field UTC cron, null when this intent only runs on request. */
+  /** Five-field UTC cron, null when this test only runs on request. */
   schedule: string | null
   currentVersion: number
   updatedAt: Date
+  lastRunEnvironmentName: string | null
   lastRunAt: Date | null
 }
 
 /**
- * Ordered as an intent moves through them, not alphabetically — `'proposed'`
+ * Ordered as a test moves through them, not alphabetically — `'proposed'`
  * first because it is the state before anyone has agreed to anything, and
  * `'generating'` between having nothing and having something, for the same
  * reason both sit where they do in the enum. Transient states are still worth
@@ -358,12 +373,12 @@ function IntentsTab({
     return (
       <Empty
         icon={<TestTubeIcon size={48} className="text-kumo-inactive" />}
-        title="No intents found"
+        title="No tests found"
         description="Describe what a user should be able to do — or let the assistant go round your app and suggest what is worth testing."
         contents={
           <div className="flex flex-wrap items-center justify-center gap-2">
             <Button variant="primary" icon={<PlusIcon size={16} />} onClick={onCreate}>
-              Describe an intent
+              Describe a test
             </Button>
             <ExploreButton projectId={projectId} />
           </div>
@@ -397,7 +412,7 @@ function IntentsTab({
       <ListToolbar
         value={search}
         onValueChange={setSearch}
-        placeholder="Search intents"
+        placeholder="Search tests"
         onRefresh={() => {
           void queryClient.invalidateQueries({ queryKey: intentsQuery(projectId).queryKey })
         }}
@@ -413,7 +428,7 @@ function IntentsTab({
 
       {visible.length === 0 ? (
         <LayerCard className="px-5 py-4">
-          <InlineEmpty message="No intents match this search." />
+          <InlineEmpty message="No tests match this search." />
         </LayerCard>
       ) : (
         <ul className="grid gap-3">
@@ -434,20 +449,21 @@ function IntentsTab({
                   </div>
                 }
                 subtitle={
-                  <Text variant="secondary" size="xs" truncate>
+                  <Text variant="secondary" size="base" truncate>
                     {row.description.split('\n')[0]}
                   </Text>
                 }
                 meta={
                   <>
                     {row.schedule ? <ScheduleHint schedule={row.schedule} /> : null}
-                    <Text as="span" variant="secondary" size="xs">
+                    <Text as="span" variant="secondary" size="base">
                       {row.lastRunAt ? (
                         <>
-                          Ran <RelativeTime value={row.lastRunAt} />
+                          v{row.currentVersion} · {row.lastRunEnvironmentName ?? 'Regression'} ·{' '}
+                          <RelativeTime value={row.lastRunAt} />
                         </>
                       ) : (
-                        'Never run'
+                        'No regression result'
                       )}
                     </Text>
                   </>
@@ -507,8 +523,8 @@ function ExploreButton({ projectId }: { projectId: string }) {
 }
 
 /**
- * That an intent runs on a clock is worth one glance, not a column: the listing
- * is about what the intents *are*, and the schedule itself is a detail-page
+ * That a test runs on a clock is worth one glance, not a column: the listing
+ * is about what the tests *are*, and the schedule itself is a detail-page
  * concern. The tooltip carries the description so the icon does not have to.
  */
 function ScheduleHint({ schedule }: { schedule: string }) {
@@ -653,7 +669,7 @@ function IntentActions({
             <div className="grid gap-1.5">
               <Dialog.Title>
                 <Text as="span" variant="heading">
-                  Delete this intent?
+                  Delete this test?
                 </Text>
               </Dialog.Title>
               <Dialog.Description>
@@ -686,7 +702,7 @@ function IntentActions({
                 loading={remove.isPending}
                 onClick={() => remove.mutate()}
               >
-                Delete intent
+                Delete test
               </Button>
             </div>
           </div>
@@ -797,7 +813,7 @@ function ProjectDetailsCard({ project }: { project: ProjectRow }) {
         />
 
         <div className="flex items-center justify-between gap-3">
-          <Text variant="secondary" size="xs">
+          <Text variant="secondary" size="base">
             Base URLs live on environments, not here.
           </Text>
           <Button
@@ -879,7 +895,7 @@ function ProjectContextCard({ project }: { project: ProjectRow }) {
               `cloudflare:workers` into the client bundle. Text that is too
               long is refused by the validator, with the number in the
               message. */}
-          <Text variant="secondary" size="xs">
+          <Text variant="secondary" size="base">
             {context.length} characters
           </Text>
           <Button type="submit" variant="primary" loading={mutation.isPending} disabled={!dirty}>
@@ -970,7 +986,7 @@ function DeleteProjectCard({ project }: { project: ProjectRow }) {
           <Text as="h3" bold>
             Delete this project
           </Text>
-          <Text variant="secondary" size="xs">
+          <Text variant="secondary" size="base">
             Every environment, intent, script version and run under {project.name} goes with it.
           </Text>
         </div>
@@ -1050,6 +1066,7 @@ function CreateIntentForm({
       await navigate({
         to: '/projects/$projectId/intents/$intentId',
         params: { projectId, intentId: result.id },
+        search: { mode: 'manual' },
       })
     },
   })
@@ -1066,7 +1083,7 @@ function CreateIntentForm({
         <div className="grid gap-1.5">
           <Dialog.Title>
             <Text as="span" variant="heading">
-              Describe an intent
+              Describe a test
             </Text>
           </Dialog.Title>
           <Dialog.Description>
@@ -1089,7 +1106,7 @@ function CreateIntentForm({
         <Banner
           variant="error"
           icon={<WarningCircleIcon weight="fill" />}
-          title="Could not create intent"
+          title="Could not create test"
           description={mutation.error.message}
         />
       ) : null}
@@ -1138,7 +1155,7 @@ function CreateIntentForm({
           loading={mutation.isPending}
           disabled={!title.trim() || description.trim().length < 10}
         >
-          Create intent
+          Create test
         </Button>
       </div>
     </form>

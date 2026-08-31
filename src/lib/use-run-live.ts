@@ -24,6 +24,7 @@ import {
   useChannelFeed,
 } from '#/lib/use-channel-feed.ts'
 import { intentQuery, runQuery, runsQuery } from '#/lib/queries.ts'
+import { readTranscript } from './transcript.ts'
 
 const POLL_INTERVAL_MS = 2500
 
@@ -48,17 +49,19 @@ export interface RunLive {
  */
 export function useRunLive(runId: string | null, intentId: string): RunLive {
   const queryClient = useQueryClient()
-  const { envelopes, transport } = useChannelFeed(runId)
+  const poll = useQuery({
+    ...runQuery(runId ?? ''),
+    enabled: runId !== null,
+    refetchInterval: (query) =>
+      query.state.data && TERMINAL.has(query.state.data.run.status) ? false : POLL_INTERVAL_MS,
+  })
+  const { envelopes, transport } = useChannelFeed(
+    poll.data && TERMINAL.has(poll.data.run.status) ? null : runId,
+  )
 
   const live = useMemo(() => reduceFeed(envelopes), [envelopes])
 
   const socketFinished = live.outcome !== null
-
-  const poll = useQuery({
-    ...runQuery(runId ?? ''),
-    enabled: runId !== null && transport === 'polling' && !socketFinished,
-    refetchInterval: POLL_INTERVAL_MS,
-  })
 
   const polledStatus = runId === null ? null : (poll.data?.run.status ?? null)
   const finished = socketFinished || (polledStatus !== null && TERMINAL.has(polledStatus))
@@ -74,12 +77,22 @@ export function useRunLive(runId: string | null, intentId: string): RunLive {
   }, [finished, runId, intentId, queryClient])
 
   return {
-    steps: live.steps,
+    steps:
+      polledStatus && TERMINAL.has(polledStatus)
+        ? readTranscript(poll.data?.attempts.at(-1)).steps
+        : live.steps,
     transport,
     started: live.started || polledStatus !== null,
     finished,
-    outcome: live.outcome,
-    errorMessage: live.errorMessage,
+    outcome:
+      polledStatus === 'passed' || polledStatus === 'healed'
+        ? 'passed'
+        : polledStatus === 'failed'
+          ? 'failed'
+          : polledStatus === 'error'
+            ? 'error'
+            : live.outcome,
+    errorMessage: poll.data?.run.errorMessage ?? live.errorMessage,
     status: polledStatus,
   }
 }

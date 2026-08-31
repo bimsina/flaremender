@@ -70,7 +70,7 @@ export function OrgSwitcher({ session }: { session: AppSession }) {
               >
                 <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
                   <span className="truncate">{org.name}</span>
-                  <Text as="span" variant="secondary" size="xs">
+                  <Text as="span" variant="secondary" size="base">
                     {org.role}
                   </Text>
                 </span>

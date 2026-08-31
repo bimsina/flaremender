@@ -2,13 +2,13 @@
  * What the assistant's answers are actually made of.
  *
  * A card is the visible half of a row the conversation created or touched, and
- * every one of them is a link out of the chat: the intent card opens the intent,
+ * every one of them is a link out of the chat: the test card opens the test,
  * the run card opens the run, the environment card names the variables that now
  * exist. That is what keeps the conversation from being a place where things
  * live — nothing here is a record, everything here is a *view* of one.
  *
  * Two of them are live. A generation card reuses the run channel's feed to show
- * the script being written, in the same compact step list the intent page uses;
+ * the script being written, in the same compact step list the test page uses;
  * a run card polls the run it names until it has a verdict. Both fall silent and
  * become an ordinary link once the thing they describe has finished, so an old
  * transcript costs nothing to render.
@@ -64,7 +64,7 @@ import type {
 } from '#/engine/chat/contract.ts'
 import { describeCron } from '#/lib/cron.ts'
 import { chatMessagesQuery, intentsQuery, runQuery, suiteRunQuery } from '#/lib/queries.ts'
-import { reduceFeed, useChannelFeed } from '#/lib/use-channel-feed.ts'
+import { useJobProgress } from '#/lib/use-job-progress.ts'
 import { approveProposedIntents, dismissProposedIntent } from '#/server/explore.ts'
 import { updateIntent } from '#/server/intents.ts'
 
@@ -82,7 +82,7 @@ export function ChatCardView({ card, projectId }: { card: ChatCard; projectId: s
     case 'run':
       return <RunCardView card={card} projectId={projectId} />
     case 'suite':
-      return <SuiteCardView card={card} />
+      return <SuiteCardView card={card} projectId={projectId} />
     case 'environment':
       return <EnvironmentCardView card={card} />
     case 'explore':
@@ -117,7 +117,7 @@ function CardFrame({
   return (
     <LayerCard className="px-4 py-3">
       <div className="grid gap-2.5">
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex min-w-0 items-start gap-2.5">
             <span className="flex h-lh shrink-0 items-center text-kumo-subtle">{icon}</span>
             <div className="grid min-w-0 gap-0.5">{title}</div>
@@ -137,7 +137,7 @@ function CardFrame({
  * An intent, as it is *now* rather than as it was when the card was made.
  *
  * The card stores a snapshot so an old transcript renders without a query, but
- * an intent created a minute ago and generated since would otherwise sit in the
+ * a test created a minute ago and generated since would otherwise sit in the
  * conversation reading "Draft" for ever. The project's intent listing is already
  * loaded and already invalidated at the end of every turn, so reading the live
  * row out of it costs nothing and never goes stale.
@@ -163,7 +163,7 @@ function IntentCardView({ card, projectId }: { card: IntentCard; projectId: stri
             {title}
           </Link>
           {schedule ? (
-            <Text as="span" variant="secondary" size="xs">
+            <Text as="span" variant="secondary" size="base">
               <ClockIcon size={12} className="mr-1 inline align-[-0.1em]" />
               {describeCron(schedule)}, UTC
             </Text>
@@ -178,15 +178,14 @@ function IntentCardView({ card, projectId }: { card: IntentCard; projectId: stri
 /**
  * The script being written, inside a message.
  *
- * Deliberately the same feed and the same `StepList` as the intent page's
+ * Deliberately the same feed and the same `StepList` as the test page's
  * generation panel: these are the same events, and a generation watched from the
  * chat should look like a generation watched anywhere else. Only the amount is
  * different — a card shows the last few steps and the newest narration line,
  * because a message is not the place to read a hundred of them.
  */
 function GenerationCardView({ card, projectId }: { card: GenerationCard; projectId: string }) {
-  const { envelopes, transport } = useChannelFeed(card.jobId)
-  const live = reduceFeed(envelopes)
+  const { job, live, transport } = useJobProgress(card.jobId)
 
   const finished = live.outcome !== null
   const succeeded = live.outcome === 'passed'
@@ -198,14 +197,14 @@ function GenerationCardView({ card, projectId }: { card: GenerationCard; project
       icon={finished ? <SparkleIcon size={18} /> : <Loader size="sm" />}
       title={
         <>
-          <Text as="span" bold truncate>
+          <Text as="span" bold>
             {finished
               ? succeeded
                 ? 'Script generated and verified'
-                : 'Generation did not finish'
+                : 'Generation needs attention'
               : 'Writing the script'}
           </Text>
-          <Text as="span" variant="secondary" size="xs" truncate>
+          <Text as="span" variant="secondary" size="base">
             {card.intentTitle} · {card.environmentName}
           </Text>
         </>
@@ -213,33 +212,44 @@ function GenerationCardView({ card, projectId }: { card: GenerationCard; project
       meta={
         finished ? (
           <Badge variant={succeeded ? 'success' : 'error'} appearance="dot">
-            {succeeded ? 'Verified' : 'Incomplete'}
+            {succeeded ? 'Verified' : 'Needs attention'}
           </Badge>
         ) : (
           <Badge variant="neutral" appearance="dot">
-            {transport === 'polling' ? 'Reconnecting' : 'Live'}
+            {transport === 'loading'
+              ? 'Loading'
+              : transport === 'polling'
+                ? 'Reconnecting'
+                : 'Live'}
           </Badge>
         )
       }
       footer={
-        <LinkButton
-          href={`/projects/${projectId}/intents/${card.intentId}`}
-          variant="ghost"
-          size="xs"
-          icon={ArrowSquareOutIcon}
-        >
-          Open the test
-        </LinkButton>
+        <div className="flex flex-wrap gap-2">
+          <LinkButton
+            href={`/projects/${projectId}/intents/${card.intentId}`}
+            variant="ghost"
+            size="xs"
+            icon={ArrowSquareOutIcon}
+          >
+            Open the test
+          </LinkButton>
+          {job?.runId ? (
+            <LinkButton href={`/projects/${projectId}/runs/${job.runId}`} variant="ghost" size="sm">
+              View verification
+            </LinkButton>
+          ) : null}
+        </div>
       }
     >
       {narration && !finished ? (
-        <Text variant="secondary" size="xs">
+        <Text variant="secondary" size="base">
           {narration}
         </Text>
       ) : null}
 
       {live.errorMessage && finished ? (
-        <Text variant="secondary" size="xs">
+        <Text variant="secondary" size="base">
           {live.errorMessage.split('\n')[0]}
         </Text>
       ) : null}
@@ -254,6 +264,7 @@ function GenerationCardView({ card, projectId }: { card: GenerationCard; project
  * fact, and the step-by-step view already has a home on the run page.
  */
 function RunCardView({ card, projectId }: { card: RunCard; projectId: string }) {
+  const queryClient = useQueryClient()
   const { data } = useQuery({
     ...runQuery(card.runId),
     refetchInterval: (query) => {
@@ -268,6 +279,10 @@ function RunCardView({ card, projectId }: { card: RunCard; projectId: string }) 
   const running = status === 'queued' || status === 'running'
   const durationMs = data?.attempts.reduce((total, row) => total + (row.durationMs ?? 0), 0) ?? null
 
+  useEffect(() => {
+    if (!running) void queryClient.invalidateQueries({ queryKey: intentsQuery(projectId).queryKey })
+  }, [running, card.runId, projectId, queryClient])
+
   return (
     <CardFrame
       icon={running ? <Loader size="sm" /> : <PlayIcon size={18} />}
@@ -280,8 +295,11 @@ function RunCardView({ card, projectId }: { card: RunCard; projectId: string }) 
           >
             {card.intentTitle}
           </Link>
-          <Text as="span" variant="secondary" size="xs" truncate>
-            {card.environmentName}
+          <Text as="span" variant="secondary" size="base">
+            {data?.environment.name ?? card.environmentName}
+            {data
+              ? ` · v${data.scriptVersion.version} · ${data.run.purpose === 'draft-check' ? 'Draft check' : data.run.purpose === 'generation-verification' ? 'Verification' : 'Regression'}`
+              : null}
             {durationMs ? ' · ' : ''}
             {durationMs ? <Duration ms={durationMs} /> : null}
           </Text>
@@ -293,7 +311,8 @@ function RunCardView({ card, projectId }: { card: RunCard; projectId: string }) 
 }
 
 /** A "run all". The counts are the whole story, so they are the whole card. */
-function SuiteCardView({ card }: { card: SuiteCard }) {
+function SuiteCardView({ card, projectId }: { card: SuiteCard; projectId: string }) {
+  const queryClient = useQueryClient()
   const { data } = useQuery({
     ...suiteRunQuery(card.suiteRunId),
     refetchInterval: (query) => {
@@ -309,15 +328,19 @@ function SuiteCardView({ card }: { card: SuiteCard }) {
   const running = status === 'queued' || status === 'running'
   const done = suite ? suite.passedCount + suite.failedCount + suite.errorCount : 0
 
+  useEffect(() => {
+    if (!running) void queryClient.invalidateQueries({ queryKey: intentsQuery(projectId).queryKey })
+  }, [running, card.suiteRunId, projectId, queryClient])
+
   return (
     <CardFrame
       icon={running ? <Loader size="sm" /> : <StackIcon size={18} />}
       title={
         <>
           <Text as="span" bold>
-            Running every test
+            Suite execution
           </Text>
-          <Text as="span" variant="secondary" size="xs">
+          <Text as="span" variant="secondary" size="base">
             {card.environmentName}
             {suite ? ` · ${done} of ${suite.totalCount} done` : null}
           </Text>
@@ -325,19 +348,39 @@ function SuiteCardView({ card }: { card: SuiteCard }) {
       }
       meta={<SuiteRunStatusBadge status={status} />}
     >
+      {suite?.errorMessage ? <Text variant="error">{suite.errorMessage}</Text> : null}
       {suite && suite.totalCount > 0 ? (
         <div className="flex flex-wrap items-center gap-3">
-          <Text as="span" size="xs" variant={suite.passedCount > 0 ? 'success' : 'secondary'}>
+          <Text as="span" size="base" variant={suite.passedCount > 0 ? 'success' : 'secondary'}>
             {suite.passedCount} passed
           </Text>
-          <Text as="span" size="xs" variant={suite.failedCount > 0 ? 'error' : 'secondary'}>
+          <Text as="span" size="base" variant={suite.failedCount > 0 ? 'error' : 'secondary'}>
             {suite.failedCount} failed
           </Text>
-          <Text as="span" size="xs" variant="secondary">
+          <Text as="span" size="base" variant="secondary">
             {suite.errorCount} errored
           </Text>
         </div>
       ) : null}
+      <div className="flex flex-wrap gap-2">
+        <LinkButton size="sm" variant="secondary" href={`/projects/${projectId}?tab=runs`}>
+          View results
+        </LinkButton>
+        <LinkButton
+          size="sm"
+          variant="ghost"
+          href={`/api/reports/suites/${card.suiteRunId}?format=json`}
+        >
+          JSON
+        </LinkButton>
+        <LinkButton
+          size="sm"
+          variant="ghost"
+          href={`/api/reports/suites/${card.suiteRunId}?format=junit`}
+        >
+          JUnit
+        </LinkButton>
+      </div>
     </CardFrame>
   )
 }
@@ -348,7 +391,7 @@ function EnvironmentCardView({ card }: { card: EnvironmentCard }) {
       icon={<GlobeIcon size={18} />}
       title={
         <>
-          <Text as="span" bold truncate>
+          <Text as="span" bold>
             {card.name}
           </Text>
           <Text as="span" variant="mono-secondary" truncate>
@@ -358,7 +401,7 @@ function EnvironmentCardView({ card }: { card: EnvironmentCard }) {
       }
       meta={
         card.isDefault ? (
-          <Badge variant="blue" appearance="dot">
+          <Badge variant="neutral" appearance="dot">
             Default
           </Badge>
         ) : null
@@ -373,7 +416,7 @@ function EnvironmentCardView({ card }: { card: EnvironmentCard }) {
           ))}
         </div>
       ) : (
-        <Text variant="secondary" size="xs">
+        <Text variant="secondary" size="base">
           No credentials stored yet.
         </Text>
       )}
@@ -392,8 +435,7 @@ function EnvironmentCardView({ card }: { card: EnvironmentCard }) {
  * so nothing else on the page knows it exists.
  */
 function ExploreCardView({ card, projectId }: { card: ExploreCard; projectId: string }) {
-  const { envelopes, transport } = useChannelFeed(card.jobId)
-  const live = reduceFeed(envelopes)
+  const { live, transport } = useJobProgress(card.jobId)
   const queryClient = useQueryClient()
 
   const finished = live.outcome !== null
@@ -418,14 +460,14 @@ function ExploreCardView({ card, projectId }: { card: ExploreCard; projectId: st
       icon={finished ? <BinocularsIcon size={18} /> : <Loader size="sm" />}
       title={
         <>
-          <Text as="span" bold truncate>
+          <Text as="span" bold>
             {finished
               ? proposed
                 ? 'Explored the app'
                 : 'The exploration stopped early'
               : 'Exploring the app'}
           </Text>
-          <Text as="span" variant="secondary" size="xs" truncate>
+          <Text as="span" variant="secondary" size="base">
             {card.environmentName}
             {card.focus ? ` · focused on ${card.focus}` : ''}
           </Text>
@@ -438,19 +480,23 @@ function ExploreCardView({ card, projectId }: { card: ExploreCard; projectId: st
           </Badge>
         ) : (
           <Badge variant="neutral" appearance="dot">
-            {transport === 'polling' ? 'Reconnecting' : 'Live'}
+            {transport === 'loading'
+              ? 'Loading'
+              : transport === 'polling'
+                ? 'Reconnecting'
+                : 'Live'}
           </Badge>
         )
       }
     >
       {narration && !finished ? (
-        <Text variant="secondary" size="xs">
+        <Text variant="secondary" size="base">
           {narration}
         </Text>
       ) : null}
 
       {live.errorMessage && finished ? (
-        <Text variant="secondary" size="xs">
+        <Text variant="secondary" size="base">
           {live.errorMessage.split('\n')[0]}
         </Text>
       ) : null}
@@ -494,7 +540,7 @@ function PlanCardView({ card, projectId }: { card: PlanCard; projectId: string }
           intentId: item.intentId,
           title: live?.title ?? item.title,
           description: live?.description ?? item.description,
-          // No live row and a listing that has loaded means the intent is gone.
+          // No live row and a listing that has loaded means the test is gone.
           removed: item.intentId !== null && intents !== undefined && live === null,
           status: live?.status ?? null,
           pending: live?.status === 'proposed',
@@ -532,10 +578,10 @@ function PlanCardView({ card, projectId }: { card: PlanCard; projectId: string }
       icon={<ListChecksIcon size={18} />}
       title={
         <>
-          <Text as="span" bold truncate>
+          <Text as="span" bold>
             {card.title}
           </Text>
-          <Text as="span" variant="secondary" size="xs">
+          <Text as="span" variant="secondary" size="base">
             {pendingCount === 0
               ? 'Nothing left to review.'
               : 'Untick anything you do not want, then generate.'}
@@ -545,7 +591,7 @@ function PlanCardView({ card, projectId }: { card: PlanCard; projectId: string }
       footer={
         pendingCount > 0 ? (
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <Text as="span" variant="secondary" size="xs">
+            <Text as="span" variant="secondary" size="base">
               {selected.length} of {pendingCount} selected
             </Text>
             <Button
@@ -636,7 +682,7 @@ function PlanItemRow({
         <span className="flex h-lh shrink-0 items-center text-kumo-subtle">
           <XIcon size={14} />
         </span>
-        <Text as="span" variant="secondary" size="xs" truncate>
+        <Text as="span" variant="secondary" size="base">
           {item.title} — removed
         </Text>
       </div>
@@ -648,7 +694,7 @@ function PlanItemRow({
   // usefully tick.
   if (!item.pending) {
     return (
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="grid min-w-0 gap-0.5">
           {item.intentId ? (
             <Link
@@ -659,11 +705,11 @@ function PlanItemRow({
               {item.title}
             </Link>
           ) : (
-            <Text as="span" bold truncate>
+            <Text as="span" bold>
               {item.title}
             </Text>
           )}
-          <Text as="span" variant="secondary" size="xs" truncate>
+          <Text as="span" variant="secondary" size="base">
             {item.description}
           </Text>
         </div>
@@ -673,7 +719,7 @@ function PlanItemRow({
   }
 
   return (
-    <div className="flex items-start justify-between gap-3">
+    <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="flex min-w-0 items-start gap-2">
         <span className="flex h-lh shrink-0 items-center">
           <Checkbox
@@ -686,7 +732,7 @@ function PlanItemRow({
           <Text as="span" bold>
             {item.title}
           </Text>
-          <Text as="span" variant="secondary" size="xs">
+          <Text as="span" variant="secondary" size="base">
             {item.description}
           </Text>
         </div>
@@ -813,14 +859,13 @@ function PlanItemEditor({
  *
  * Two live sources, because they answer different questions and neither implies
  * the other: the channel says what the batch is *doing* — which member, how far
- * in — and the intent rows say what each member has *become*. The listing is
+ * in — and the test rows say what each member has *become*. The listing is
  * polled while the batch is running, which is also what keeps every other intent
  * card in the transcript current, since they all read the same query.
  */
 function BatchCardView({ card, projectId }: { card: BatchCard; projectId: string }) {
   const queryClient = useQueryClient()
-  const { envelopes, transport } = useChannelFeed(card.jobId)
-  const live = reduceFeed(envelopes)
+  const { job, live, transport } = useJobProgress(card.jobId)
   const finished = live.outcome !== null
 
   const { data: intents } = useQuery({
@@ -840,13 +885,19 @@ function BatchCardView({ card, projectId }: { card: BatchCard; projectId: string
 
   const members = card.intentIds.map((intentId) => {
     const row = intents?.find((item) => item.id === intentId) ?? null
-    return { intentId, title: row?.title ?? intentId, status: row?.status ?? null }
+    return {
+      intentId,
+      title: row?.title ?? intentId,
+      status: row?.status ?? null,
+      readiness: row?.readiness ?? 'draft',
+      hasCode: (row?.currentVersion ?? 0) > 0,
+    }
   })
 
-  const done = members.filter(
-    (member) => member.status === 'passing' || member.status === 'failing',
-  ).length
-  const passed = members.filter((member) => member.status === 'passing').length
+  const done = finished
+    ? members.length
+    : members.filter((member) => member.readiness === 'ready' && member.hasCode).length
+  const ready = members.filter((member) => member.readiness === 'ready' && member.hasCode).length
   const narration = live.logs.at(-1)?.line ?? null
 
   return (
@@ -854,41 +905,51 @@ function BatchCardView({ card, projectId }: { card: BatchCard; projectId: string
       icon={finished ? <SparkleIcon size={18} /> : <Loader size="sm" />}
       title={
         <>
-          <Text as="span" bold truncate>
-            {finished ? 'Finished generating' : 'Writing the approved tests'}
+          <Text as="span" bold>
+            {finished
+              ? job?.status === 'succeeded'
+                ? 'Generation complete'
+                : 'Generation needs attention'
+              : 'Writing the approved tests'}
           </Text>
-          <Text as="span" variant="secondary" size="xs" truncate>
-            {card.environmentName} · {done} of {members.length} done
+          <Text as="span" variant="secondary" size="base">
+            {card.environmentName} ·{' '}
+            {finished ? `${ready} tests currently ready` : `${done} of ${members.length} done`}
           </Text>
         </>
       }
       meta={
         finished ? (
-          <Badge variant={passed === members.length ? 'success' : 'warning'} appearance="dot">
-            {passed} of {members.length} passing
+          <Badge variant={job?.status === 'succeeded' ? 'success' : 'warning'} appearance="dot">
+            {job?.status === 'succeeded' ? 'Completed' : 'Needs attention'}
           </Badge>
         ) : (
           <Badge variant="neutral" appearance="dot">
-            {transport === 'polling' ? 'Reconnecting' : 'Live'}
+            {transport === 'loading'
+              ? 'Loading'
+              : transport === 'polling'
+                ? 'Reconnecting'
+                : 'Live'}
           </Badge>
         )
       }
     >
       {narration && !finished ? (
-        <Text variant="secondary" size="xs">
+        <Text variant="secondary" size="base">
           {narration}
         </Text>
       ) : null}
 
+      {finished && live.errorMessage ? <Text variant="secondary">{live.errorMessage}</Text> : null}
       <ul className="grid gap-1.5">
         {members.map((member) => (
-          <li key={member.intentId} className="flex items-start justify-between gap-3">
+          <li key={member.intentId} className="flex flex-wrap items-start justify-between gap-3">
             <Link
               to="/projects/$projectId/intents/$intentId"
               params={{ projectId, intentId: member.intentId }}
-              className="truncate text-kumo-default hover:text-kumo-link"
+              className="min-w-0 flex-1 break-words text-kumo-default hover:text-kumo-link"
             >
-              <Text as="span" size="xs">
+              <Text as="span" size="base">
                 {member.title}
               </Text>
             </Link>

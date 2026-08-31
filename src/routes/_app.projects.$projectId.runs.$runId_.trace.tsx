@@ -192,7 +192,7 @@ function TracePage() {
       ) : signed.isPending ? (
         <div className="flex flex-1 items-center justify-center gap-2">
           <Loader size="sm" />
-          <Text as="span" variant="secondary" size="xs">
+          <Text as="span" variant="secondary" size="base">
             Preparing the trace…
           </Text>
         </div>

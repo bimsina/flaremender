@@ -180,7 +180,7 @@ function UserMenu({ user }: { user: AppSession['user'] }) {
           <Text as="span" bold>
             {user.name}
           </Text>
-          <Text as="span" variant="secondary" size="xs">
+          <Text as="span" variant="secondary" size="base">
             {user.email}
           </Text>
         </div>

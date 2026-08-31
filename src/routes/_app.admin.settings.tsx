@@ -370,7 +370,7 @@ function CatalogBrowser({ allowed }: { allowed: Array<AllowedModel> }) {
         ) : (
           <div className="grid gap-3">
             {catalog.data?.available && catalog.data.fallback ? (
-              <Text variant="secondary" size="xs">
+              <Text variant="secondary" size="base">
                 The live catalog was unreachable, so this is the built-in list.
               </Text>
             ) : null}
@@ -518,7 +518,7 @@ function ManualEntryCard() {
           <Text as="h3" bold>
             Add a model by name
           </Text>
-          <Text variant="secondary" size="xs">
+          <Text variant="secondary" size="base">
             For anything the catalog does not list — a preview slug, or a provider whose key lives
             somewhere else.
           </Text>

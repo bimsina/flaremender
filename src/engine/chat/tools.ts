@@ -267,6 +267,7 @@ export function buildChatTools(context: ChatToolContext, bus: ChatToolBus) {
           title: intent.title,
           description: intent.description,
           status: intent.status,
+          readiness: intent.readiness,
           schedule: intent.schedule,
           version: scriptVersion.version,
           lastRunStatus: run.status,
@@ -286,6 +287,8 @@ export function buildChatTools(context: ChatToolContext, bus: ChatToolBus) {
             title: row.title,
             description: preview(row.description),
             status: row.status,
+            readiness: row.readiness,
+            version: row.version,
             hasScript: row.version !== null,
             schedule: row.schedule,
             lastRun: row.lastRunStatus,
@@ -729,11 +732,13 @@ export function buildChatTools(context: ChatToolContext, bus: ChatToolBus) {
           id: run.id,
           status: run.status,
           trigger: run.trigger,
+          purpose: run.purpose,
+          scriptVersionId: run.scriptVersionId,
           startedAt: run.startedAt,
           finishedAt: run.finishedAt,
           intentId: run.intentId,
           intentTitle: intent.title,
-          environmentName: environment.name,
+          environmentName: sql<string>`coalesce(${run.environmentName}, ${environment.name})`,
           durationMs: sql<number | null>`sum(${attempt.durationMs})`,
         })
         .from(run)
@@ -754,6 +759,8 @@ export function buildChatTools(context: ChatToolContext, bus: ChatToolBus) {
             test: row.intentTitle,
             status: row.status,
             trigger: row.trigger,
+            purpose: row.purpose,
+            scriptVersionId: row.scriptVersionId,
             environment: row.environmentName,
             durationMs: row.durationMs === null ? null : Number(row.durationMs),
             startedAt: row.startedAt.toISOString(),
@@ -780,7 +787,7 @@ export function buildChatTools(context: ChatToolContext, bus: ChatToolBus) {
         .select({
           run,
           intentTitle: intent.title,
-          environmentName: environment.name,
+          environmentName: sql<string>`coalesce(${run.environmentName}, ${environment.name})`,
         })
         .from(run)
         .innerJoin(intent, eq(intent.id, run.intentId))
@@ -817,11 +824,13 @@ export function buildChatTools(context: ChatToolContext, bus: ChatToolBus) {
           runId: row.run.id,
           status: row.run.status,
           trigger: row.run.trigger,
+          purpose: row.run.purpose,
+          scriptVersionId: row.run.scriptVersionId,
           environment: row.environmentName,
           durationMs: last?.durationMs ?? null,
           // One line: the whole Playwright error is a dozen, and the user can
           // open the run to read them.
-          error: last?.errorMessage ? last.errorMessage.split('\n')[0] : null,
+          error: (last?.errorMessage ?? row.run.errorMessage)?.split('\n')[0] ?? null,
         },
         cards: [card],
       }
@@ -985,16 +994,23 @@ export function buildChatTools(context: ChatToolContext, bus: ChatToolBus) {
     summary: () => 'Reading the project overview',
     async run() {
       const statuses = await db
-        .select({ status: intent.status, count: sql<number>`count(*)` })
+        .select({
+          status: intent.status,
+          readiness: intent.readiness,
+          count: sql<number>`count(*)`,
+        })
         .from(intent)
         .where(eq(intent.projectId, projectId))
-        .groupBy(intent.status)
+        .groupBy(intent.status, intent.readiness)
 
       const recent = await db
         .select({
           id: run.id,
           status: run.status,
           intentTitle: intent.title,
+          purpose: run.purpose,
+          scriptVersionId: run.scriptVersionId,
+          environmentName: run.environmentName,
           startedAt: run.startedAt,
         })
         .from(run)
@@ -1005,21 +1021,32 @@ export function buildChatTools(context: ChatToolContext, bus: ChatToolBus) {
 
       const byStatus: Record<string, number> = {}
       let total = 0
+      let readyTests = 0
+      let draftTests = 0
       for (const row of statuses) {
         const count = Number(row.count ?? 0)
-        byStatus[row.status] = count
-        total += count
+        byStatus[row.status] = (byStatus[row.status] ?? 0) + count
+        if (row.status !== 'proposed') {
+          total += count
+          if (row.readiness === 'ready') readyTests += count
+          else draftTests += count
+        }
       }
 
       return {
         result: {
           tests: total,
+          readyTests,
+          draftTests,
           byStatus,
           recentRuns: recent.map((row) => ({
             runId: row.id,
             test: row.intentTitle,
             status: row.status,
             startedAt: row.startedAt.toISOString(),
+            purpose: row.purpose,
+            scriptVersionId: row.scriptVersionId,
+            environmentName: row.environmentName,
           })),
         },
       }

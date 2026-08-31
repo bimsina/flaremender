@@ -32,8 +32,9 @@ import {
 } from '@phosphor-icons/react'
 import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 
+import { useDiscardGuard } from '#/components/discard-guard.tsx'
 import { CodeEditor } from '#/components/code-editor.tsx'
 import { Duration } from '#/components/duration.tsx'
 import { DurationTrend } from '#/components/duration-trend.tsx'
@@ -45,7 +46,8 @@ import { RunDetailPanel } from '#/components/run-detail.tsx'
 import { RunLivePanel } from '#/components/run-live-panel.tsx'
 import { RunStatusSummary } from '#/components/run-status-summary.tsx'
 import { IntentStatusBadge, RunStatusBadge, ScriptAuthorBadge } from '#/components/status-badge.tsx'
-import type { RunStatus, ScriptAuthor } from '#/db/schema/app.ts'
+import type { RunPurpose, RunStatus, ScriptAuthor } from '#/db/schema/app.ts'
+import { hasSupportedAssertions } from '#/lib/assertions.ts'
 import { describeCron, isValidCron } from '#/lib/cron.ts'
 import { shortId } from '#/lib/ids.ts'
 import {
@@ -63,6 +65,7 @@ import {
   restoreScriptVersion,
   runIntent,
   saveScript,
+  setTestReadiness,
   updateIntent,
 } from '#/server/intents.ts'
 
@@ -76,8 +79,10 @@ function isTab(value: unknown): value is Tab {
 const TERMINAL: ReadonlySet<RunStatus> = new Set(['passed', 'healed', 'failed', 'error'])
 
 export const Route = createFileRoute('/_app/projects/$projectId/intents/$intentId')({
-  validateSearch: (search: Record<string, unknown>): { tab?: Tab } =>
-    isTab(search.tab) ? { tab: search.tab } : {},
+  validateSearch: (search: Record<string, unknown>): { tab?: Tab; mode?: 'manual' } => ({
+    ...(isTab(search.tab) ? { tab: search.tab } : {}),
+    ...(search.mode === 'manual' ? { mode: 'manual' as const } : {}),
+  }),
   loader: async ({ context, params }) => {
     await Promise.all([
       context.queryClient.ensureQueryData({
@@ -124,6 +129,9 @@ function IntentDetail() {
 
   const { intent, currentVersion, project } = data
 
+  const [dirty, setDirty] = useState(false)
+  const guard = useDiscardGuard(dirty)
+  const [editorKey, setEditorKey] = useState(0)
   const [editingDescription, setEditingDescription] = useState(false)
   const [deleting, setDeleting] = useState(false)
   /** Explicitly watched run — set the moment one is queued from this page. */
@@ -134,6 +142,21 @@ function IntentDetail() {
 
   const defaultEnvironment = environments.find((row) => row.isDefault) ?? environments[0] ?? null
   const targetEnvironmentId = environmentId ?? defaultEnvironment?.id ?? null
+
+  const currentResult = runs.find(
+    (row) =>
+      row.scriptVersionId === currentVersion?.id &&
+      row.environmentId === targetEnvironmentId &&
+      row.purpose === 'regression',
+  )
+  const visibleStatus =
+    intent.readiness === 'draft'
+      ? 'draft'
+      : currentResult?.status === 'passed' || currentResult?.status === 'healed'
+        ? 'passing'
+        : currentResult?.status === 'failed' || currentResult?.status === 'error'
+          ? 'failing'
+          : 'ready'
 
   // A reload in the middle of a run must find its way back to the live panel,
   // so an unfinished run in the history seeds the watch as well.
@@ -222,9 +245,11 @@ function IntentDetail() {
         title={intent.title}
         description={
           <span className="flex flex-wrap items-center gap-2">
-            <IntentStatusBadge status={intent.status} />
-            {intent.schedule ? <ScheduleBadge schedule={intent.schedule} /> : null}
-            <Text as="span" variant="secondary" size="xs">
+            <IntentStatusBadge status={generating ? 'generating' : visibleStatus} />
+            {intent.schedule ? (
+              <ScheduleBadge schedule={intent.schedule} paused={intent.readiness === 'draft'} />
+            ) : null}
+            <Text as="span" variant="secondary" size="base">
               {currentVersion ? `Version ${currentVersion.version}` : 'No script saved yet'}
             </Text>
           </span>
@@ -233,7 +258,7 @@ function IntentDetail() {
           <DropdownMenu>
             <DropdownMenu.Trigger
               render={
-                <Button variant="secondary" shape="square" aria-label="Intent actions">
+                <Button variant="secondary" shape="square" aria-label="Test actions">
                   <DotsThreeIcon size={16} weight="bold" />
                 </Button>
               }
@@ -243,7 +268,7 @@ function IntentDetail() {
                 icon={PencilSimpleIcon}
                 onClick={() => setEditingDescription(true)}
               >
-                Edit intent
+                Edit test
               </DropdownMenu.Item>
               <DropdownMenu.Separator />
               <DropdownMenu.Item
@@ -251,7 +276,7 @@ function IntentDetail() {
                 variant="danger"
                 onClick={() => setDeleting(true)}
               >
-                Delete intent
+                Delete test
               </DropdownMenu.Item>
             </DropdownMenu.Content>
           </DropdownMenu>
@@ -287,7 +312,7 @@ function IntentDetail() {
               disabled={currentVersion === null || targetEnvironmentId === null || generating}
               onClick={() => run.mutate()}
             >
-              Run
+              {intent.readiness === 'draft' ? 'Check draft' : 'Run test'}
             </Button>
           </>
         }
@@ -303,11 +328,15 @@ function IntentDetail() {
           />
         ) : null}
 
-        {tab === 'script' ? (
+        <div hidden={tab !== 'script'}>
           <ScriptTab
             // A restore replaces the saved code, and the editor has to follow it
             // rather than sit there claiming unsaved changes it did not make.
-            key={currentVersion?.id ?? 'unsaved'}
+            key={`${currentVersion?.id ?? 'unsaved'}-${editorKey}`}
+            manual={search.mode === 'manual'}
+            readiness={intent.readiness}
+            onDirtyChange={setDirty}
+            onRunQueued={setWatching}
             intentId={intentId}
             description={intent.description}
             schedule={intent.schedule}
@@ -320,18 +349,29 @@ function IntentDetail() {
             environmentId={targetEnvironmentId}
             onEnvironmentChange={setEnvironmentId}
             generatePending={generate.isPending}
-            onGenerate={() => generate.mutate()}
+            onGenerate={() =>
+              guard.confirm(() => {
+                setEditorKey((key) => key + 1)
+                setDirty(false)
+                generate.mutate()
+              })
+            }
             onEditDescription={() => setEditingDescription(true)}
           />
-        ) : null}
+        </div>
 
         {tab === 'runs' ? <RunsTab projectId={projectId} runs={runs} /> : null}
 
         {tab === 'history' ? (
-          <HistoryTab versions={versions} currentVersionId={currentVersion?.id ?? null} />
+          <HistoryTab
+            versions={versions}
+            currentVersionId={currentVersion?.id ?? null}
+            confirm={guard.confirm}
+          />
         ) : null}
       </PageBody>
 
+      {guard.dialog}
       <EditIntentDialog
         intent={intent}
         open={editingDescription}
@@ -357,6 +397,10 @@ interface GenerationSummary {
 }
 
 function ScriptTab({
+  manual,
+  readiness,
+  onDirtyChange,
+  onRunQueued,
   intentId,
   description,
   schedule,
@@ -372,6 +416,10 @@ function ScriptTab({
   onGenerate,
   onEditDescription,
 }: {
+  manual: boolean
+  readiness: 'draft' | 'ready'
+  onDirtyChange: (dirty: boolean) => void
+  onRunQueued: (runId: string) => void
   intentId: string
   description: string
   schedule: string | null
@@ -396,26 +444,84 @@ function ScriptTab({
   const [code, setCode] = useState(saved)
   const [note, setNote] = useState('')
   /** Set by "start from a blank script", which is the way past the hero. */
-  const [authoring, setAuthoring] = useState(false)
+  const [authoring, setAuthoring] = useState(manual)
 
-  const dirty = code !== saved
+  const dirty = code !== saved || note.trim().length > 0
+  useEffect(() => {
+    onDirtyChange(dirty)
+    return () => onDirtyChange(false)
+  }, [dirty, onDirtyChange])
   const untouched = currentVersion === null && !dirty
 
   // With no script and nothing in flight, the editor is not the first thing to
-  // show someone: the intent is already written down, and the fastest route
+  // show someone: the test is already written down, and the fastest route
   // from it to a working test is to let the agent try. Writing it by hand is
   // one click away and always will be.
   const hero = currentVersion === null && !authoring && !generating
 
   const save = useMutation({
-    mutationFn: () =>
-      saveScript({ data: { intentId, code, ...(note.trim() ? { note: note.trim() } : {}) } }),
+    mutationFn: async (andRun: boolean) => {
+      const result = await saveScript({
+        data: { intentId, code, ...(note.trim() ? { note: note.trim() } : {}) },
+      })
+      if (!result?.id || !Number.isInteger(result.version)) {
+        throw new Error(
+          'The server did not confirm the save. Your edits are still here; try again after reconnecting.',
+        )
+      }
+      if (andRun) {
+        try {
+          const queued = await runIntent({
+            data: {
+              intentId,
+              scriptVersionId: result.id,
+              ...(environmentId ? { environmentId } : {}),
+            },
+          })
+          if (!queued?.runId) throw new Error('The server did not confirm that the run started.')
+          onRunQueued(queued.runId)
+        } catch (error) {
+          return {
+            ...result,
+            runError:
+              error instanceof Error ? error.message : 'Try Check draft to run the saved version.',
+          }
+        }
+      }
+      return { ...result, runError: null }
+    },
     onSuccess: async (result) => {
+      onDirtyChange(false)
       await queryClient.invalidateQueries()
       setNote('')
-      toast.add({ variant: 'success', title: `Saved as v${result.version}` })
+      toast.add(
+        result.runError
+          ? {
+              variant: 'error',
+              title: `Saved draft v${result.version}, but the run could not start`,
+              description: result.runError,
+            }
+          : { variant: 'success', title: `Saved draft v${result.version}` },
+      )
     },
   })
+
+  const [confirmReady, setConfirmReady] = useState(false)
+  const ready = useMutation({
+    mutationFn: () =>
+      setTestReadiness({
+        data: {
+          intentId,
+          versionId: currentVersion!.id,
+          readiness: readiness === 'ready' ? 'draft' : 'ready',
+        },
+      }),
+    onSuccess: async () => {
+      setConfirmReady(false)
+      await queryClient.invalidateQueries()
+    },
+  })
+  const assertionWarning = !hasSupportedAssertions(code)
 
   const failedLast =
     lastGeneration?.status === 'failed' && !generating && liveGenerationId !== lastGeneration.id
@@ -423,8 +529,8 @@ function ScriptTab({
   return (
     <div className="grid gap-6">
       <Section
-        title="Intent"
-        description="Plain English, and the permanent source of truth."
+        title="Expected behavior"
+        description="What this test must verify. Readiness does not prove coverage."
         actions={
           <Button
             variant="ghost"
@@ -442,10 +548,6 @@ function ScriptTab({
           </pre>
         </LayerCard>
       </Section>
-
-      {hero ? null : (
-        <ScheduleSection key={schedule ?? 'unscheduled'} intentId={intentId} schedule={schedule} />
-      )}
 
       {hero ? (
         <LayerCard className="px-5 py-10">
@@ -495,7 +597,7 @@ function ScriptTab({
       ) : (
         <Section
           title="Playwright script"
-          description="Every save is a new, immutable version. Restoring an old one saves it forward."
+          description="Every save creates a draft version. Check it, then mark it ready for suites and schedules."
           actions={
             <Button
               variant="secondary"
@@ -524,16 +626,17 @@ function ScriptTab({
                 ariaLabel="Playwright script"
                 value={code}
                 onChange={setCode}
+                readOnly={generating || save.isPending}
                 minHeight="26rem"
                 maxHeight="60vh"
               />
 
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <Text variant="secondary" size="xs">
+                <Text variant="secondary" size="base">
                   {generating
                     ? 'The agent is writing this script. Saving now would be overwritten.'
                     : untouched
-                      ? 'Seeded from the default template — save it to make this intent runnable.'
+                      ? 'Save this template as a draft to check it in a browser.'
                       : dirty
                         ? 'Unsaved changes. Runs always use the last saved version.'
                         : currentVersion
@@ -548,6 +651,7 @@ function ScriptTab({
                     aria-label="Version note"
                     placeholder="Note (optional)"
                     value={note}
+                    disabled={generating || save.isPending}
                     onChange={(event) => setNote(event.target.value)}
                   />
                   <Button
@@ -555,9 +659,18 @@ function ScriptTab({
                     icon={<FloppyDiskIcon size={16} />}
                     loading={save.isPending}
                     disabled={(!dirty && currentVersion !== null) || generating}
-                    onClick={() => save.mutate()}
+                    onClick={() => save.mutate(false)}
                   >
                     Save version
+                  </Button>
+                  <Button
+                    variant="primary"
+                    icon={<PlayIcon size={16} />}
+                    loading={save.isPending}
+                    disabled={generating || environmentId === null}
+                    onClick={() => save.mutate(true)}
+                  >
+                    Save and run
                   </Button>
                 </div>
               </div>
@@ -565,6 +678,66 @@ function ScriptTab({
           </LayerCard>
         </Section>
       )}
+
+      {!hero && currentVersion ? (
+        <Section
+          title="Readiness"
+          description="Draft checks are excluded from suites, schedules and regression pass rates."
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <Text>
+              {readiness === 'ready'
+                ? 'This saved version is ready for regression runs.'
+                : 'This version is a draft. A passing draft check does not make it ready.'}
+            </Text>
+            <Button
+              variant="secondary"
+              disabled={dirty || generating}
+              loading={ready.isPending}
+              onClick={() => (readiness === 'ready' ? ready.mutate() : setConfirmReady(true))}
+            >
+              {readiness === 'ready' ? 'Return to draft' : 'Mark ready'}
+            </Button>
+          </div>
+          {ready.error ? <Text variant="error">{ready.error.message}</Text> : null}
+        </Section>
+      ) : null}
+      <Dialog.Root open={confirmReady} onOpenChange={setConfirmReady}>
+        <Dialog size="sm" className="p-6">
+          <div className="grid gap-4">
+            <Dialog.Title>Mark this version ready?</Dialog.Title>
+            <Text>
+              {assertionWarning
+                ? 'No supported expect assertion was found. This quick check may miss custom matchers. The script may finish successfully without checking the expected behavior. '
+                : ''}
+              You are responsible for its coverage. Ready tests can run in suites and on schedules,
+              even when they detect a failure.
+            </Text>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setConfirmReady(false)}>
+                Keep as draft
+              </Button>
+              <Button variant="primary" loading={ready.isPending} onClick={() => ready.mutate()}>
+                Mark ready
+              </Button>
+            </div>
+          </div>
+        </Dialog>
+      </Dialog.Root>
+      {!hero ? (
+        <div className="grid gap-3">
+          <Text variant="secondary">
+            {readiness === 'draft'
+              ? 'Scheduling is paused while this test is a draft. Mark it ready to enable scheduled execution.'
+              : 'Schedules run the ready version against the default environment.'}
+          </Text>
+          <ScheduleSection
+            key={schedule ?? 'unscheduled'}
+            intentId={intentId}
+            schedule={schedule}
+          />
+        </div>
+      ) : null}
 
       {liveGenerationId ? (
         <Section
@@ -624,11 +797,11 @@ function presetFor(schedule: string | null): string {
  * expression is the `title`, because a description is a summary and someone
  * debugging a schedule wants the thing itself.
  */
-function ScheduleBadge({ schedule }: { schedule: string }) {
+function ScheduleBadge({ schedule, paused = false }: { schedule: string; paused?: boolean }) {
   return (
     <span title={`${schedule} (UTC)`}>
-      <Badge variant="blue" icon={ClockIcon}>
-        Scheduled · {describeCron(schedule)} UTC
+      <Badge variant="neutral" icon={ClockIcon}>
+        {paused ? 'Schedule paused' : 'Scheduled'} · {describeCron(schedule)} UTC
       </Badge>
     </span>
   )
@@ -704,9 +877,9 @@ function ScheduleSection({ intentId, schedule }: { intentId: string; schedule: s
             </Button>
           </div>
 
-          <Text variant="secondary" size="xs">
+          <Text variant="secondary" size="base">
             {next === null
-              ? 'This intent runs only when someone presses Run.'
+              ? 'This test runs only when someone presses Run.'
               : valid
                 ? `${describeCron(next)}, UTC. Scheduled runs appear in the history with a schedule trigger.`
                 : 'Five fields — minute hour day month weekday — using numbers, *, lists, ranges and steps.'}
@@ -720,6 +893,7 @@ function ScheduleSection({ intentId, schedule }: { intentId: string; schedule: s
 /* ---------------------------------------------------------------- Runs tab */
 
 type RunRowData = {
+  purpose: RunPurpose
   id: string
   status: RunStatus
   trigger: 'manual' | 'regenerate' | 'schedule'
@@ -744,11 +918,14 @@ function RunsTab({ projectId, runs }: { projectId: string; runs: Array<RunRowDat
   }
 
   return (
-    <Section title="Runs" description="Newest first. Open one for its steps and artifacts.">
+    <Section
+      title="Runs"
+      description="Regression summary excludes draft checks and generation verification. All executions appear below, newest first."
+    >
       <div className="grid gap-4">
-        <RunStatusSummary runs={runs} />
+        <RunStatusSummary runs={runs.filter((row) => row.purpose === 'regression')} />
 
-        <DurationTrend runs={runs} />
+        <DurationTrend runs={runs.filter((row) => row.purpose === 'regression')} />
 
         <LayerCard className="p-0">
           <div className="overflow-x-auto">
@@ -785,7 +962,16 @@ function RunsTab({ projectId, runs }: { projectId: string; runs: Array<RunRowDat
                           </Button>
                         </Table.Cell>
                         <Table.Cell>
-                          <RunStatusBadge status={row.status} />
+                          <div className="grid gap-1">
+                            <RunStatusBadge status={row.status} />
+                            <Text variant="secondary">
+                              {row.purpose === 'draft-check'
+                                ? 'Draft check'
+                                : row.purpose === 'generation-verification'
+                                  ? 'Verification'
+                                  : 'Regression'}
+                            </Text>
+                          </div>
                         </Table.Cell>
                         <Table.Cell>
                           <RelativeTime value={row.startedAt} />
@@ -852,7 +1038,9 @@ type VersionRowData = {
 function HistoryTab({
   versions,
   currentVersionId,
+  confirm,
 }: {
+  confirm: (next: () => void) => void
   versions: Array<VersionRowData>
   currentVersionId: string | null
 }) {
@@ -878,6 +1066,7 @@ function HistoryTab({
                 version={version}
                 isCurrent={version.id === currentVersionId}
                 onView={() => setViewing(version)}
+                confirm={confirm}
               />
             </li>
           ))}
@@ -899,7 +1088,9 @@ function VersionRow({
   version,
   isCurrent,
   onView,
+  confirm,
 }: {
+  confirm: (next: () => void) => void
   version: VersionRowData
   isCurrent: boolean
   onView: () => void
@@ -928,7 +1119,7 @@ function VersionRow({
         </div>
       }
       subtitle={
-        <Text variant="secondary" size="xs" truncate>
+        <Text variant="secondary" size="base" truncate>
           {version.note ?? 'No note'} · {version.createdByName} ·{' '}
           <RelativeTime value={version.createdAt} /> · {version.codeLength} chars
         </Text>
@@ -944,7 +1135,7 @@ function VersionRow({
               size="sm"
               icon={<ArrowCounterClockwiseIcon size={14} />}
               loading={restore.isPending}
-              onClick={() => restore.mutate()}
+              onClick={() => confirm(() => restore.mutate())}
             >
               Restore
             </Button>
@@ -1065,7 +1256,7 @@ function EditIntentForm({
       <div className="flex items-start justify-between gap-4">
         <Dialog.Title>
           <Text as="span" variant="heading">
-            Edit intent
+            Edit test
           </Text>
         </Dialog.Title>
         <Dialog.Close
@@ -1158,7 +1349,7 @@ function DeleteIntentDialog({
           <div className="grid gap-1.5">
             <Dialog.Title>
               <Text as="span" variant="heading">
-                Delete this intent?
+                Delete this test?
               </Text>
             </Dialog.Title>
             <Dialog.Description>
@@ -1191,7 +1382,7 @@ function DeleteIntentDialog({
               loading={mutation.isPending}
               onClick={() => mutation.mutate()}
             >
-              Delete intent
+              Delete test
             </Button>
           </div>
         </div>

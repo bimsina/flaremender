@@ -141,7 +141,7 @@ export function SettingRow({
             {label}
           </Text>
           {hint ? (
-            <Text as="span" variant="secondary" size="xs">
+            <Text as="span" variant="secondary" size="base">
               {hint}
             </Text>
           ) : null}
@@ -167,7 +167,7 @@ export function InlineEmpty({
 }) {
   return (
     <div className="flex flex-wrap items-center justify-center gap-1.5 rounded-md border border-dashed border-kumo-line px-4 py-5 text-center">
-      <Text as="span" variant="secondary" size="xs">
+      <Text as="span" variant="secondary" size="base">
         {message}
       </Text>
       {actionLabel && onAction ? (

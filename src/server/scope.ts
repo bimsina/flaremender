@@ -18,7 +18,7 @@ import {
   scriptVersion,
   suiteRun,
 } from '#/db/schema/app.ts'
-import { AuthError } from './auth.ts'
+import { AuthError } from './auth-error.ts'
 
 export async function assertProject(db: Db, organizationId: string, projectId: string) {
   const [row] = await db
@@ -64,7 +64,7 @@ export async function loadIntent(db: Db, organizationId: string, intentId: strin
     .where(and(eq(intent.id, intentId), eq(project.organizationId, organizationId)))
     .limit(1)
 
-  if (!row) throw new AuthError('Intent not found.', 404)
+  if (!row) throw new AuthError('Test not found.', 404)
   return row
 }
 

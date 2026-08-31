@@ -215,7 +215,7 @@ export function RunTrendChart({
  * is a sequence, not a clock: runs cluster — a suite fires seven of them inside
  * a minute — and on a real time axis those seven collapse into a hairline while
  * a quiet week stretches out beside them. Evenly spaced bars answer the
- * question actually being asked, which is whether this intent is getting slower
+ * question actually being asked, which is whether this test is getting slower
  * or flakier, and the label under each bar still says when it ran.
  *
  * One series per verdict, each holding nulls everywhere it does not apply, so

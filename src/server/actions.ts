@@ -1,3 +1,5 @@
+import { enqueueWork } from './enqueue.ts'
+import { isRunnableIntent } from './test-policy.ts'
 /**
  * What the product *does*, with nobody in particular asking.
  *
@@ -22,12 +24,11 @@
  *   a Workflow instance named after it, then a return.
  */
 import { env } from 'cloudflare:workers'
-import { and, desc, eq, inArray, isNotNull, ne, notInArray, sql } from 'drizzle-orm'
+import { and, eq, inArray, ne, sql } from 'drizzle-orm'
 
 import type { Db } from '#/db/index.ts'
-import type { GenerationJobKind, IntentStatus, ScriptAuthor } from '#/db/schema/app.ts'
+import type { GenerationJobKind, IntentStatus } from '#/db/schema/app.ts'
 import {
-  UNADOPTED_INTENT_STATUSES,
   environment,
   environmentVariable,
   generationJob,
@@ -50,8 +51,7 @@ import { ValidationError } from './validate.ts'
  * because the failure mode of forgetting it in one query is a "run all" that
  * quietly executes a test the user never approved.
  */
-export const isAdoptedIntent = notInArray(intent.status, [...UNADOPTED_INTENT_STATUSES])
-
+export { isAdoptedIntent, isRunnableIntent } from './test-policy.ts'
 /** The row every "run this somewhere" path needs, resolved the same way twice. */
 export type TargetEnvironment = typeof environment.$inferSelect
 
@@ -107,50 +107,10 @@ export async function loadCurrentVersion(db: Db, currentVersionId: string | null
 /**
  * Appends a script version and points the intent at it, atomically.
  *
- * `status` only moves `'draft' → 'ready'`: an intent that has already passed or
- * failed keeps that history until the next run re-decides it.
+ * Every save starts a draft and clears the current result. Historical runs
+ * remain attached to the immutable versions they executed.
  */
-export async function appendScriptVersion(
-  db: Db,
-  input: {
-    intentId: string
-    status: IntentStatus
-    code: string
-    author: ScriptAuthor
-    note: string | null
-    createdBy: string
-  },
-) {
-  const [last] = await db
-    .select({ version: scriptVersion.version })
-    .from(scriptVersion)
-    .where(eq(scriptVersion.intentId, input.intentId))
-    .orderBy(desc(scriptVersion.version))
-    .limit(1)
-
-  const row = {
-    id: createId('sv'),
-    intentId: input.intentId,
-    version: (last?.version ?? 0) + 1,
-    code: input.code,
-    author: input.author,
-    createdBy: input.createdBy,
-    note: input.note,
-  }
-
-  await db.batch([
-    db.insert(scriptVersion).values(row),
-    db
-      .update(intent)
-      .set({
-        currentVersionId: row.id,
-        ...(input.status === 'draft' ? { status: 'ready' as const } : {}),
-      })
-      .where(eq(intent.id, input.intentId)),
-  ])
-
-  return { id: row.id, version: row.version }
-}
+export { appendScriptVersion } from './script-records.ts'
 
 /* ------------------------------------------------------------------ Intents */
 
@@ -227,7 +187,14 @@ export async function updateIntentRecord(
 ) {
   const patch = {
     ...(input.title === undefined ? {} : { title: input.title }),
-    ...(input.description === undefined ? {} : { description: input.description }),
+    ...(input.description === undefined
+      ? {}
+      : {
+          description: input.description,
+          readiness: 'draft' as const,
+          status: sql`case when ${intent.status} = 'proposed' then 'proposed' else 'draft' end`,
+          lastRunId: null,
+        }),
     ...(input.schedule === undefined ? {} : { schedule: input.schedule }),
   }
 
@@ -260,12 +227,20 @@ export async function queueIntentRun(
     scriptVersionId: string
   },
 ) {
+  const [test] = await db.select().from(intent).where(eq(intent.id, input.intentId)).limit(1)
+  const purpose =
+    test?.readiness === 'ready' && test.currentVersionId === input.scriptVersionId
+      ? ('regression' as const)
+      : ('draft-check' as const)
   const row = {
     id: createId('run'),
     intentId: input.intentId,
     environmentId: input.environment.id,
     projectId: input.projectId,
     scriptVersionId: input.scriptVersionId,
+    purpose,
+    environmentName: input.environment.name,
+    baseUrl: input.environment.baseUrl,
     status: 'queued' as const,
     trigger: 'manual' as const,
     startedAt: new Date(),
@@ -276,10 +251,23 @@ export async function queueIntentRun(
   // The organization comes from the session, not from the run row: the Workflow
   // re-checks it, and a value the client could influence would make that check
   // meaningless.
-  await env.RUN_WORKFLOW.create({
-    id: row.id,
-    params: { runId: row.id, organizationId: input.organizationId },
-  })
+  await enqueueWork(
+    () =>
+      env.RUN_WORKFLOW.create({
+        id: row.id,
+        params: { runId: row.id, organizationId: input.organizationId },
+      }),
+    async () => (await env.RUN_WORKFLOW.get(row.id)).status(),
+    () =>
+      db
+        .update(run)
+        .set({
+          status: 'error',
+          errorMessage: 'The run could not be started. Please try again.',
+          finishedAt: new Date(),
+        })
+        .where(and(eq(run.id, row.id), eq(run.status, 'queued'))),
+  )
 
   return { runId: row.id, environmentId: input.environment.id, status: row.status }
 }
@@ -293,7 +281,7 @@ export async function queueIntentRun(
  */
 export async function assertNoGenerationInFlight(db: Db, intentId: string, status: IntentStatus) {
   if (status === 'generating') {
-    throw new ValidationError('A script is already being generated for this intent.')
+    throw new ValidationError('A script is already being generated for this test.')
   }
 
   const [inFlight] = await db
@@ -308,7 +296,7 @@ export async function assertNoGenerationInFlight(db: Db, intentId: string, statu
     .limit(1)
 
   if (inFlight) {
-    throw new ValidationError('A script is already being generated for this intent.')
+    throw new ValidationError('A script is already being generated for this test.')
   }
 }
 
@@ -342,16 +330,29 @@ export async function queueGeneration(
 
   await db.insert(generationJob).values(row)
 
-  await env.GENERATE_WORKFLOW.create({
-    id: row.id,
-    params: {
-      jobId: row.id,
-      intentId: input.intentId,
-      environmentId: input.environment.id,
-      organizationId: input.organizationId,
-      userId: input.createdBy,
-    },
-  })
+  await enqueueWork(
+    () =>
+      env.GENERATE_WORKFLOW.create({
+        id: row.id,
+        params: {
+          jobId: row.id,
+          intentId: input.intentId,
+          environmentId: input.environment.id,
+          organizationId: input.organizationId,
+          userId: input.createdBy,
+        },
+      }),
+    async () => (await env.GENERATE_WORKFLOW.get(row.id)).status(),
+    () =>
+      db
+        .update(generationJob)
+        .set({
+          status: 'failed',
+          stuckReason: 'The job could not be started. Please try again.',
+          finishedAt: new Date(),
+        })
+        .where(and(eq(generationJob.id, row.id), eq(generationJob.status, 'queued'))),
+  )
 
   return { jobId: row.id, environmentId: input.environment.id }
 }
@@ -472,17 +473,30 @@ export async function queueExploration(
 
   await db.insert(generationJob).values(row)
 
-  await env.EXPLORE_WORKFLOW.create({
-    id: row.id,
-    params: {
-      jobId: row.id,
-      projectId: input.projectId,
-      environmentId: input.environment.id,
-      organizationId: input.organizationId,
-      userId: input.createdBy,
-      focus: input.focus,
-    },
-  })
+  await enqueueWork(
+    () =>
+      env.EXPLORE_WORKFLOW.create({
+        id: row.id,
+        params: {
+          jobId: row.id,
+          projectId: input.projectId,
+          environmentId: input.environment.id,
+          organizationId: input.organizationId,
+          userId: input.createdBy,
+          focus: input.focus,
+        },
+      }),
+    async () => (await env.EXPLORE_WORKFLOW.get(row.id)).status(),
+    () =>
+      db
+        .update(generationJob)
+        .set({
+          status: 'failed',
+          stuckReason: 'The job could not be started. Please try again.',
+          finishedAt: new Date(),
+        })
+        .where(and(eq(generationJob.id, row.id), eq(generationJob.status, 'queued'))),
+  )
 
   return { jobId: row.id, environmentId: input.environment.id }
 }
@@ -558,16 +572,29 @@ export async function queueBatchGeneration(
 
   await db.insert(generationJob).values(row)
 
-  await env.BATCH_WORKFLOW.create({
-    id: row.id,
-    params: {
-      jobId: row.id,
-      environmentId: input.environment.id,
-      organizationId: input.organizationId,
-      userId: input.createdBy,
-      intentIds: members.map((member) => member.id),
-    },
-  })
+  await enqueueWork(
+    () =>
+      env.BATCH_WORKFLOW.create({
+        id: row.id,
+        params: {
+          jobId: row.id,
+          environmentId: input.environment.id,
+          organizationId: input.organizationId,
+          userId: input.createdBy,
+          intentIds: members.map((member) => member.id),
+        },
+      }),
+    async () => (await env.BATCH_WORKFLOW.get(row.id)).status(),
+    () =>
+      db
+        .update(generationJob)
+        .set({
+          status: 'failed',
+          stuckReason: 'The job could not be started. Please try again.',
+          finishedAt: new Date(),
+        })
+        .where(and(eq(generationJob.id, row.id), eq(generationJob.status, 'queued'))),
+  )
 
   return {
     jobId: row.id,
@@ -591,9 +618,7 @@ export async function countRunnableIntents(db: Db, projectId: string): Promise<n
   const [row] = await db
     .select({ count: sql<number>`count(*)` })
     .from(intent)
-    .where(
-      and(eq(intent.projectId, projectId), isNotNull(intent.currentVersionId), isAdoptedIntent),
-    )
+    .where(and(eq(intent.projectId, projectId), isRunnableIntent))
 
   return Number(row?.count ?? 0)
 }
@@ -615,13 +640,17 @@ export async function queueSuiteRun(
 ) {
   const runnable = await countRunnableIntents(db, input.projectId)
   if (runnable === 0) {
-    throw new ValidationError('No intent in this project has a saved script yet.')
+    throw new ValidationError(
+      'Mark at least one saved test ready before running a suite. Draft checks are excluded.',
+    )
   }
 
   const row = {
     id: createId('srun'),
     projectId: input.projectId,
     environmentId: input.environment.id,
+    environmentName: input.environment.name,
+    baseUrl: input.environment.baseUrl,
     status: 'queued' as const,
     trigger: 'manual' as const,
     createdBy: input.createdBy,
@@ -630,10 +659,23 @@ export async function queueSuiteRun(
 
   await db.insert(suiteRun).values(row)
 
-  await env.SUITE_WORKFLOW.create({
-    id: row.id,
-    params: { suiteRunId: row.id, organizationId: input.organizationId },
-  })
+  await enqueueWork(
+    () =>
+      env.SUITE_WORKFLOW.create({
+        id: row.id,
+        params: { suiteRunId: row.id, organizationId: input.organizationId },
+      }),
+    async () => (await env.SUITE_WORKFLOW.get(row.id)).status(),
+    () =>
+      db
+        .update(suiteRun)
+        .set({
+          status: 'error',
+          errorMessage: 'The suite could not be started. Please try again.',
+          finishedAt: new Date(),
+        })
+        .where(and(eq(suiteRun.id, row.id), eq(suiteRun.status, 'queued'))),
+  )
 
   return { suiteRunId: row.id, environmentId: input.environment.id, total: runnable }
 }

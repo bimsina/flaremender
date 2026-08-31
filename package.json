@@ -24,7 +24,11 @@
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "format": "oxfmt",
-    "format:check": "oxfmt --check"
+    "format:check": "oxfmt --check",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "manual:fixtures": "node --import tsx scripts/seed-manual-fixtures.ts",
+    "manual:app": "node examples/reliability/serve.mjs",
+    "manual:verify": "node --import tsx scripts/verify-manual-fixtures.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.45",

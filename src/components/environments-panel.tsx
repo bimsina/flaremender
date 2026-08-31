@@ -177,7 +177,7 @@ function EnvironmentCard({
           </Text>
         }
         meta={
-          <Text as="span" variant="secondary" size="xs">
+          <Text as="span" variant="secondary" size="base">
             {count} variable{count === 1 ? '' : 's'}
           </Text>
         }
@@ -320,7 +320,7 @@ function VariablesEditor({ environment }: { environment: EnvironmentRow }) {
       </form>
 
       {save.error ? (
-        <Text variant="error" size="xs">
+        <Text variant="error" size="base">
           {save.error.message}
         </Text>
       ) : null}

@@ -37,7 +37,7 @@ import { NonRetryableError } from 'cloudflare:workflows'
 
 import { createDb } from '#/db/index.ts'
 import type { SuiteRunStatus } from '#/db/schema/app.ts'
-import { intent, project, run, suiteRun } from '#/db/schema/app.ts'
+import { environment, intent, project, run, suiteRun } from '#/db/schema/app.ts'
 import {
   EXECUTE_STEP_CONFIG,
   PERSIST_ERROR_STEP_CONFIG,
@@ -47,7 +47,7 @@ import {
   persistRunError,
   releaseRunSession,
 } from '#/engine/run-steps.ts'
-import { isAdoptedIntent } from '#/server/actions.ts'
+import { isRunnableIntent } from '#/server/test-policy.ts'
 
 export interface SuiteWorkflowParams {
   suiteRunId: string
@@ -75,6 +75,8 @@ interface SuiteMember {
 interface LoadedSuite {
   projectId: string
   environmentId: string
+  environmentName: string
+  baseUrl: string
   trigger: 'manual' | 'schedule'
   members: Array<SuiteMember>
 }
@@ -186,9 +188,10 @@ export class SuiteWorkflow extends WorkflowEntrypoint<Cloudflare.Env, SuiteWorkf
     const db = createDb(this.env.DB)
 
     const [row] = await db
-      .select({ suiteRun })
+      .select({ suiteRun, environment })
       .from(suiteRun)
       .innerJoin(project, eq(project.id, suiteRun.projectId))
+      .innerJoin(environment, eq(environment.id, suiteRun.environmentId))
       .where(and(eq(suiteRun.id, suiteRunId), eq(project.organizationId, organizationId)))
       .limit(1)
 
@@ -205,7 +208,7 @@ export class SuiteWorkflow extends WorkflowEntrypoint<Cloudflare.Env, SuiteWorkf
           isNotNull(intent.currentVersionId),
           // A proposal is not part of the suite until somebody approves it —
           // and an explicit `intentIds` filter must not be a way round that.
-          isAdoptedIntent,
+          isRunnableIntent,
           // An empty array would compile to `false` and produce a suite with no
           // members, which is not what "no filter" means.
           intentIds && intentIds.length > 0 ? inArray(intent.id, intentIds) : undefined,
@@ -227,6 +230,8 @@ export class SuiteWorkflow extends WorkflowEntrypoint<Cloudflare.Env, SuiteWorkf
     return {
       projectId: row.suiteRun.projectId,
       environmentId: row.suiteRun.environmentId,
+      environmentName: row.suiteRun.environmentName ?? row.environment.name,
+      baseUrl: row.suiteRun.baseUrl ?? row.environment.baseUrl,
       trigger: row.suiteRun.trigger,
       // `currentVersionId` is nullable on the column but not in this result —
       // the query filtered the nulls out.
@@ -316,6 +321,9 @@ export class SuiteWorkflow extends WorkflowEntrypoint<Cloudflare.Env, SuiteWorkf
         id: runId,
         intentId: member.intentId,
         environmentId: suite.environmentId,
+        environmentName: suite.environmentName,
+        baseUrl: suite.baseUrl,
+        purpose: 'regression',
         projectId: suite.projectId,
         scriptVersionId: member.scriptVersionId,
         suiteRunId,
@@ -420,7 +428,11 @@ export class SuiteWorkflow extends WorkflowEntrypoint<Cloudflare.Env, SuiteWorkf
     // agree with the rows underneath it.
     await db
       .update(run)
-      .set({ status: 'error', finishedAt: new Date() })
+      .set({
+        status: 'error',
+        errorMessage: 'The suite could not finish. Review its member runs for details.',
+        finishedAt: new Date(),
+      })
       .where(and(eq(run.suiteRunId, suiteRunId), inArray(run.status, [...UNFINISHED_RUN_STATUSES])))
 
     const counts = await tallySuite(this.env, suiteRunId)
@@ -429,6 +441,8 @@ export class SuiteWorkflow extends WorkflowEntrypoint<Cloudflare.Env, SuiteWorkf
       .update(suiteRun)
       .set({
         status: 'error',
+        errorMessage:
+          'The suite workflow could not finish. Results may be incomplete; review the member runs and try again.',
         passedCount: counts.passed,
         failedCount: counts.failed,
         errorCount: counts.error,

@@ -8,21 +8,21 @@ const INTENT: Record<IntentStatus, { label: string; variant: BadgeVariant }> = {
   // Not yet a test: something the explorer suggested and nobody has agreed to.
   // Its own colour rather than a shade of draft, because the two ask different
   // things of the reader — a draft wants finishing, a proposal wants a verdict.
-  proposed: { label: 'Proposed', variant: 'purple' },
+  proposed: { label: 'Proposed', variant: 'neutral' },
   draft: { label: 'Draft', variant: 'neutral' },
   // Transient, and only ever set by a running `GenerateWorkflow`.
-  generating: { label: 'Generating', variant: 'info' },
-  ready: { label: 'Ready to run', variant: 'blue' },
+  generating: { label: 'Generating', variant: 'neutral' },
+  ready: { label: 'Ready to run', variant: 'neutral' },
   passing: { label: 'Passing', variant: 'success' },
   failing: { label: 'Failing', variant: 'error' },
 }
 
 const RUN: Record<RunStatus, { label: string; variant: BadgeVariant }> = {
   queued: { label: 'Queued', variant: 'neutral' },
-  running: { label: 'Running', variant: 'info' },
+  running: { label: 'Running', variant: 'neutral' },
   passed: { label: 'Passed', variant: 'success' },
   // A healed run passed, but only after a repair — never collapse the two.
-  healed: { label: 'Healed', variant: 'blue' },
+  healed: { label: 'Healed', variant: 'neutral' },
   failed: { label: 'Failed', variant: 'error' },
   error: { label: 'Errored', variant: 'warning' },
 }
@@ -33,15 +33,15 @@ const RUN: Record<RunStatus, { label: string; variant: BadgeVariant }> = {
  */
 const SUITE: Record<SuiteRunStatus, { label: string; variant: BadgeVariant }> = {
   queued: { label: 'Queued', variant: 'neutral' },
-  running: { label: 'Running', variant: 'info' },
+  running: { label: 'Running', variant: 'neutral' },
   passed: { label: 'Passed', variant: 'success' },
   failed: { label: 'Failed', variant: 'error' },
   error: { label: 'Errored', variant: 'warning' },
 }
 
 const AUTHOR: Record<ScriptAuthor, { label: string; variant: BadgeVariant }> = {
-  user: { label: 'You', variant: 'neutral' },
-  agent: { label: 'Agent', variant: 'blue' },
+  user: { label: 'User', variant: 'neutral' },
+  agent: { label: 'Agent', variant: 'neutral' },
 }
 
 /** Kumo maps dot colors only for these variants; others render a plain badge. */

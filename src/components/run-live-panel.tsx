@@ -69,12 +69,14 @@ export function RunLivePanel({ runId, intentId }: { runId: string; intentId: str
         ) : null}
 
         {live.steps.length === 0 ? (
-          <Text variant="secondary" size="xs">
-            {live.transport === 'polling'
-              ? 'Live progress is unavailable, so this is being read from the run itself.'
-              : live.started
-                ? 'Waiting for the first step…'
-                : 'Waiting for the browser to start…'}
+          <Text variant="secondary" size="base">
+            {live.finished
+              ? 'No steps were recorded for this execution.'
+              : live.transport === 'polling'
+                ? 'Live progress is unavailable, so this is being read from the run itself.'
+                : live.started
+                  ? 'Waiting for the first step…'
+                  : 'Waiting for the browser to start…'}
           </Text>
         ) : (
           <StepList steps={live.steps} />

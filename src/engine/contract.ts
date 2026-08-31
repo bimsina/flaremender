@@ -45,6 +45,7 @@ export type RunErrorKind = 'browser' | 'script' | 'harness'
 
 /** What the harness hands back over RPC. Binary artifacts ride along as bytes. */
 export interface HarnessResponse {
+  artifactWarnings?: Array<string>
   result: RunResult
   errorKind: RunErrorKind | null
   /** PNG bytes of the page at the moment of failure, when one could be taken. */

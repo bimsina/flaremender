@@ -7,10 +7,12 @@
  * the table row was carrying: which environment, which trigger, which script
  * version, which intent.
  */
-import { Breadcrumbs, Button, Text } from '@cloudflare/kumo'
+import { Breadcrumbs, LinkButton, Text } from '@cloudflare/kumo'
 import { TestTubeIcon } from '@phosphor-icons/react'
 import { useSuspenseQuery } from '@tanstack/react-query'
-import { Link, createFileRoute } from '@tanstack/react-router'
+import { createLink, createFileRoute } from '@tanstack/react-router'
+
+const RouterLinkButton = createLink(LinkButton)
 
 import { PageBody, PageHeader } from '#/components/page.tsx'
 import { RelativeTime } from '#/components/relative-time.tsx'
@@ -57,20 +59,20 @@ function RunPage() {
             <Text as="span" variant="secondary">
               {data.intent.title}
             </Text>
-            <Text as="span" variant="secondary" size="xs">
+            <Text as="span" variant="secondary" size="base">
               · started <RelativeTime value={data.run.startedAt} />
             </Text>
           </span>
         }
         actions={
-          <Link
+          <RouterLinkButton
             to="/projects/$projectId/intents/$intentId"
             params={{ projectId, intentId: data.intent.id }}
+            variant="secondary"
+            icon={TestTubeIcon}
           >
-            <Button variant="secondary" icon={<TestTubeIcon size={16} />}>
-              Open intent
-            </Button>
-          </Link>
+            Open test
+          </RouterLinkButton>
         }
       />
 

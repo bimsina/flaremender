@@ -31,7 +31,8 @@ import type { Db } from '#/db/index.ts'
 import { createDb } from '#/db/index.ts'
 import { environment, intent, project, run, suiteRun } from '#/db/schema/app.ts'
 import { matchesCron } from '#/lib/cron.ts'
-import { isAdoptedIntent } from '#/server/actions.ts'
+import { isRunnableIntent } from '#/server/test-policy.ts'
+import { enqueueWork } from '#/server/enqueue.ts'
 
 /** Non-terminal on both tables: work that is still expected to produce a verdict. */
 const UNFINISHED = ['queued', 'running'] as const
@@ -108,7 +109,7 @@ export async function dispatchSchedules(
     // A proposal cannot have a schedule or a script today, so both of the other
     // conditions already exclude one — but the clock is the last place that
     // should be relying on an implication rather than saying what it means.
-    .where(and(isNotNull(intent.schedule), isNotNull(intent.currentVersionId), isAdoptedIntent))
+    .where(and(isNotNull(intent.schedule), isNotNull(intent.currentVersionId), isRunnableIntent))
 
   const dueByProject = new Map<string, { organizationId: string; intentIds: Array<string> }>()
 
@@ -150,7 +151,7 @@ export async function dispatchSchedules(
       if (runnable.length === 0) continue
 
       const [target] = await db
-        .select({ id: environment.id })
+        .select({ id: environment.id, name: environment.name, baseUrl: environment.baseUrl })
         .from(environment)
         .where(and(eq(environment.projectId, projectId), eq(environment.isDefault, true)))
         .limit(1)
@@ -167,6 +168,8 @@ export async function dispatchSchedules(
         suiteRunId: scheduledSuiteRunId(projectId, tick),
         projectId,
         environmentId: target.id,
+        environmentName: target.name,
+        baseUrl: target.baseUrl,
         organizationId: group.organizationId,
         intentIds: runnable,
       })
@@ -223,6 +226,8 @@ async function startScheduledSuite(
     suiteRunId: string
     projectId: string
     environmentId: string
+    environmentName: string
+    baseUrl: string
     organizationId: string
     intentIds: Array<string>
   },
@@ -235,6 +240,8 @@ async function startScheduledSuite(
       id: input.suiteRunId,
       projectId: input.projectId,
       environmentId: input.environmentId,
+      environmentName: input.environmentName,
+      baseUrl: input.baseUrl,
       status: 'queued',
       trigger: 'schedule',
       totalCount: input.intentIds.length,
@@ -250,26 +257,31 @@ async function startScheduledSuite(
     return false
   }
 
-  try {
-    await env.SUITE_WORKFLOW.create({
-      id: input.suiteRunId,
-      params: {
-        suiteRunId: input.suiteRunId,
-        organizationId: input.organizationId,
-        intentIds: input.intentIds,
-      },
-    })
-  } catch (error) {
-    // The row is the lock, and a lock nobody will ever release is worse than
-    // no lock: a suite stuck at 'queued' would take this project out of every
-    // future tick. Give it a verdict, then let the caller log the failure.
-    await db
-      .update(suiteRun)
-      .set({ status: 'error', finishedAt: new Date() })
-      .where(eq(suiteRun.id, input.suiteRunId))
-
-    throw error
-  }
+  await enqueueWork(
+    () =>
+      env.SUITE_WORKFLOW.create({
+        id: input.suiteRunId,
+        params: {
+          suiteRunId: input.suiteRunId,
+          organizationId: input.organizationId,
+          intentIds: input.intentIds,
+        },
+      }),
+    async () => (await env.SUITE_WORKFLOW.get(input.suiteRunId)).status(),
+    async () => {
+      // The row is the lock, and a lock nobody will ever release is worse than
+      // no lock: a suite stuck at 'queued' would take this project out of every
+      // future tick. Give it a verdict, then let the caller log the failure.
+      await db
+        .update(suiteRun)
+        .set({
+          status: 'error',
+          errorMessage: 'The scheduled suite could not be started.',
+          finishedAt: new Date(),
+        })
+        .where(and(eq(suiteRun.id, input.suiteRunId), eq(suiteRun.status, 'queued')))
+    },
+  )
 
   console.log(
     `[schedule] ${input.suiteRunId}: queued ${input.intentIds.length} intent(s) in ${input.projectId}.`,

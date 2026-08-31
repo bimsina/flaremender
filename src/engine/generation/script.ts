@@ -1,3 +1,4 @@
+import { hasSupportedAssertions } from '#/lib/assertions.ts'
 /**
  * Turning fragments into a script.
  *
@@ -96,7 +97,7 @@ export function statementsOf(fragment: string): Array<string> {
  * only the floor beneath it.
  */
 export function hasAssertions(code: string): boolean {
-  return /\bexpect\s*\(/.test(code)
+  return hasSupportedAssertions(code)
 }
 
 /**

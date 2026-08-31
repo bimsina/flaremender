@@ -13,7 +13,7 @@
  * has run two hundred times must not mean "the failures among the newest
  * fifty". The one exception is documented on `matchesStatus` below.
  */
-import { Button, Empty, LayerCard, Loader, Select, Table, Text } from '@cloudflare/kumo'
+import { Button, Empty, LayerCard, LinkButton, Loader, Select, Table, Text } from '@cloudflare/kumo'
 import { CaretDownIcon, ClockIcon, PlayIcon, StackIcon } from '@phosphor-icons/react'
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
@@ -27,7 +27,13 @@ import { RunStatusSummary } from '#/components/run-status-summary.tsx'
 import { RunTrend } from '#/components/run-trend.tsx'
 import { RunStatusBadge, SuiteRunStatusBadge } from '#/components/status-badge.tsx'
 import { SuiteProgress } from '#/components/suite-progress.tsx'
-import type { RunStatus, RunTrigger, SuiteRunStatus, SuiteTrigger } from '#/db/schema/app.ts'
+import type {
+  RunPurpose,
+  RunStatus,
+  RunTrigger,
+  SuiteRunStatus,
+  SuiteTrigger,
+} from '#/db/schema/app.ts'
 import { shortId } from '#/lib/ids.ts'
 import { projectRunsQuery, runTrendQuery, suiteRunQuery, suiteRunsQuery } from '#/lib/queries.ts'
 
@@ -57,6 +63,7 @@ const TRIGGER_LABEL: Record<string, string> = {
 }
 
 interface ProjectRunRow {
+  purpose: RunPurpose
   id: string
   status: RunStatus
   trigger: RunTrigger
@@ -170,7 +177,7 @@ export function ProjectRunsTab({
       <Empty
         icon={<PlayIcon size={48} className="text-kumo-inactive" />}
         title="No runs found"
-        description="Save a script on an intent and press Run, or run the whole project at once — every execution lands here."
+        description="Save a script on a test and press Run, or run the whole project at once — every execution lands here."
       />
     )
   }
@@ -185,7 +192,7 @@ export function ProjectRunsTab({
           <SuiteProgress key={liveSuiteRunId} suiteRunId={liveSuiteRunId} projectId={projectId} />
         ) : null}
 
-        <RunStatusSummary runs={recent} />
+        <RunStatusSummary runs={recent.filter((row) => row.purpose === 'regression')} />
 
         <RunTrend days={trend} compact />
 
@@ -300,7 +307,16 @@ function RunEntry({
           </Button>
         </Table.Cell>
         <Table.Cell>
-          <RunStatusBadge status={run.status} />
+          <div className="grid gap-1">
+            <RunStatusBadge status={run.status} />
+            <Text variant="secondary">
+              {run.purpose === 'draft-check'
+                ? 'Draft check'
+                : run.purpose === 'generation-verification'
+                  ? 'Verification'
+                  : 'Regression'}
+            </Text>
+          </div>
         </Table.Cell>
         <Table.Cell>
           <RelativeTime value={run.startedAt} />
@@ -328,7 +344,7 @@ function RunEntry({
         </Table.Cell>
         <Table.Cell>{run.environmentName}</Table.Cell>
         <Table.Cell>
-          <Text as="span" variant="secondary" size="xs">
+          <Text as="span" variant="secondary" size="base">
             {TRIGGER_LABEL[run.trigger] ?? run.trigger}
           </Text>
         </Table.Cell>
@@ -395,8 +411,8 @@ function SuiteEntry({
         </Table.Cell>
         <Table.Cell>
           <Text as="span">
-            {suite.totalCount} intent{suite.totalCount === 1 ? '' : 's'} · {suite.passedCount}{' '}
-            passed · {suite.failedCount} failed
+            {suite.totalCount} test{suite.totalCount === 1 ? '' : 's'} · {suite.passedCount} passed
+            · {suite.failedCount} failed
             {suite.errorCount > 0 ? ` · ${suite.errorCount} errored` : ''}
           </Text>
         </Table.Cell>
@@ -408,7 +424,7 @@ function SuiteEntry({
                 <ClockIcon size={13} aria-label="Started by the schedule" />
               </span>
             ) : null}
-            <Text as="span" variant="secondary" size="xs">
+            <Text as="span" variant="secondary" size="base">
               {TRIGGER_LABEL[suite.trigger] ?? suite.trigger}
             </Text>
           </span>
@@ -436,13 +452,17 @@ function SuiteEntry({
  * is lying about what it did.
  */
 function SuiteMembers({ projectId, suiteRunId }: { projectId: string; suiteRunId: string }) {
-  const { data, isPending, error } = useQuery(suiteRunQuery(suiteRunId))
+  const { data, isPending, error } = useQuery({
+    ...suiteRunQuery(suiteRunId),
+    refetchInterval: (query) =>
+      ['queued', 'running'].includes(query.state.data?.suiteRun.status ?? '') ? 2500 : false,
+  })
 
   if (isPending) {
     return (
       <div className="flex items-center gap-2 py-2">
         <Loader size="sm" />
-        <Text as="span" variant="secondary" size="xs">
+        <Text as="span" variant="secondary" size="base">
           Loading the suite…
         </Text>
       </div>
@@ -450,35 +470,56 @@ function SuiteMembers({ projectId, suiteRunId }: { projectId: string; suiteRunId
   }
 
   if (error) return <InlineEmpty message={error.message} />
-  if (data.members.length === 0) {
-    return <InlineEmpty message="This suite has not started an intent yet." />
-  }
 
   return (
-    <ol className="grid gap-1 py-1">
-      {data.members.map((member) => (
-        <li
-          key={member.id}
-          className="flex flex-wrap items-center justify-between gap-3 rounded-md px-2 py-1.5 hover:bg-kumo-base"
+    <div className="grid gap-3 py-2">
+      {data.suiteRun.errorMessage ? (
+        <Text variant="error">{data.suiteRun.errorMessage}</Text>
+      ) : null}
+      {data.members.length === 0 ? (
+        <InlineEmpty message="This suite has not started a test yet." />
+      ) : null}
+      <div className="flex flex-wrap gap-2">
+        <LinkButton
+          variant="secondary"
+          size="sm"
+          href={`/api/reports/suites/${suiteRunId}?format=json`}
         >
-          <span className="flex min-w-0 items-center gap-2.5">
-            <RunStatusBadge status={member.status} />
-            <Link
-              to="/projects/$projectId/runs/$runId"
-              params={{ projectId, runId: member.id }}
-              className="truncate text-kumo-link hover:underline"
-            >
-              {member.intentTitle}
-            </Link>
-          </span>
-          <span className="flex items-center gap-3">
-            <Text as="span" variant="mono-secondary">
-              {shortId(member.id)}
-            </Text>
-            <Duration ms={member.durationMs} />
-          </span>
-        </li>
-      ))}
-    </ol>
+          Export JSON
+        </LinkButton>
+        <LinkButton
+          variant="secondary"
+          size="sm"
+          href={`/api/reports/suites/${suiteRunId}?format=junit`}
+        >
+          Export JUnit
+        </LinkButton>
+      </div>
+      <ol className="grid gap-1 py-1">
+        {data.members.map((member) => (
+          <li
+            key={member.id}
+            className="flex flex-wrap items-center justify-between gap-3 rounded-md px-2 py-1.5 hover:bg-kumo-base"
+          >
+            <span className="flex min-w-0 items-center gap-2.5">
+              <RunStatusBadge status={member.status} />
+              <Link
+                to="/projects/$projectId/runs/$runId"
+                params={{ projectId, runId: member.id }}
+                className="truncate text-kumo-link hover:underline"
+              >
+                {member.intentTitle}
+              </Link>
+            </span>
+            <span className="flex items-center gap-3">
+              <Text as="span" variant="mono-secondary">
+                {shortId(member.id)}
+              </Text>
+              <Duration ms={member.durationMs} />
+            </span>
+          </li>
+        ))}
+      </ol>
+    </div>
   )
 }

@@ -1,3 +1,4 @@
+import { readJob } from './reports.server.ts'
 /**
  * Intents and their script history.
  *
@@ -7,7 +8,7 @@
  * is just another save that copies old code forward.
  */
 import { createServerFn } from '@tanstack/react-start'
-import { desc, eq, sql } from 'drizzle-orm'
+import { and, desc, eq, sql } from 'drizzle-orm'
 
 import { generationJob, intent, run, scriptVersion } from '#/db/schema/app.ts'
 import { user } from '#/db/schema/auth.ts'
@@ -58,6 +59,7 @@ export const listIntents = createServerFn({ method: 'GET' })
         title: intent.title,
         description: intent.description,
         status: intent.status,
+        readiness: intent.readiness,
         schedule: intent.schedule,
         lastRunId: intent.lastRunId,
         createdAt: intent.createdAt,
@@ -67,6 +69,7 @@ export const listIntents = createServerFn({ method: 'GET' })
         // and not the intent's — an edit must not read as an execution.
         lastRunAt: run.startedAt,
         lastRunStatus: run.status,
+        lastRunEnvironmentName: run.environmentName,
       })
       .from(intent)
       .leftJoin(scriptVersion, eq(scriptVersion.id, intent.currentVersionId))
@@ -91,6 +94,7 @@ export const getIntent = createServerFn({ method: 'GET' })
         title: row.intent.title,
         description: row.intent.description,
         status: row.intent.status,
+        readiness: row.intent.readiness,
         schedule: row.intent.schedule,
         lastRunId: row.intent.lastRunId,
         createdAt: row.intent.createdAt,
@@ -159,11 +163,13 @@ export const saveScript = createServerFn({ method: 'POST' })
   .middleware([orgMiddleware])
   .validator((data: unknown) => ({
     intentId: str(data, 'intentId'),
-    code: str(data, 'code', { max: 100_000 }),
+    code: str(data, 'code', { min: 0, max: 100_000 }),
     note: optionalStr(data, 'note', 200),
   }))
   .handler(async ({ data, context }) => {
     const row = await loadIntent(context.db, context.organizationId, data.intentId)
+
+    await assertNoGenerationInFlight(context.db, row.intent.id, row.intent.status)
 
     return appendScriptVersion(context.db, {
       intentId: row.intent.id,
@@ -225,6 +231,8 @@ export const restoreScriptVersion = createServerFn({ method: 'POST' })
 
     // History is immutable, so restoring copies the code forward as a new
     // version rather than moving the pointer backwards.
+    await assertNoGenerationInFlight(context.db, row.intent.id, row.intent.status)
+
     return appendScriptVersion(context.db, {
       intentId: row.intent.id,
       status: row.intent.status,
@@ -247,6 +255,7 @@ export const runIntent = createServerFn({ method: 'POST' })
   .middleware([orgMiddleware])
   .validator((data: unknown) => ({
     intentId: str(data, 'intentId'),
+    scriptVersionId: has(data, 'scriptVersionId') ? str(data, 'scriptVersionId') : null,
     environmentId: has(data, 'environmentId') ? str(data, 'environmentId') : null,
   }))
   .handler(async ({ data, context }) => {
@@ -254,8 +263,12 @@ export const runIntent = createServerFn({ method: 'POST' })
 
     const target = await targetEnvironment(context, row.project.id, data.environmentId, 'run')
 
-    const version = await loadCurrentVersion(context.db, row.intent.currentVersionId)
-    if (!version) throw new ValidationError('Save a script first.')
+    const version = await loadCurrentVersion(
+      context.db,
+      data.scriptVersionId ?? row.intent.currentVersionId,
+    )
+    if (!version || version.intentId !== row.intent.id)
+      throw new ValidationError('Save a script for this test first.')
 
     return queueIntentRun(context.db, {
       intentId: row.intent.id,
@@ -342,4 +355,35 @@ export const getIntentGeneration = createServerFn({ method: 'GET' })
       .limit(1)
 
     return row ?? null
+  })
+
+/** Readiness is a decision about a specific saved version, never a run verdict. */
+export const setTestReadiness = createServerFn({ method: 'POST' })
+  .middleware([orgMiddleware])
+  .validator((data: unknown) => ({
+    intentId: str(data, 'intentId'),
+    versionId: str(data, 'versionId'),
+    readiness: str(data, 'readiness'),
+  }))
+  .handler(async ({ data, context }) => {
+    await loadIntent(context.db, context.organizationId, data.intentId)
+    if (data.readiness !== 'ready' && data.readiness !== 'draft')
+      throw new ValidationError('Invalid readiness.')
+    const rows = await context.db
+      .update(intent)
+      .set({ readiness: data.readiness, status: data.readiness, lastRunId: null })
+      .where(and(eq(intent.id, data.intentId), eq(intent.currentVersionId, data.versionId)))
+      .returning({ id: intent.id })
+    if (!rows.length)
+      throw new ValidationError(
+        'This script has changed. Review the latest version before marking it ready.',
+      )
+    return { ok: true }
+  })
+
+export const getJob = createServerFn({ method: 'GET' })
+  .middleware([orgMiddleware])
+  .validator((data: unknown) => ({ jobId: str(data, 'jobId') }))
+  .handler(async ({ data, context }) => {
+    return readJob(context.db, context.organizationId, data.jobId)
   })

@@ -11,7 +11,8 @@
  * per-run, and a suite is not a run. Each member still narrates itself live on
  * its own intent page; this is the view from above.
  */
-import { Loader, Text, useKumoToastManager } from '@cloudflare/kumo'
+import { Banner, LinkButton, Loader, Text, useKumoToastManager } from '@cloudflare/kumo'
+import { WarningCircleIcon } from '@phosphor-icons/react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
 
@@ -27,7 +28,7 @@ const TERMINAL: ReadonlySet<SuiteRunStatus> = new Set(['passed', 'failed', 'erro
 const FINAL_TOAST = {
   passed: { variant: 'success', title: 'Suite passed' },
   failed: { variant: 'error', title: 'Suite failed' },
-  error: { variant: 'error', title: 'Suite could not finish' },
+  error: { variant: 'error', title: 'Suite finished with errors' },
 } as const
 
 function plural(count: number, singular: string): string {
@@ -47,7 +48,7 @@ export function SuiteProgress({
   const queryClient = useQueryClient()
   const toast = useKumoToastManager()
 
-  const { data } = useQuery({
+  const { data, error } = useQuery({
     ...suiteRunQuery(suiteRunId),
     refetchInterval: (query) => {
       const status = query.state.data?.suiteRun.status
@@ -59,7 +60,7 @@ export function SuiteProgress({
   const done = suite ? suite.passedCount + suite.failedCount + suite.errorCount : 0
 
   // Two separate signals, because they mean different things: a member landing
-  // means the intent list is stale, and the suite ending means everything is.
+  // means the test list is stale, and the suite ending means everything is.
   const lastDone = useRef(-1)
   const announced = useRef(false)
 
@@ -81,7 +82,7 @@ export function SuiteProgress({
     toast.add({
       variant: final.variant,
       title: final.title,
-      description: `${plural(suite.totalCount, 'intent')} · ${suite.passedCount} passed · ${suite.failedCount} failed · ${suite.errorCount} errored`,
+      description: `${plural(suite.totalCount, 'test')} · ${suite.passedCount} passed · ${suite.failedCount} failed · ${suite.errorCount} errored`,
     })
 
     void queryClient.invalidateQueries()
@@ -89,10 +90,19 @@ export function SuiteProgress({
   }, [suite, toast, queryClient, onFinished])
 
   if (!data) {
+    if (error)
+      return (
+        <Banner
+          variant="error"
+          icon={<WarningCircleIcon />}
+          title="Could not load the suite"
+          description={error.message}
+        />
+      )
     return (
       <div className="flex items-center gap-2">
         <Loader size="sm" />
-        <Text as="span" variant="secondary" size="xs">
+        <Text as="span" variant="secondary" size="base">
           Starting the suite…
         </Text>
       </div>
@@ -105,6 +115,30 @@ export function SuiteProgress({
 
   return (
     <div className="grid gap-2">
+      {row.errorMessage ? (
+        <Banner
+          variant="error"
+          icon={<WarningCircleIcon />}
+          title="Suite execution interrupted"
+          description={row.errorMessage}
+        />
+      ) : null}
+      <div className="flex flex-wrap justify-end gap-2">
+        <LinkButton
+          variant="secondary"
+          size="sm"
+          href={`/api/reports/suites/${suiteRunId}?format=json`}
+        >
+          Export JSON
+        </LinkButton>
+        <LinkButton
+          variant="secondary"
+          size="sm"
+          href={`/api/reports/suites/${suiteRunId}?format=junit`}
+        >
+          Export JUnit
+        </LinkButton>
+      </div>
       <SummaryStrip
         items={[
           {
@@ -114,7 +148,7 @@ export function SuiteProgress({
           },
           {
             key: 'progress',
-            label: running ? 'Running' : 'Intents run',
+            label: running ? 'Running' : 'Tests run',
             value: (
               <Text as="span" variant="heading">
                 {done}
@@ -160,12 +194,12 @@ export function SuiteProgress({
         ]}
       />
 
-      <Text variant="secondary" size="xs">
+      <Text variant="secondary" size="base">
         {running
           ? inFlight
             ? `Running ${inFlight.intentTitle}…`
-            : 'Waiting for the next intent…'
-          : 'Open an intent to see its steps, logs and artifacts.'}
+            : 'Waiting for the next test…'
+          : 'Open a test to see its steps, logs and artifacts.'}
       </Text>
     </div>
   )

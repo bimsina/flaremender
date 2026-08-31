@@ -85,7 +85,7 @@ export const listSuiteRuns = createServerFn({ method: 'GET' })
         startedAt: suiteRun.startedAt,
         finishedAt: suiteRun.finishedAt,
         environmentId: suiteRun.environmentId,
-        environmentName: environment.name,
+        environmentName: sql<string>`coalesce(${suiteRun.environmentName}, ${environment.name})`,
       })
       .from(suiteRun)
       .innerJoin(environment, eq(environment.id, suiteRun.environmentId))
@@ -140,8 +140,8 @@ export const getSuiteRun = createServerFn({ method: 'GET' })
       suiteRun: scoped.suiteRun,
       environment: {
         id: scoped.suiteRun.environmentId,
-        name: target?.name ?? 'Unknown',
-        baseUrl: target?.baseUrl ?? null,
+        name: scoped.suiteRun.environmentName ?? target?.name ?? 'Unknown',
+        baseUrl: scoped.suiteRun.baseUrl,
       },
       project: { id: scoped.project.id, name: scoped.project.name },
       members: members.map((member) => ({

@@ -8,6 +8,8 @@ export interface SummaryItem {
   value: React.ReactNode
   /** Dims the whole segment — a count of zero is worth showing, quietly. */
   dim?: boolean
+  /** Long identifiers, URLs or test names can use the full row. */
+  wide?: boolean
 }
 
 /**
@@ -15,9 +17,8 @@ export interface SummaryItem {
  * dashboard uses both for a status roll-up above a table and for the key facts
  * above an instance's detail.
  *
- * The row never wraps. Segments hold a minimum width and the strip scrolls
- * instead, because a summary that reflows into two ragged rows stops being
- * scannable at exactly the width where scanning matters.
+ * Metadata reflows into a grid on narrow screens. Long names may use a full
+ * row so the report's identifying context remains readable.
  */
 export function SummaryStrip({
   items,
@@ -28,22 +29,22 @@ export function SummaryStrip({
 }) {
   return (
     <div
-      className={cn('overflow-x-auto rounded-lg bg-kumo-base ring ring-kumo-hairline', className)}
+      className={cn('overflow-hidden rounded-lg bg-kumo-base ring ring-kumo-hairline', className)}
     >
-      <div className="flex">
-        {items.map((item, index) => (
+      <div className="grid grid-cols-2 divide-x divide-y divide-kumo-hairline md:grid-cols-3 xl:grid-cols-6">
+        {items.map((item) => (
           <div
             key={item.key}
             className={cn(
-              'grid min-w-36 flex-1 content-start gap-1.5 px-4 py-3',
-              index > 0 && 'border-l border-kumo-hairline',
+              'grid min-w-0 content-start gap-1.5 px-4 py-3',
               item.dim && 'opacity-60',
+              item.wide && 'col-span-full',
             )}
           >
-            <Text as="span" variant="secondary" size="xs">
+            <Text as="span" variant="secondary" size="base">
               <span className="flex items-center gap-1.5">{item.label}</span>
             </Text>
-            <div className="text-kumo-default">{item.value}</div>
+            <div className="min-w-0 break-words text-kumo-default">{item.value}</div>
           </div>
         ))}
       </div>

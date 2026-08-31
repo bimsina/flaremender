@@ -52,7 +52,7 @@ export function MonoPanel({
       className={cn('overflow-hidden rounded-md bg-kumo-base ring ring-kumo-hairline', className)}
     >
       <div className="flex items-center justify-between gap-3 border-b border-kumo-hairline px-3 py-1.5">
-        <Text as="span" variant="secondary" size="xs">
+        <Text as="span" variant="secondary" size="base">
           {label}
         </Text>
         <Button

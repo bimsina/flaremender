@@ -47,7 +47,7 @@ export function RunTrend({
           Last 14 days
         </Text>
         {total > 0 ? (
-          <Text as="span" variant="secondary" size="xs">
+          <Text as="span" variant="secondary" size="base">
             {total} run{total === 1 ? '' : 's'}
           </Text>
         ) : null}

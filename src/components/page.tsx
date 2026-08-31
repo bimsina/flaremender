@@ -1,3 +1,4 @@
+import { ScrollableTabs } from './scrollable-tabs.tsx'
 import { Sidebar, Text, cn } from '@cloudflare/kumo'
 
 /**
@@ -25,7 +26,7 @@ export function PageHeader({
 }) {
   return (
     <header className="sticky top-0 z-10 border-b border-kumo-line bg-kumo-canvas">
-      <div className="mx-auto w-full max-w-6xl px-6">
+      <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
         <div
           className={cn(
             'flex flex-wrap items-end justify-between gap-4 pt-4',
@@ -48,7 +49,7 @@ export function PageHeader({
 
         {tabs ? (
           <div className="flex flex-wrap items-center justify-between gap-3 pb-2">
-            <div className="min-w-0">{tabs}</div>
+            <ScrollableTabs>{tabs}</ScrollableTabs>
             {tabActions ? (
               <div className="flex flex-wrap items-center gap-2">{tabActions}</div>
             ) : null}
@@ -67,7 +68,9 @@ export function PageBody({
   className?: string
 }) {
   return (
-    <div className={cn('mx-auto w-full max-w-6xl flex-1 content-start px-6 py-6', className)}>
+    <div
+      className={cn('mx-auto w-full max-w-6xl flex-1 content-start px-4 py-6 sm:px-6', className)}
+    >
       {children}
     </div>
   )
@@ -84,14 +87,14 @@ export function StatTile({
 }) {
   return (
     <div className="grid gap-1.5 rounded-lg bg-kumo-base px-5 py-4 ring ring-kumo-hairline">
-      <Text as="span" variant="secondary" size="xs">
+      <Text as="span" variant="secondary" size="base">
         {label}
       </Text>
       <Text as="span" variant="heading" size="lg">
         {value}
       </Text>
       {hint ? (
-        <Text as="span" variant="secondary" size="xs">
+        <Text as="span" variant="secondary" size="base">
           {hint}
         </Text>
       ) : null}
