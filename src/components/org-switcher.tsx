@@ -1,5 +1,5 @@
-import { Button, DropdownMenu, Text, cn } from '@cloudflare/kumo'
-import { BuildingsIcon, CaretUpDownIcon, CheckIcon, PlusIcon } from '@phosphor-icons/react'
+import { Button, Combobox, Text } from '@cloudflare/kumo'
+import { CaretUpDownIcon, FlameIcon, PlusIcon } from '@phosphor-icons/react'
 import { useRouter } from '@tanstack/react-router'
 import { useState } from 'react'
 
@@ -13,36 +13,56 @@ export function OrgSwitcher({ session }: { session: AppSession }) {
   const refreshSession = useRefreshSession()
   const [creating, setCreating] = useState(false)
   const [switching, setSwitching] = useState(false)
-
+  const [open, setOpen] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const active = session.organizations.find((org) => org.id === session.activeOrganizationId)
 
   async function switchTo(organizationId: string) {
-    if (organizationId === session.activeOrganizationId) return
+    if (organizationId === session.activeOrganizationId || switching) return
     setSwitching(true)
-    await authClient.organization.setActive({ organizationId })
-    await refreshSession()
-    setSwitching(false)
+    setError(null)
+    try {
+      const result = await authClient.organization.setActive({ organizationId })
+      if (result.error) throw new Error(result.error.message ?? 'Could not switch organization.')
+      await refreshSession()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not switch organization. Try again.')
+      setOpen(true)
+    } finally {
+      setSwitching(false)
+    }
   }
 
   return (
     <>
-      <DropdownMenu>
-        <DropdownMenu.Trigger
+      <Combobox
+        items={session.organizations}
+        value={active ?? null}
+        itemToStringLabel={(org) => org.name}
+        itemToStringValue={(org) => org.id}
+        isItemEqualToValue={(a, b) => a.id === b.id}
+        onValueChange={(org) => {
+          if (org) void switchTo(org.id)
+        }}
+        open={open}
+        onOpenChange={setOpen}
+      >
+        <Combobox.Trigger
           render={
             <Button
-              variant="secondary"
+              variant="ghost"
               loading={switching}
-              className={cn(
-                'h-8.5 w-full justify-between',
-                'group-data-[state=collapsed]/sidebar:w-8.5 group-data-[state=collapsed]/sidebar:justify-center group-data-[state=collapsed]/sidebar:px-0',
-              )}
+              disabled={switching}
               aria-label="Switch organization"
+              className="h-8.5 min-w-0 flex-1 justify-between px-2 font-normal group-data-[state=collapsed]/sidebar:w-8.5 group-data-[state=collapsed]/sidebar:flex-none group-data-[state=collapsed]/sidebar:justify-center group-data-[state=collapsed]/sidebar:px-0"
             >
-              <span className="flex min-w-0 items-center gap-2">
-                <BuildingsIcon size={16} className="shrink-0" />
-                <span className="truncate group-data-[state=collapsed]/sidebar:hidden">
-                  {active?.name ?? 'No organization'}
-                </span>
+              <FlameIcon
+                size={26}
+                weight="fill"
+                className="hidden text-kumo-warning group-data-[state=collapsed]/sidebar:block"
+              />
+              <span className="truncate group-data-[state=collapsed]/sidebar:hidden">
+                {active?.name ?? 'No organization'}
               </span>
               <CaretUpDownIcon
                 size={14}
@@ -51,36 +71,50 @@ export function OrgSwitcher({ session }: { session: AppSession }) {
             </Button>
           }
         />
-        <DropdownMenu.Content className="min-w-56">
-          <DropdownMenu.Group>
-            <DropdownMenu.Label>Organizations</DropdownMenu.Label>
-            {session.organizations.map((org) => (
-              <DropdownMenu.Item
-                key={org.id}
-                onClick={() => void switchTo(org.id)}
-                icon={
-                  <CheckIcon
-                    size={16}
-                    className={cn(org.id === session.activeOrganizationId ? '' : 'opacity-0')}
-                  />
-                }
-              >
+        <Combobox.Content align="start" className="w-80 max-w-[calc(100vw-32px)]">
+          <div className="p-2">
+            <Combobox.Input
+              aria-label="Search organizations"
+              placeholder="Search for an organization..."
+            />
+          </div>
+          {error ? (
+            <p role="alert" className="px-3 py-2 text-base text-kumo-danger">
+              {error}
+            </p>
+          ) : null}
+          <Combobox.List aria-label="Organizations">
+            {(org: AppSession['organizations'][number]) => (
+              <Combobox.Item key={org.id} value={org} disabled={switching}>
                 <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
                   <span className="truncate">{org.name}</span>
                   <Text as="span" variant="secondary" size="base">
                     {org.role}
                   </Text>
                 </span>
-              </DropdownMenu.Item>
-            ))}
-          </DropdownMenu.Group>
-          <DropdownMenu.Separator />
-          <DropdownMenu.Item icon={PlusIcon} onClick={() => setCreating(true)}>
-            New organization
-          </DropdownMenu.Item>
-        </DropdownMenu.Content>
-      </DropdownMenu>
-
+              </Combobox.Item>
+            )}
+          </Combobox.List>
+          <Combobox.Empty>No organizations found.</Combobox.Empty>
+          <div className="border-t border-kumo-line p-2">
+            <Button
+              variant="ghost"
+              icon={PlusIcon}
+              className="w-full justify-start font-normal"
+              onClick={() => {
+                setOpen(false)
+                setCreating(true)
+              }}
+            >
+              New organization
+            </Button>
+          </div>
+          <div className="border-t border-kumo-line px-3 py-2 text-base text-kumo-subtle">
+            {session.organizations.length}{' '}
+            {session.organizations.length === 1 ? 'organization' : 'organizations'}
+          </div>
+        </Combobox.Content>
+      </Combobox>
       <CreateOrganizationDialog
         open={creating}
         onOpenChange={setCreating}

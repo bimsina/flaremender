@@ -223,7 +223,7 @@ function IntentDetail() {
     <>
       <PageHeader
         breadcrumbs={
-          <Breadcrumbs size="sm">
+          <Breadcrumbs size="base">
             <Breadcrumbs.Link href="/projects">Projects</Breadcrumbs.Link>
             <Breadcrumbs.Separator />
             <Breadcrumbs.Link href={`/projects/${projectId}`}>{project.name}</Breadcrumbs.Link>
@@ -272,7 +272,8 @@ function IntentDetail() {
         }
         tabs={
           <Tabs
-            variant="underline"
+            labels={{ scrollStart: 'Scroll tabs left', scrollEnd: 'Scroll tabs right' }}
+            variant="segmented"
             tabs={[
               { value: 'script', label: 'Script' },
               { value: 'runs', label: `Runs${runs.length > 0 ? ` (${runs.length})` : ''}` },

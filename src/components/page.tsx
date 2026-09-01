@@ -1,5 +1,18 @@
-import { ScrollableTabs } from './scrollable-tabs.tsx'
-import { Sidebar, Text, cn } from '@cloudflare/kumo'
+import { Button, Popover, Sidebar, Text, cn } from '@cloudflare/kumo'
+import { InfoIcon } from '@phosphor-icons/react'
+import { createContext, useContext } from 'react'
+
+const HeaderControls = createContext<React.ReactNode>(null)
+
+export function PageHeaderControls({
+  children,
+  controls,
+}: {
+  children: React.ReactNode
+  controls: React.ReactNode
+}) {
+  return <HeaderControls value={controls}>{children}</HeaderControls>
+}
 
 export function PageHeader({
   title,
@@ -16,37 +29,56 @@ export function PageHeader({
   tabs?: React.ReactNode
   tabActions?: React.ReactNode
 }) {
-  return (
-    <header className="sticky top-0 z-10 border-b border-kumo-line bg-kumo-canvas">
-      <div className="w-full px-4 text-left sm:px-6 lg:px-8">
-        <div
-          className={cn(
-            'flex flex-wrap items-center justify-between gap-4 pt-6',
-            tabs ? 'pb-5' : 'pb-6',
-          )}
-        >
-          <div className="flex min-w-0 items-end gap-3">
-            <Sidebar.Trigger className="mb-1 md:hidden" />
-            <div className="grid min-w-0 gap-1.5">
-              {breadcrumbs}
-              <Text as="h1" variant="heading" DANGEROUS_className="text-2xl">
-                {title}
-              </Text>
-              {description ? <Text variant="secondary">{description}</Text> : null}
-            </div>
-          </div>
-          {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
-        </div>
+  const controls = useContext(HeaderControls)
+  const details = breadcrumbs && typeof description === 'string' ? description : null
+  const metadata = details ? null : description
+  const hasToolbar = tabs || actions || tabActions || metadata
 
-        {tabs ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 pb-2">
-            <ScrollableTabs>{tabs}</ScrollableTabs>
-            {tabActions ? (
-              <div className="flex flex-wrap items-center gap-2">{tabActions}</div>
-            ) : null}
-          </div>
-        ) : null}
+  return (
+    <header className="page-header sticky top-0 z-10 shrink-0 border-b border-kumo-line bg-kumo-canvas text-left">
+      <div className="flex h-[57px] min-w-0 items-center gap-2 px-4 sm:px-6 lg:px-8">
+        <Sidebar.Trigger className="shrink-0 md:hidden" />
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          {breadcrumbs ? <div className="page-breadcrumbs min-w-0">{breadcrumbs}</div> : null}
+          <h1 className={breadcrumbs ? 'sr-only' : 'min-w-0 truncate text-base font-medium'}>
+            {title}
+          </h1>
+          {details ? (
+            <Popover>
+              <Popover.Trigger
+                render={
+                  <Button
+                    variant="ghost"
+                    shape="square"
+                    size="sm"
+                    aria-label="Page details"
+                    className="shrink-0 text-kumo-subtle"
+                  >
+                    <InfoIcon size={16} />
+                  </Button>
+                }
+              />
+              <Popover.Content align="start" className="max-w-[min(320px,calc(100vw-32px))] p-4">
+                <Popover.Title>{title}</Popover.Title>
+                <Popover.Description className="mt-1.5 break-words">{details}</Popover.Description>
+              </Popover.Content>
+            </Popover>
+          ) : null}
+        </div>
+        <div className="flex shrink-0 items-center gap-1">{controls}</div>
       </div>
+      {hasToolbar ? (
+        <div className="flex min-h-[58px] min-w-0 flex-wrap items-center gap-x-4 gap-y-3 border-t border-kumo-line px-4 py-2.5 sm:px-6 lg:px-8">
+          {tabs ? <div className="min-w-0 max-w-full shrink">{tabs}</div> : null}
+          {metadata ? <div className="min-w-0 text-base text-kumo-subtle">{metadata}</div> : null}
+          {actions || tabActions ? (
+            <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center gap-1.5 sm:gap-2">
+              {tabActions}
+              {actions}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </header>
   )
 }

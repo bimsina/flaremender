@@ -32,7 +32,7 @@ function RunPage() {
     <>
       <PageHeader
         breadcrumbs={
-          <Breadcrumbs size="sm">
+          <Breadcrumbs size="base">
             <Breadcrumbs.Link href="/projects">Projects</Breadcrumbs.Link>
             <Breadcrumbs.Separator />
             <Breadcrumbs.Link href={`/projects/${projectId}`}>{data.project.name}</Breadcrumbs.Link>

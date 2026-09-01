@@ -30,8 +30,9 @@ function AdminLayout() {
       <PageHeader
         title="Administration"
         description="Instance-wide view across every user and organization."
-        actions={
+        tabs={
           <Tabs
+            labels={{ scrollStart: 'Scroll tabs left', scrollEnd: 'Scroll tabs right' }}
             variant="segmented"
             tabs={TABS}
             value={current}

@@ -1,7 +1,7 @@
-import { Button, DropdownMenu, Sidebar, Text, cn } from '@cloudflare/kumo'
+import { Button, DropdownMenu, Sidebar, Text, useSidebar } from '@cloudflare/kumo'
 import {
-  BuildingsIcon,
   FolderIcon,
+  FlameIcon,
   GaugeIcon,
   GearIcon,
   ShieldCheckIcon,
@@ -9,9 +9,19 @@ import {
   UserIcon,
 } from '@phosphor-icons/react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Outlet, createFileRoute, redirect, useLocation, useNavigate } from '@tanstack/react-router'
+import { useEffect, useState } from 'react'
+import {
+  Link,
+  Outlet,
+  createFileRoute,
+  redirect,
+  useLocation,
+  useNavigate,
+} from '@tanstack/react-router'
 
 import { OrgSwitcher } from '#/components/org-switcher.tsx'
+import { PageHeaderControls } from '#/components/page.tsx'
+import { QuickSearch } from '#/components/quick-search.tsx'
 import { ThemeToggle } from '#/components/theme-toggle.tsx'
 import { authClient } from '#/lib/auth-client.ts'
 import type { AppSession } from '#/server/session.ts'
@@ -31,103 +41,133 @@ export const Route = createFileRoute('/_app')({
 
 function AppLayout() {
   const { session } = Route.useRouteContext()
-  const location = useLocation()
-  const isAdmin = session.user.role === 'admin'
+  return (
+    <Sidebar.Provider defaultOpen className="h-svh">
+      <AppSidebar session={session} />
+      <PageHeaderControls
+        controls={
+          <>
+            <ThemeToggle className="size-8" />
+            <UserMenu user={session.user} />
+          </>
+        }
+      >
+        <main className="flex min-w-0 flex-1 flex-col overflow-y-auto bg-kumo-canvas">
+          <Outlet />
+        </main>
+      </PageHeaderControls>
+    </Sidebar.Provider>
+  )
+}
 
+function AppSidebar({ session }: { session: AppSession }) {
+  const location = useLocation()
+  const { state, setOpen, setOpenMobile } = useSidebar()
+  const isAdmin = session.user.role === 'admin'
+  const [accountOpen, setAccountOpen] = useState(true)
   const isActive = (path: string) =>
     location.pathname === path || location.pathname.startsWith(`${path}/`)
 
+  useEffect(() => {
+    setOpenMobile(false)
+  }, [location.href, setOpenMobile])
+
   return (
-    <Sidebar.Provider defaultOpen className="h-svh">
-      <Sidebar className="[--sidebar-active-bg:var(--color-kumo-recessed)] [--sidebar-bg:var(--color-kumo-canvas)]">
-        <Sidebar.Header
-          className={cn(
-            'group-not-data-[state=collapsed]/sidebar:px-3.5',
-            'group-data-[state=collapsed]/sidebar:px-[11px]',
-          )}
+    <Sidebar className="app-sidebar [--sidebar-active-bg:var(--color-kumo-recessed)] [--sidebar-bg:var(--color-kumo-canvas)] dark:[--sidebar-active-bg:var(--color-kumo-control)]">
+      <Sidebar.Header className="h-[58px] gap-1 px-3 group-data-[state=collapsed]/sidebar:px-[11px]">
+        <Link
+          to="/dashboard"
+          aria-label="Flaremender home"
+          className="flex size-8.5 shrink-0 items-center justify-center rounded-lg text-kumo-warning hover:bg-kumo-tint group-data-[state=collapsed]/sidebar:hidden"
         >
-          <OrgSwitcher session={session} />
-        </Sidebar.Header>
-
-        <Sidebar.Content>
-          <Sidebar.Group>
-            <Sidebar.GroupLabel>Overview</Sidebar.GroupLabel>
-            <Sidebar.Menu>
-              <Sidebar.MenuButton
-                icon={GaugeIcon}
-                href="/dashboard"
-                active={isActive('/dashboard')}
-                tooltip="Dashboard"
+          <FlameIcon size={26} weight="fill" />
+        </Link>
+        <OrgSwitcher session={session} />
+      </Sidebar.Header>
+      <Sidebar.Content>
+        <div className="pb-2">
+          <QuickSearch isAdmin={isAdmin} />
+        </div>
+        <Sidebar.Group>
+          <Sidebar.Menu>
+            <Sidebar.MenuButton
+              icon={GaugeIcon}
+              href="/dashboard"
+              active={isActive('/dashboard')}
+              tooltip="Dashboard"
+            >
+              Dashboard
+            </Sidebar.MenuButton>
+          </Sidebar.Menu>
+        </Sidebar.Group>
+        <Sidebar.Group>
+          <Sidebar.GroupLabel>Build</Sidebar.GroupLabel>
+          <Sidebar.Menu>
+            <Sidebar.MenuButton
+              icon={FolderIcon}
+              href="/projects"
+              active={isActive('/projects')}
+              tooltip="Projects"
+            >
+              Projects
+            </Sidebar.MenuButton>
+          </Sidebar.Menu>
+        </Sidebar.Group>
+        <Sidebar.Group>
+          <Sidebar.Separator />
+          <Sidebar.Menu>
+            <Sidebar.MenuItem>
+              <Sidebar.Collapsible
+                open={accountOpen}
+                onOpenChange={(value) => setAccountOpen(state === 'collapsed' ? true : value)}
               >
-                Dashboard
-              </Sidebar.MenuButton>
+                <Sidebar.CollapsibleTrigger
+                  render={
+                    <Sidebar.MenuButton
+                      icon={GearIcon}
+                      tooltip="Manage account"
+                      active={
+                        state === 'collapsed' &&
+                        (isActive('/organization') || isActive('/settings'))
+                      }
+                      onClick={() => {
+                        if (state === 'collapsed') setOpen(true)
+                      }}
+                    >
+                      Manage account
+                      <Sidebar.MenuChevron />
+                    </Sidebar.MenuButton>
+                  }
+                />
+                <Sidebar.CollapsibleContent>
+                  <Sidebar.MenuSub>
+                    <Sidebar.MenuSubButton href="/organization" active={isActive('/organization')}>
+                      Members
+                    </Sidebar.MenuSubButton>
+                    <Sidebar.MenuSubButton href="/settings" active={isActive('/settings')}>
+                      Settings
+                    </Sidebar.MenuSubButton>
+                  </Sidebar.MenuSub>
+                </Sidebar.CollapsibleContent>
+              </Sidebar.Collapsible>
+            </Sidebar.MenuItem>
+            {isAdmin ? (
               <Sidebar.MenuButton
-                icon={FolderIcon}
-                href="/projects"
-                active={isActive('/projects')}
-                tooltip="Projects"
+                icon={ShieldCheckIcon}
+                href="/admin"
+                active={isActive('/admin')}
+                tooltip="Administration"
               >
-                Projects
+                Administration
               </Sidebar.MenuButton>
-            </Sidebar.Menu>
-          </Sidebar.Group>
-
-          <Sidebar.Group>
-            <Sidebar.GroupLabel>Organization</Sidebar.GroupLabel>
-            <Sidebar.Menu>
-              <Sidebar.MenuButton
-                icon={BuildingsIcon}
-                href="/organization"
-                active={isActive('/organization')}
-                tooltip="Members"
-              >
-                Members
-              </Sidebar.MenuButton>
-              <Sidebar.MenuButton
-                icon={GearIcon}
-                href="/settings"
-                active={isActive('/settings')}
-                tooltip="Settings"
-              >
-                Settings
-              </Sidebar.MenuButton>
-            </Sidebar.Menu>
-          </Sidebar.Group>
-
-          {isAdmin ? (
-            <Sidebar.Group>
-              <Sidebar.GroupLabel>Administration</Sidebar.GroupLabel>
-              <Sidebar.Menu>
-                <Sidebar.MenuButton
-                  icon={ShieldCheckIcon}
-                  href="/admin"
-                  active={isActive('/admin')}
-                  tooltip="Admin"
-                >
-                  Admin
-                </Sidebar.MenuButton>
-              </Sidebar.Menu>
-            </Sidebar.Group>
-          ) : null}
-        </Sidebar.Content>
-
-        <Sidebar.Footer
-          className={cn(
-            'gap-1.5 group-not-data-[state=collapsed]/sidebar:px-3.5',
-            'group-data-[state=collapsed]/sidebar:h-auto group-data-[state=collapsed]/sidebar:flex-col',
-            'group-data-[state=collapsed]/sidebar:gap-1 group-data-[state=collapsed]/sidebar:py-2',
-          )}
-        >
-          <UserMenu user={session.user} />
-          <ThemeToggle className="size-8.5 shrink-0" />
-          <Sidebar.Trigger className="shrink-0" />
-        </Sidebar.Footer>
-      </Sidebar>
-
-      <main className="flex min-w-0 flex-1 flex-col overflow-y-auto bg-kumo-canvas">
-        <Outlet />
-      </main>
-    </Sidebar.Provider>
+            ) : null}
+          </Sidebar.Menu>
+        </Sidebar.Group>
+      </Sidebar.Content>
+      <Sidebar.Footer className="px-3.5 group-data-[state=collapsed]/sidebar:px-[11px]">
+        <Sidebar.Trigger />
+      </Sidebar.Footer>
+    </Sidebar>
   )
 }
 
@@ -147,17 +187,11 @@ function UserMenu({ user }: { user: AppSession['user'] }) {
         render={
           <Button
             variant="ghost"
-            aria-label={user.name}
-            className={cn(
-              'h-8.5 min-w-0 flex-1 justify-start gap-3 rounded-lg px-3 font-medium',
-              'group-data-[state=collapsed]/sidebar:h-8.5 group-data-[state=collapsed]/sidebar:w-8.5',
-              'group-data-[state=collapsed]/sidebar:flex-none group-data-[state=collapsed]/sidebar:justify-center group-data-[state=collapsed]/sidebar:px-0',
-            )}
+            aria-label="User menu"
+            shape="square"
+            className="size-8 shrink-0 text-kumo-subtle"
           >
-            <UserIcon size={16} className="shrink-0 opacity-40" />
-            <span className="truncate group-data-[state=collapsed]/sidebar:hidden">
-              {user.name}
-            </span>
+            <UserIcon size={16} weight="fill" />
           </Button>
         }
       />

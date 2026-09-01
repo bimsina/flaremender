@@ -121,7 +121,7 @@ function TracePage() {
         title="Trace"
         description={`Run ${shortId(runId)}`}
         breadcrumbs={
-          <Breadcrumbs size="sm">
+          <Breadcrumbs size="base">
             <Breadcrumbs.Link href="/projects">Projects</Breadcrumbs.Link>
             <Breadcrumbs.Separator />
             <Breadcrumbs.Link href={`/projects/${projectId}?tab=runs`}>Runs</Breadcrumbs.Link>

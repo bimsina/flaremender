@@ -190,7 +190,7 @@ function ProjectDetail() {
     <>
       <PageHeader
         breadcrumbs={
-          <Breadcrumbs size="sm">
+          <Breadcrumbs size="base">
             <Breadcrumbs.Link href="/projects">Projects</Breadcrumbs.Link>
             <Breadcrumbs.Separator />
             <Breadcrumbs.Current>{project.name}</Breadcrumbs.Current>
@@ -200,7 +200,8 @@ function ProjectDetail() {
         description={project.description ?? project.defaultEnvironment?.baseUrl ?? undefined}
         tabs={
           <Tabs
-            variant="underline"
+            labels={{ scrollStart: 'Scroll tabs left', scrollEnd: 'Scroll tabs right' }}
+            variant="segmented"
             tabs={[
               { value: 'overview', label: 'Overview' },
               { value: 'chat', label: 'Chat' },

@@ -27,11 +27,36 @@ summary:focus-visible {
   outline-offset: 3px;
   border-radius: 3px;
 }
-.project-tabs {
-  scrollbar-width: thin;
+.page-breadcrumbs nav {
+  margin-right: 0;
 }
-.project-tabs [role='tablist'] {
-  min-width: max-content;
+.page-breadcrumbs nav a {
+  max-width: 16rem;
+  min-width: 0;
+}
+
+.app-sidebar [data-sidebar='menu-button'],
+.app-sidebar [data-sidebar='menu-sub-button'] {
+  font-size: 14px;
+  font-weight: 400;
+  transition: none;
+}
+
+.app-sidebar [data-sidebar='group-label'] {
+  font-size: 14px;
+  font-weight: 400;
+}
+
+@media (max-width: 639px) {
+  .page-breadcrumbs nav > .sm\:hidden > a {
+    max-width: 4rem;
+    overflow: hidden;
+  }
+
+  .page-breadcrumbs nav > .sm\:hidden > a > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }
 
 /* Match the quiet, separated rows used by Cloudflare's resource tables. */
