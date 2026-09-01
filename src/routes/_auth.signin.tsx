@@ -76,7 +76,7 @@ function SignIn() {
           />
         </div>
 
-        <Button type="submit" variant="primary" loading={pending} className="w-full">
+        <Button type="submit" variant="primary" loading={pending} className="w-full justify-center">
           Sign in
         </Button>
 

@@ -112,7 +112,7 @@ function SignUp() {
           />
         </div>
 
-        <Button type="submit" variant="primary" loading={pending} className="w-full">
+        <Button type="submit" variant="primary" loading={pending} className="w-full justify-center">
           Create account
         </Button>
 

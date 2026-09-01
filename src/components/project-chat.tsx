@@ -14,9 +14,12 @@ import type { ChatMessageWire, ChatPart } from '#/engine/chat/contract.ts'
 import { type LiveToolCall, type PendingMessage, useProjectChat } from '#/lib/use-project-chat.ts'
 
 const SUGGESTIONS = [
-  'Explore my app and propose tests.',
-  'Describe a flow to test: a visitor signs in and sees their dashboard.',
-  'Run all tests',
+  { label: 'Explore my app', prompt: 'Explore my app and propose tests.' },
+  {
+    label: 'Describe a sign-in flow',
+    prompt: 'Describe a flow to test: a visitor signs in and sees their dashboard.',
+  },
+  { label: 'Run all tests', prompt: 'Run all tests' },
 ]
 
 export function ProjectChatTab({ projectId }: { projectId: string }) {
@@ -134,12 +137,13 @@ function Transcript({
         <div className="flex flex-wrap justify-center gap-2">
           {SUGGESTIONS.map((suggestion) => (
             <Button
-              key={suggestion}
+              key={suggestion.prompt}
               variant="secondary"
               size="sm"
-              onClick={() => onSuggestion(suggestion)}
+              className="max-w-full justify-center"
+              onClick={() => onSuggestion(suggestion.prompt)}
             >
-              {suggestion}
+              {suggestion.label}
             </Button>
           ))}
         </div>

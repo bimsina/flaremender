@@ -150,7 +150,13 @@ function CreateOrganizationStep({ onDone }: { onDone: () => Promise<void> }) {
           />
         </div>
 
-        <Button type="submit" variant="primary" loading={pending} disabled={!name.trim()}>
+        <Button
+          type="submit"
+          variant="primary"
+          loading={pending}
+          disabled={!name.trim()}
+          className="justify-center"
+        >
           Continue
         </Button>
       </form>
@@ -258,13 +264,19 @@ function InstanceSetupStep() {
         ) : null}
 
         <div className="grid gap-2">
-          <Button type="submit" variant="primary" loading={finish.isPending}>
+          <Button
+            type="submit"
+            variant="primary"
+            loading={finish.isPending}
+            className="justify-center"
+          >
             Finish setup
           </Button>
           <Button
             type="button"
             variant="ghost"
             disabled={finish.isPending}
+            className="justify-center"
             onClick={() => finish.mutate(false)}
           >
             Skip for now
