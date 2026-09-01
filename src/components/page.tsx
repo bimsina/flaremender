@@ -1,5 +1,4 @@
-import { Button, Popover, Sidebar, Text, cn } from '@cloudflare/kumo'
-import { InfoIcon } from '@phosphor-icons/react'
+import { Sidebar, Text, cn } from '@cloudflare/kumo'
 import { createContext, useContext } from 'react'
 
 const HeaderControls = createContext<React.ReactNode>(null)
@@ -22,6 +21,7 @@ export function PageHeader({
   breadcrumbs,
   tabs,
   tabActions,
+  compact = false,
 }: {
   title: React.ReactNode
   description?: React.ReactNode
@@ -30,63 +30,66 @@ export function PageHeader({
   breadcrumbs?: React.ReactNode
   tabs?: React.ReactNode
   tabActions?: React.ReactNode
+  compact?: boolean
 }) {
   const controls = useContext(HeaderControls)
-  const details = breadcrumbs && typeof description === 'string' ? description : null
-  const metadata = details ? null : description
-  const hasToolbar = tabs || actions || tabActions || metadata
 
   return (
-    <header className="page-header sticky top-0 z-10 shrink-0 border-b border-kumo-line bg-kumo-canvas text-left">
-      <div className="flex h-[57px] min-w-0 items-center gap-2 px-4 sm:px-6 lg:px-8">
-        <Sidebar.Trigger className="shrink-0 md:hidden" />
-        <div className="flex min-w-0 flex-1 items-center gap-1.5">
-          {breadcrumbs ? <div className="page-breadcrumbs min-w-0">{breadcrumbs}</div> : null}
-          <h1 className={breadcrumbs ? 'sr-only' : 'min-w-0 truncate text-base font-medium'}>
-            {title}
-          </h1>
-          {details ? (
-            <Popover>
-              <Popover.Trigger
-                render={
-                  <Button
-                    variant="ghost"
-                    shape="square"
-                    size="sm"
-                    aria-label="Page details"
-                    className="shrink-0 text-kumo-subtle"
-                  >
-                    <InfoIcon size={16} />
-                  </Button>
-                }
-              />
-              <Popover.Content align="start" className="max-w-[min(320px,calc(100vw-32px))] p-4">
-                <Popover.Title>{title}</Popover.Title>
-                <Popover.Description className="mt-1.5 break-words">{details}</Popover.Description>
-              </Popover.Content>
-            </Popover>
-          ) : null}
+    <>
+      <header className="page-header sticky top-0 z-10 shrink-0 border-b border-kumo-line bg-kumo-canvas text-left">
+        <div className="flex h-[57px] min-w-0 items-center gap-2 px-4 sm:px-6 lg:px-8">
+          <Sidebar.Trigger className="shrink-0 md:hidden" />
+          <div className="flex min-w-0 flex-1 items-center gap-1.5">
+            {compact && breadcrumbs ? (
+              <>
+                <div className="page-breadcrumbs min-w-0">{breadcrumbs}</div>
+                <h1 className="sr-only">{title}</h1>
+              </>
+            ) : null}
+            {compact && !breadcrumbs ? (
+              <h1 className="min-w-0 truncate text-base font-medium">{title}</h1>
+            ) : null}
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            {headerActions ? (
+              <div className="mr-1 flex items-center gap-2">{headerActions}</div>
+            ) : null}
+            {controls}
+          </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
-          {headerActions ? (
-            <div className="mr-1 flex items-center gap-2">{headerActions}</div>
-          ) : null}
-          {controls}
-        </div>
-      </div>
-      {hasToolbar ? (
-        <div className="flex min-h-[58px] min-w-0 flex-wrap items-center gap-x-4 gap-y-3 border-t border-kumo-line px-4 py-2.5 sm:px-6 lg:px-8">
-          {tabs ? <div className="min-w-0 max-w-full shrink">{tabs}</div> : null}
-          {metadata ? <div className="min-w-0 text-base text-kumo-subtle">{metadata}</div> : null}
-          {actions || tabActions ? (
-            <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center gap-1.5 sm:gap-2">
-              {tabActions}
-              {actions}
+      </header>
+
+      {!compact ? (
+        <section className="page-heading shrink-0 px-4 pt-8 text-left sm:px-6 lg:px-8">
+          {breadcrumbs ? <div className="page-breadcrumbs mb-4 min-w-0">{breadcrumbs}</div> : null}
+
+          <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="grid min-w-0 gap-1.5">
+              <h1 className="min-w-0 text-xl leading-7 font-semibold tracking-tight">{title}</h1>
+              {description ? (
+                <div className="min-w-0 text-base text-kumo-subtle">{description}</div>
+              ) : null}
+            </div>
+            {actions ? (
+              <div className="flex min-w-0 max-w-full shrink-0 flex-wrap items-center gap-1.5 sm:gap-2">
+                {actions}
+              </div>
+            ) : null}
+          </div>
+
+          {tabs || tabActions ? (
+            <div className="mt-5 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-3">
+              {tabs ? <div className="min-w-0 max-w-full shrink">{tabs}</div> : null}
+              {tabActions ? (
+                <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center gap-1.5 sm:gap-2">
+                  {tabActions}
+                </div>
+              ) : null}
             </div>
           ) : null}
-        </div>
+        </section>
       ) : null}
-    </header>
+    </>
   )
 }
 
