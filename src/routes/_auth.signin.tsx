@@ -39,7 +39,7 @@ function SignIn() {
     <LayerCard className="px-6 py-5">
       <form onSubmit={onSubmit} className="grid gap-5">
         <div className="grid gap-1.5">
-          <Text as="h1" variant="heading">
+          <Text as="h1" variant="heading" DANGEROUS_className="text-xl leading-7">
             Sign in
           </Text>
           <Text variant="secondary">Welcome back. Pick up where your suite left off.</Text>
@@ -76,7 +76,7 @@ function SignIn() {
           />
         </div>
 
-        <Button type="submit" variant="primary" loading={pending}>
+        <Button type="submit" variant="primary" loading={pending} className="w-full">
           Sign in
         </Button>
 

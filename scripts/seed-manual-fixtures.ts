@@ -60,6 +60,6 @@ db.transaction(() => {
   }
 })()
 console.log(
-  `Local fixture project ready: http://localhost:3000/projects/prj_manual_lab (${manualScenarios.length} scenarios; re-running preserves edits and history).`,
+  `Local fixture project ready: http://localhost:3009/projects/prj_manual_lab (${manualScenarios.length} scenarios; re-running preserves edits and history).`,
 )
 db.close()

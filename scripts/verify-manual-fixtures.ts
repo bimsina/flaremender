@@ -4,7 +4,7 @@ import { readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { manualScenarios } from './manual-scenarios.ts'
 
-const origin = 'http://localhost:3000'
+const origin = 'http://localhost:3009'
 const password = process.env.FLAREMENDER_TEST_PASSWORD
 if (!password) throw new Error('Set FLAREMENDER_TEST_PASSWORD for the local instance account.')
 const cookies = new Map<string, string>()
@@ -15,7 +15,9 @@ async function request(path: string, body?: unknown, authenticated = true) {
       Origin: origin,
       'Content-Type': 'application/json',
       ...(authenticated
-        ? { Cookie: [...cookies].map(([name, value]) => `${name}=${value}`).join('; ') }
+        ? {
+            Cookie: [...cookies].map(([name, value]) => `${name}=${value}`).join('; '),
+          }
         : {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -48,7 +50,9 @@ assert.ok(db)
 const project = db
   .prepare("SELECT organization_id AS org FROM project WHERE id = 'prj_manual_lab'")
   .get() as { org: string }
-const active = await request('/api/auth/organization/set-active', { organizationId: project.org })
+const active = await request('/api/auth/organization/set-active', {
+  organizationId: project.org,
+})
 assert.equal(active.status, 200)
 const suite = db
   .prepare(
@@ -137,7 +141,10 @@ if (aiProjectId) {
   }
   const drafts = db
     .prepare('SELECT id, last_run_id FROM intent WHERE project_id = ? AND readiness = ?')
-    .all(aiProjectId, 'draft') as Array<{ id: string; last_run_id: string | null }>
+    .all(aiProjectId, 'draft') as Array<{
+    id: string
+    last_run_id: string | null
+  }>
   assert.equal(drafts.length, 1)
   assert.equal(drafts[0].last_run_id, null)
   assert.ok(aiReport.runs.every((run) => run.test.id !== drafts[0].id))
@@ -163,7 +170,11 @@ assert.equal(createdResponse.status, 200)
 const created = (await createdResponse.json()) as { id: string }
 try {
   assert.equal(
-    (await request('/api/auth/organization/set-active', { organizationId: created.id })).status,
+    (
+      await request('/api/auth/organization/set-active', {
+        organizationId: created.id,
+      })
+    ).status,
     200,
   )
   assert.equal((await request(path)).status, 404, 'Cross-organization suite export must be denied')
@@ -173,8 +184,12 @@ try {
     'Cross-organization run export must be denied',
   )
 } finally {
-  await request('/api/auth/organization/delete', { organizationId: created.id })
-  await request('/api/auth/organization/set-active', { organizationId: project.org })
+  await request('/api/auth/organization/delete', {
+    organizationId: created.id,
+  })
+  await request('/api/auth/organization/set-active', {
+    organizationId: project.org,
+  })
   await request('/api/auth/sign-out', {})
   db.close()
 }

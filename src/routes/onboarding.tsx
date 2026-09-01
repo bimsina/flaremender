@@ -12,7 +12,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 
-import { ThemeToggle } from '#/components/theme-toggle.tsx'
+import { StandaloneShell } from '#/components/standalone-shell.tsx'
 import { authClient } from '#/lib/auth-client.ts'
 import { slugify } from '#/lib/ids.ts'
 import {
@@ -57,32 +57,20 @@ function Onboarding() {
   const [step, setStep] = useState<1 | 2>(session.organizations.length > 0 ? 2 : 1)
 
   return (
-    <div className="min-h-dvh bg-kumo-canvas">
-      <div className="absolute top-4 right-4">
-        <ThemeToggle />
-      </div>
-
-      <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-8 px-5 py-12">
-        <div className="grid gap-1.5 text-center">
-          {needsSetup ? (
-            <Text variant="secondary">Step {step} of 2</Text>
-          ) : (
-            <Text variant="secondary">One more step before you can add a project.</Text>
-          )}
-        </div>
-
-        {step === 1 ? (
-          <CreateOrganizationStep
-            onDone={async () => {
-              if (needsSetup) setStep(2)
-              else await navigate({ to: '/dashboard' })
-            }}
-          />
-        ) : (
-          <InstanceSetupStep />
-        )}
-      </div>
-    </div>
+    <StandaloneShell
+      eyebrow={needsSetup ? `Step ${step} of 2` : 'One more step before you can add a project.'}
+    >
+      {step === 1 ? (
+        <CreateOrganizationStep
+          onDone={async () => {
+            if (needsSetup) setStep(2)
+            else await navigate({ to: '/dashboard' })
+          }}
+        />
+      ) : (
+        <InstanceSetupStep />
+      )}
+    </StandaloneShell>
   )
 }
 
@@ -122,7 +110,7 @@ function CreateOrganizationStep({ onDone }: { onDone: () => Promise<void> }) {
     <LayerCard className="px-6 py-5">
       <form onSubmit={onSubmit} className="grid gap-5">
         <div className="grid gap-1.5">
-          <Text as="h1" variant="heading">
+          <Text as="h1" variant="heading" DANGEROUS_className="text-xl leading-7">
             Create your organization
           </Text>
           <Text variant="secondary">
@@ -212,7 +200,7 @@ function InstanceSetupStep() {
         }}
       >
         <div className="grid gap-1.5">
-          <Text as="h1" variant="heading">
+          <Text as="h1" variant="heading" DANGEROUS_className="text-xl leading-7">
             Set up this instance
           </Text>
           <Text variant="secondary">

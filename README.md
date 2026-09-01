@@ -21,7 +21,7 @@ pnpm install
 pnpm dev
 ```
 
-The app runs at http://localhost:3000 against the local D1 database under
+The app runs at http://localhost:3009 against the local D1 database under
 `.wrangler/`.
 
 ### Database
@@ -271,10 +271,10 @@ Cron triggers do not fire on their own under `pnpm dev`. Fire one by hand:
 
 ```bash
 # a schedule tick for a specific UTC minute
-curl "http://localhost:3000/cdn-cgi/handler/scheduled?cron=*%20*%20*%20*%20*&time=$(node -e 'console.log(Math.floor(Date.now()/60000)*60000)')"
+curl "http://localhost:3009/cdn-cgi/handler/scheduled?cron=*%20*%20*%20*%20*&time=$(node -e 'console.log(Math.floor(Date.now()/60000)*60000)')"
 
 # the nightly retention sweep
-curl "http://localhost:3000/cdn-cgi/handler/scheduled?cron=30%203%20*%20*%20*"
+curl "http://localhost:3009/cdn-cgi/handler/scheduled?cron=30%203%20*%20*%20*"
 ```
 
 ## Theming

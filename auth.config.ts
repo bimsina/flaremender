@@ -14,7 +14,7 @@ const db = drizzle(sqlite, { schema })
 export const auth = betterAuth({
   database: drizzleAdapter(db, { provider: 'sqlite', schema }),
   secret: 'dev-only-min-32-characters-secret!!',
-  baseURL: process.env.BETTER_AUTH_URL || 'http://localhost:3000',
+  baseURL: process.env.BETTER_AUTH_URL || 'http://localhost:3009',
   emailAndPassword: { enabled: true },
   plugins: [organization(), admin()],
 })

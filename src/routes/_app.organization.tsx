@@ -84,11 +84,11 @@ function OrganizationPage() {
   return (
     <>
       <PageHeader
-        title={org?.name ?? 'Organization'}
+        title="Members"
         description={
           org
-            ? `${members.length} member${members.length === 1 ? '' : 's'} · /${org.slug}`
-            : undefined
+            ? `${org.name} · ${members.length} member${members.length === 1 ? '' : 's'}`
+            : 'Manage access to this organization.'
         }
         actions={
           <>
@@ -138,98 +138,89 @@ function OrganizationPage() {
           />
         ) : null}
 
-        <section className="grid gap-3">
-          <div className="grid gap-1.5">
-            <Text as="h2" variant="heading">
-              Members
-            </Text>
-            <Text variant="secondary">Everyone with access to this organization's projects.</Text>
-          </div>
-
-          {isPending ? (
-            <LayerCard className="flex items-center justify-center px-5 py-10">
-              <Loader size={20} />
-            </LayerCard>
-          ) : (
-            <Table
-              label="Members"
-              footer={<TablePagination {...memberPagination} />}
-              toolbar={
-                <ListToolbar value={search} onValueChange={setSearch} placeholder="Search members">
-                  <Select
-                    aria-label="Filter members by role"
-                    className="w-40"
-                    items={{ all: 'All roles', ...ROLES }}
-                    value={roleFilter}
-                    onValueChange={(value: string | null) => setRoleFilter(value ?? 'all')}
-                  />
-                </ListToolbar>
-              }
-            >
-              <Table.Header>
-                <Table.Row>
-                  <Table.Head>Name</Table.Head>
-                  <Table.Head>Email</Table.Head>
-                  <Table.Head>Role</Table.Head>
-                  <Table.Head>Joined</Table.Head>
-                  <Table.Head className="w-0">
-                    <span className="sr-only">Actions</span>
-                  </Table.Head>
+        {isPending ? (
+          <LayerCard className="flex items-center justify-center px-5 py-10">
+            <Loader size={20} />
+          </LayerCard>
+        ) : (
+          <Table
+            label="Members"
+            footer={<TablePagination {...memberPagination} />}
+            toolbar={
+              <ListToolbar value={search} onValueChange={setSearch} placeholder="Search members">
+                <Select
+                  aria-label="Filter members by role"
+                  className="w-40"
+                  items={{ all: 'All roles', ...ROLES }}
+                  value={roleFilter}
+                  onValueChange={(value: string | null) => setRoleFilter(value ?? 'all')}
+                />
+              </ListToolbar>
+            }
+          >
+            <Table.Header>
+              <Table.Row>
+                <Table.Head>Name</Table.Head>
+                <Table.Head>Email</Table.Head>
+                <Table.Head>Role</Table.Head>
+                <Table.Head>Joined</Table.Head>
+                <Table.Head className="w-0">
+                  <span className="sr-only">Actions</span>
+                </Table.Head>
+              </Table.Row>
+            </Table.Header>
+            <Table.Body>
+              {memberPagination.items.map((member) => (
+                <Table.Row key={member.id}>
+                  <Table.Cell>
+                    <span className="flex items-center gap-2 font-medium whitespace-nowrap">
+                      {member.user.name}
+                      {member.userId === session.user.id ? (
+                        <Badge variant="secondary" className="rounded-md text-base">
+                          You
+                        </Badge>
+                      ) : null}
+                    </span>
+                  </Table.Cell>
+                  <Table.Cell>
+                    <Text as="span" variant="secondary">
+                      {member.user.email}
+                    </Text>
+                  </Table.Cell>
+                  <Table.Cell>
+                    <Badge variant="secondary" className="rounded-md text-base">
+                      {ROLES[member.role as keyof typeof ROLES] ?? member.role}
+                    </Badge>
+                  </Table.Cell>
+                  <Table.Cell className="whitespace-nowrap text-kumo-subtle">
+                    {formatDate(member.createdAt)}
+                  </Table.Cell>
+                  <Table.Cell>
+                    <MemberActions
+                      memberId={member.id}
+                      memberName={member.user.name}
+                      memberEmail={member.user.email}
+                      role={member.role}
+                      disabled={
+                        !canManage || member.role === 'owner' || member.userId === session.user.id
+                      }
+                    />
+                  </Table.Cell>
                 </Table.Row>
-              </Table.Header>
-              <Table.Body>
-                {memberPagination.items.map((member) => (
-                  <Table.Row key={member.id}>
-                    <Table.Cell>
-                      <span className="flex items-center gap-2 font-medium whitespace-nowrap">
-                        {member.user.name}
-                        {member.userId === session.user.id ? (
-                          <Badge variant="secondary" className="rounded-md text-base">
-                            You
-                          </Badge>
-                        ) : null}
-                      </span>
-                    </Table.Cell>
-                    <Table.Cell>
-                      <Text as="span" variant="secondary">
-                        {member.user.email}
-                      </Text>
-                    </Table.Cell>
-                    <Table.Cell>
-                      <Badge variant="secondary" className="rounded-md text-base">
-                        {ROLES[member.role as keyof typeof ROLES] ?? member.role}
-                      </Badge>
-                    </Table.Cell>
-                    <Table.Cell className="whitespace-nowrap text-kumo-subtle">
-                      {formatDate(member.createdAt)}
-                    </Table.Cell>
-                    <Table.Cell>
-                      <MemberActions
-                        memberId={member.id}
-                        memberName={member.user.name}
-                        memberEmail={member.user.email}
-                        role={member.role}
-                        disabled={
-                          !canManage || member.role === 'owner' || member.userId === session.user.id
-                        }
-                      />
-                    </Table.Cell>
-                  </Table.Row>
-                ))}
-                {memberPagination.items.length === 0 ? (
-                  <Table.Empty
-                    columns={5}
-                    message="No members match your filters"
-                    onClear={() => {
-                      setSearch('')
-                      setRoleFilter('all')
-                    }}
-                  />
-                ) : null}
-              </Table.Body>
-            </Table>
-          )}
-        </section>
+              ))}
+              {memberPagination.items.length === 0 ? (
+                <Table.Empty
+                  columns={5}
+                  message="No members match your filters"
+                  onClear={() => {
+                    setSearch('')
+                    setRoleFilter('all')
+                  }}
+                />
+              ) : null}
+            </Table.Body>
+          </Table>
+        )}
 
         <section className="grid gap-3">
           <div className="grid gap-1.5">

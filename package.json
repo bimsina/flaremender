@@ -6,7 +6,7 @@
     "#/*": "./src/*"
   },
   "scripts": {
-    "dev": "pnpm run harness && pnpm run trace-viewer && vite dev --port 3000",
+    "dev": "pnpm run harness && pnpm run trace-viewer && vite dev --port 3009",
     "harness": "node scripts/build-harness.mjs",
     "trace-viewer": "node scripts/sync-trace-viewer.mjs",
     "generate-routes": "tsr generate",

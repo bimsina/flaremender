@@ -54,7 +54,7 @@ function SignUp() {
     <LayerCard className="px-6 py-5">
       <form onSubmit={onSubmit} className="grid gap-5">
         <div className="grid gap-1.5">
-          <Text as="h1" variant="heading">
+          <Text as="h1" variant="heading" DANGEROUS_className="text-xl leading-7">
             Create your account
           </Text>
           <Text variant="secondary">You will set up your first organization right after this.</Text>
@@ -112,7 +112,7 @@ function SignUp() {
           />
         </div>
 
-        <Button type="submit" variant="primary" loading={pending}>
+        <Button type="submit" variant="primary" loading={pending} className="w-full">
           Create account
         </Button>
 
