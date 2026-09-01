@@ -5,7 +5,7 @@ import { createLink } from '@tanstack/react-router'
 const RouterLinkButton = createLink(LinkButton)
 
 export function NewProjectButton({
-  children = 'New project',
+  children = 'Create project',
   variant = 'primary',
   size = 'base',
 }: {

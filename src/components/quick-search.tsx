@@ -5,24 +5,23 @@ import {
   GaugeIcon,
   GearIcon,
   MagnifyingGlassIcon,
+  PlayIcon,
   ShieldCheckIcon,
+  TestTubeIcon,
 } from '@phosphor-icons/react'
 import { useQuery } from '@tanstack/react-query'
 import { linkOptions, useRouter } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 
-import { projectsQuery } from '#/lib/queries.ts'
+import { shortId } from '#/lib/ids.ts'
+import { quickSearchQuery } from '#/lib/queries.ts'
 
 export function QuickSearch({ isAdmin }: { isAdmin: boolean }) {
   const router = useRouter()
   const { setOpenMobile } = useSidebar()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
-  const {
-    data: projects = [],
-    isPending,
-    isError,
-  } = useQuery({ ...projectsQuery(), enabled: open })
+  const { data: resources, isPending, isError } = useQuery({ ...quickSearchQuery(), enabled: open })
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -70,9 +69,11 @@ export function QuickSearch({ isAdmin }: { isAdmin: boolean }) {
           },
         ]
       : []),
-    ...projects.map((project) => ({
+    ...(resources?.projects ?? []).map((project) => ({
       title: project.name,
       group: 'Projects',
+      keywords: project.name,
+      breadcrumbs: ['Projects'],
       icon: FolderIcon,
       options: linkOptions({
         to: '/projects/$projectId',
@@ -80,9 +81,33 @@ export function QuickSearch({ isAdmin }: { isAdmin: boolean }) {
         search: { tab: 'overview' },
       }),
     })),
+    ...(resources?.tests ?? []).map((test) => ({
+      title: test.title,
+      group: 'Tests',
+      keywords: `${test.title} ${test.projectName}`,
+      breadcrumbs: ['Tests', test.projectName],
+      icon: TestTubeIcon,
+      options: linkOptions({
+        to: '/projects/$projectId/intents/$intentId',
+        params: { projectId: test.projectId, intentId: test.id },
+      }),
+    })),
+    ...(resources?.runs ?? []).map((run) => ({
+      title: run.intentTitle,
+      group: 'Runs',
+      keywords: `${run.intentTitle} ${run.projectName} ${run.id} ${shortId(run.id)} ${run.status}`,
+      breadcrumbs: ['Runs', run.projectName, shortId(run.id)],
+      icon: PlayIcon,
+      options: linkOptions({
+        to: '/projects/$projectId/runs/$runId',
+        params: { projectId: run.projectId, runId: run.id },
+      }),
+    })),
   ]
   const results = pages.filter((page) =>
-    `${page.group} ${page.title}`.toLowerCase().includes(query.trim().toLowerCase()),
+    `${page.group} ${'keywords' in page ? page.keywords : page.title}`
+      .toLowerCase()
+      .includes(query.trim().toLowerCase()),
   )
 
   function select(item: (typeof pages)[number], newTab = false) {
@@ -126,8 +151,8 @@ export function QuickSearch({ isAdmin }: { isAdmin: boolean }) {
         onSelect={(item, { newTab }) => select(item, newTab)}
       >
         <CommandPalette.Input
-          aria-label="Search pages and projects"
-          placeholder="Search pages and projects..."
+          aria-label="Search pages, projects, tests, and runs"
+          placeholder="Search projects, tests, runs, or pages..."
         />
         <CommandPalette.List>
           <CommandPalette.Results>
@@ -135,17 +160,19 @@ export function QuickSearch({ isAdmin }: { isAdmin: boolean }) {
               <CommandPalette.ResultItem
                 value={item}
                 title={item.title}
-                breadcrumbs={[item.group]}
+                breadcrumbs={'breadcrumbs' in item ? item.breadcrumbs : [item.group]}
                 icon={<item.icon size={16} />}
                 onClick={(event) => select(item, event.metaKey || event.ctrlKey)}
               />
             )}
           </CommandPalette.Results>
-          <CommandPalette.Empty>No matching pages or projects.</CommandPalette.Empty>
-          {isPending ? <CommandPalette.Loading>Loading projects...</CommandPalette.Loading> : null}
+          <CommandPalette.Empty>No matching projects, tests, runs, or pages.</CommandPalette.Empty>
+          {isPending ? (
+            <CommandPalette.Loading>Loading organization...</CommandPalette.Loading>
+          ) : null}
           {isError ? (
             <p className="px-4 py-3 text-base text-kumo-subtle">
-              Projects could not be loaded. You can still search pages.
+              Organization resources could not be loaded. You can still search pages.
             </p>
           ) : null}
         </CommandPalette.List>

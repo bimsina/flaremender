@@ -114,8 +114,8 @@ function CreateOrganizationStep({ onDone }: { onDone: () => Promise<void> }) {
             Create your organization
           </Text>
           <Text variant="secondary">
-            Projects, intents and runs all live inside an organization. You can create more later
-            and switch between them.
+            Projects, tests and runs all live inside an organization. You can create more later and
+            switch between them.
           </Text>
         </div>
 

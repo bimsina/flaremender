@@ -12,7 +12,6 @@ export interface RunTrendDay {
 
 export const RUN_TREND_SERIES = [
   { key: 'passed', name: 'Passed' },
-  { key: 'healed', name: 'Healed' },
   { key: 'failed', name: 'Failed' },
   { key: 'error', name: 'Errored' },
   { key: 'running', name: 'Running' },
@@ -35,7 +34,7 @@ export function runTrendSeries(days: Array<RunTrendDay>): Array<RunTrendSeries> 
   return RUN_TREND_SERIES.map((series) => {
     const points = days.map((entry): [number, number] => [
       dayTimestamp(entry.day),
-      entry[series.key],
+      series.key === 'passed' ? entry.passed + entry.healed : entry[series.key],
     ])
     return {
       key: series.key,
@@ -52,7 +51,6 @@ export function runTrendTotal(days: Array<RunTrendDay>): number {
 
 export const RUN_OUTCOMES = [
   { key: 'passed', name: 'Passed' },
-  { key: 'healed', name: 'Healed' },
   { key: 'failed', name: 'Failed or errored' },
 ] as const
 
@@ -73,8 +71,7 @@ export interface DurationTrendPoint {
 }
 
 function outcomeOf(status: RunStatus): RunOutcome | null {
-  if (status === 'passed') return 'passed'
-  if (status === 'healed') return 'healed'
+  if (status === 'passed' || status === 'healed') return 'passed'
   if (status === 'failed' || status === 'error') return 'failed'
   return null
 }
@@ -107,7 +104,7 @@ export function durationTrendPoints(runs: Array<DurationTrendRun>): Array<Durati
 }
 
 export function durationTrendTotals(points: Array<DurationTrendPoint>): Record<RunOutcome, number> {
-  const totals: Record<RunOutcome, number> = { passed: 0, healed: 0, failed: 0 }
+  const totals: Record<RunOutcome, number> = { passed: 0, failed: 0 }
   for (const point of points) totals[point.outcome] += 1
   return totals
 }

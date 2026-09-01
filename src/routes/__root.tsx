@@ -31,7 +31,8 @@ export const Route = createRootRouteWithContext<RouterContext>()({
       { title: 'E2E Tests' },
       {
         name: 'description',
-        content: 'Describe a test in plain English, get Playwright code that keeps itself green.',
+        content:
+          'Describe a test in plain English, generate Playwright code, and run it in a real browser.',
       },
     ],
     links: [{ rel: 'stylesheet', href: appCss }],

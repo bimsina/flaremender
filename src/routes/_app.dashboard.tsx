@@ -69,8 +69,17 @@ function Dashboard() {
 
   const activeOrg = session.organizations.find((org) => org.id === session.activeOrganizationId)
 
-  const green = data.passedRuns + data.healedRuns
-  const passRate = data.runs > 0 ? Math.round((green / data.runs) * 100) : null
+  const last14Days = trend.reduce(
+    (total, day) => ({
+      passed: total.passed + day.passed + day.healed,
+      failed: total.failed + day.failed,
+      errored: total.errored + day.error,
+      running: total.running + day.running,
+    }),
+    { passed: 0, failed: 0, errored: 0, running: 0 },
+  )
+  const terminalRuns = last14Days.passed + last14Days.failed + last14Days.errored
+  const passRate = terminalRuns > 0 ? Math.round((last14Days.passed / terminalRuns) * 100) : null
 
   return (
     <>
@@ -88,24 +97,24 @@ function Dashboard() {
           <StatTile
             label="Tests"
             value={data.intents}
-            hint={`${data.passing} passing · ${data.failing} failing`}
+            hint={`${data.passing} passing · ${data.failing} failing · ${data.pending} not yet verified`}
           />
           <StatTile
-            label="Pass rate"
+            label="14-day pass rate"
             value={passRate === null ? '—' : `${passRate}%`}
             hint={
-              data.runs === 0
-                ? 'Nothing has run yet'
-                : `${data.passedRuns} passed · ${data.healedRuns} healed`
+              terminalRuns === 0
+                ? 'No completed regressions'
+                : `${last14Days.passed} passed · ${last14Days.failed} failed · ${last14Days.errored} errored`
             }
           />
           <StatTile
-            label="Runs"
-            value={data.runs}
+            label="14-day regressions"
+            value={terminalRuns + last14Days.running}
             hint={
-              data.pending === 0
-                ? `${data.failedRuns} failed`
-                : `${data.failedRuns} failed · ${data.pending} awaiting regression`
+              last14Days.running === 0
+                ? 'Completed regression runs'
+                : `${last14Days.running} currently running`
             }
           />
         </section>
@@ -153,7 +162,6 @@ function Dashboard() {
                       passed: 'Passed',
                       failed: 'Failed',
                       error: 'Errored',
-                      healed: 'Healed',
                       running: 'Running',
                       queued: 'Queued',
                     }}

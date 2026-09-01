@@ -1,8 +1,9 @@
 import { Button, LayerCard, LinkButton, Select, Text } from '@cloudflare/kumo'
-import { PencilSimpleIcon, PlayIcon, SparkleIcon } from '@phosphor-icons/react'
+import { CheckCircleIcon, CircleIcon, PlayIcon } from '@phosphor-icons/react'
 import { useQuery } from '@tanstack/react-query'
 
 import { Section } from './list.tsx'
+import { NewTestMenu } from './new-test-menu.tsx'
 import { StatTile } from './page.tsx'
 import { RelativeTime } from './relative-time.tsx'
 import { RunStatusBadge } from './status-badge.tsx'
@@ -44,8 +45,92 @@ export function ProjectOverview({
   ).length
   const target = environments.find((item) => item.id === environmentId)
   const latest = data?.recent.find((row) => row.status !== 'queued' && row.status !== 'running')
+  const adopted = tests.filter((test) => test.status !== 'proposed')
+  const scripted = adopted.find((test) => test.currentVersion > 0)
+  const readyTest = adopted.find((test) => test.readiness === 'ready' && test.currentVersion > 0)
+  const setupComplete = data?.hasCompletedRegression === true
+  const setupSteps = [
+    {
+      label: 'Confirm an environment',
+      done: environments.length > 0,
+      href: `/projects/${projectId}?tab=environments`,
+    },
+    {
+      label: 'Create a test',
+      done: adopted.length > 0,
+      href: `/projects/${projectId}?tab=chat`,
+    },
+    {
+      label: 'Save or generate its script',
+      done: scripted !== undefined,
+      href: scripted
+        ? `/projects/${projectId}/intents/${scripted.id}`
+        : `/projects/${projectId}?tab=intents`,
+    },
+    {
+      label: 'Mark a test ready',
+      done: readyTest !== undefined,
+      href: readyTest
+        ? `/projects/${projectId}/intents/${readyTest.id}`
+        : scripted
+          ? `/projects/${projectId}/intents/${scripted.id}`
+          : `/projects/${projectId}?tab=intents`,
+    },
+    { label: 'Run the suite', done: setupComplete === true, href: null },
+  ]
   return (
     <div className="grid gap-6">
+      {data && !setupComplete ? (
+        <LayerCard className="px-5 py-4">
+          <div className="grid gap-4">
+            <div className="grid gap-1">
+              <Text as="h2" variant="heading">
+                Set up your first regression
+              </Text>
+              <Text variant="secondary">
+                Complete these steps once; this guide disappears after the first regression
+                finishes.
+              </Text>
+            </div>
+            <ol className="grid gap-2">
+              {setupSteps.map((step) => (
+                <li key={step.label} className="flex items-center justify-between gap-3">
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    {step.done ? (
+                      <CheckCircleIcon
+                        size={18}
+                        weight="fill"
+                        className="shrink-0 text-kumo-success"
+                      />
+                    ) : (
+                      <CircleIcon size={18} className="shrink-0 text-kumo-inactive" />
+                    )}
+                    <Text as="span" variant={step.done ? 'secondary' : 'body'}>
+                      {step.label}
+                    </Text>
+                  </span>
+                  {!step.done && step.href ? (
+                    <LinkButton href={step.href} variant="ghost" size="sm">
+                      Continue
+                    </LinkButton>
+                  ) : null}
+                  {!step.done && step.href === null ? (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      loading={running}
+                      disabled={!ready || !environmentId}
+                      onClick={onRun}
+                    >
+                      Run {ready} test{ready === 1 ? '' : 's'}
+                    </Button>
+                  ) : null}
+                </li>
+              ))}
+            </ol>
+          </div>
+        </LayerCard>
+      ) : null}
       <LayerCard className="p-5">
         <div className="flex flex-wrap items-start justify-between gap-5">
           <div className="grid gap-2">
@@ -56,20 +141,7 @@ export function ProjectOverview({
               Describe a flow to create tests with AI, or write the code yourself.
             </Text>
             <div className="mt-2 flex flex-wrap gap-2">
-              <LinkButton
-                variant="primary"
-                icon={SparkleIcon}
-                href={`/projects/${projectId}?tab=chat`}
-              >
-                Create with AI
-              </LinkButton>
-              <Button
-                variant="secondary"
-                icon={<PencilSimpleIcon size={16} />}
-                onClick={onCreateManual}
-              >
-                Create manually
-              </Button>
+              <NewTestMenu projectId={projectId} onCreateManual={onCreateManual} />
               <Button
                 variant="secondary"
                 icon={<PlayIcon size={16} />}
@@ -77,7 +149,7 @@ export function ProjectOverview({
                 disabled={!ready || !environmentId}
                 onClick={onRun}
               >
-                Run suite
+                Run {ready} test{ready === 1 ? '' : 's'}
               </Button>
             </div>
           </div>

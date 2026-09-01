@@ -22,6 +22,7 @@ import {
 import { listProviderModels } from '#/server/model-catalog.ts'
 import { getProject, listProjects } from '#/server/projects.ts'
 import { getRun, listProjectRuns, listRuns } from '#/server/runs.ts'
+import { getQuickSearchResources } from '#/server/search.ts'
 import { fetchSession, fetchThemePreference } from '#/server/session.ts'
 import { getSuiteRun, listSuiteRuns } from '#/server/suites.ts'
 
@@ -55,6 +56,13 @@ export const projectsQuery = () =>
   queryOptions({
     queryKey: ['projects'] as const,
     queryFn: () => listProjects(),
+  })
+
+export const quickSearchQuery = () =>
+  queryOptions({
+    queryKey: ['quick-search'] as const,
+    queryFn: () => getQuickSearchResources(),
+    staleTime: 30_000,
   })
 
 export const projectQuery = (projectId: string) =>

@@ -122,16 +122,24 @@ export const updateIntent = createServerFn({ method: 'POST' })
     schedule: has(data, 'schedule') ? cron(data, 'schedule') : undefined,
   }))
   .handler(async ({ data, context }) => {
-    await loadIntent(context.db, context.organizationId, data.intentId)
+    const row = await loadIntent(context.db, context.organizationId, data.intentId)
+    const titleChanged = data.title !== undefined && data.title !== row.intent.title
+    const descriptionChanged =
+      data.description !== undefined && data.description !== row.intent.description
+    const scheduleChanged = data.schedule !== undefined && data.schedule !== row.intent.schedule
 
-    await updateIntentRecord(context.db, {
+    const result = await updateIntentRecord(context.db, {
       intentId: data.intentId,
-      title: data.title,
-      description: data.description,
-      schedule: data.schedule,
+      title: titleChanged ? data.title : undefined,
+      description: descriptionChanged ? data.description : undefined,
+      schedule: scheduleChanged ? data.schedule : undefined,
     })
 
-    return { ok: true as const }
+    return {
+      ok: true as const,
+      changed: result.changed,
+      readinessReset: descriptionChanged && row.intent.status !== 'proposed',
+    }
   })
 
 export const deleteIntent = createServerFn({ method: 'POST' })

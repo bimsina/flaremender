@@ -26,7 +26,6 @@ import { projectRunsQuery, runTrendQuery, suiteRunQuery, suiteRunsQuery } from '
 const STATUS_FILTERS = {
   all: 'Any status',
   passed: 'Passed',
-  healed: 'Healed',
   failed: 'Failed',
   error: 'Errored',
   running: 'Running',
@@ -37,6 +36,7 @@ type StatusFilter = keyof typeof STATUS_FILTERS
 const TRIGGER_FILTERS = {
   all: 'Any trigger',
   manual: 'Manual',
+  regenerate: 'Regenerated',
   schedule: 'Schedule',
 } as const
 
@@ -84,6 +84,7 @@ type Entry =
 function matchesStatus(status: RunStatus | SuiteRunStatus, filter: StatusFilter): boolean {
   if (filter === 'all') return true
   if (filter === 'running') return status === 'running' || status === 'queued'
+  if (filter === 'passed') return status === 'passed' || status === 'healed'
   return status === filter
 }
 
@@ -91,16 +92,27 @@ export function ProjectRunsTab({
   projectId,
   environments,
   liveSuiteRunId,
+  search,
+  status,
+  trigger,
+  environmentId,
+  onFiltersChange,
 }: {
   projectId: string
   environments: Array<{ id: string; name: string; isDefault: boolean }>
   liveSuiteRunId: string | null
+  search: string
+  status: StatusFilter
+  trigger: TriggerFilter
+  environmentId: string
+  onFiltersChange: (patch: {
+    runsQuery?: string
+    runStatus?: StatusFilter
+    runTrigger?: TriggerFilter
+    environmentId?: string
+  }) => void
 }) {
-  const [status, setStatus] = useState<StatusFilter>('all')
-  const [environmentId, setEnvironmentId] = useState<string>('all')
-  const [trigger, setTrigger] = useState<TriggerFilter>('all')
   const [expanded, setExpanded] = useState<string | null>(null)
-  const [search, setSearch] = useState('')
 
   const { data: recent } = useSuspenseQuery(projectRunsQuery(projectId))
   const { data: suiteRuns } = useSuspenseQuery(suiteRunsQuery(projectId))
@@ -155,10 +167,12 @@ export function ProjectRunsTab({
     `${status}:${environmentId}:${trigger}:${search}`,
   )
   const clearFilters = () => {
-    setSearch('')
-    setStatus('all')
-    setEnvironmentId('all')
-    setTrigger('all')
+    onFiltersChange({
+      runsQuery: undefined,
+      runStatus: undefined,
+      environmentId: undefined,
+      runTrigger: undefined,
+    })
   }
 
   if (recent.length === 0 && suiteRuns.length === 0) {
@@ -191,7 +205,7 @@ export function ProjectRunsTab({
           toolbar={
             <ListToolbar
               value={search}
-              onValueChange={setSearch}
+              onValueChange={(value) => onFiltersChange({ runsQuery: value || undefined })}
               placeholder="Search runs or tests"
             >
               <Select
@@ -199,21 +213,31 @@ export function ProjectRunsTab({
                 className="w-40"
                 items={STATUS_FILTERS}
                 value={status}
-                onValueChange={(value: StatusFilter | null) => setStatus(value ?? 'all')}
+                onValueChange={(value: StatusFilter | null) =>
+                  onFiltersChange({ runStatus: value === 'all' ? undefined : (value ?? undefined) })
+                }
               />
               <Select
                 aria-label="Filter by environment"
                 className="w-52"
                 items={environmentItems}
                 value={environmentId}
-                onValueChange={(value: string | null) => setEnvironmentId(value ?? 'all')}
+                onValueChange={(value: string | null) =>
+                  onFiltersChange({
+                    environmentId: value === 'all' ? undefined : (value ?? undefined),
+                  })
+                }
               />
               <Select
                 aria-label="Filter by trigger"
                 className="w-40"
                 items={TRIGGER_FILTERS}
                 value={trigger}
-                onValueChange={(value: TriggerFilter | null) => setTrigger(value ?? 'all')}
+                onValueChange={(value: TriggerFilter | null) =>
+                  onFiltersChange({
+                    runTrigger: value === 'all' ? undefined : (value ?? undefined),
+                  })
+                }
               />
               {isPending ? <Loader size="sm" /> : null}
             </ListToolbar>

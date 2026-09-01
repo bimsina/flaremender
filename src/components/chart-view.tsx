@@ -41,8 +41,6 @@ function runTrendColor(key: RunTrendSeriesKey, isDarkMode: boolean): string {
   switch (key) {
     case 'passed':
       return ChartPalette.semantic('Success', isDarkMode)
-    case 'healed':
-      return ChartPalette.categorical(0, isDarkMode)
     case 'failed':
       return ChartPalette.semantic('Attention', isDarkMode)
     case 'error':
@@ -56,8 +54,6 @@ function outcomeColor(key: RunOutcome, isDarkMode: boolean): string {
   switch (key) {
     case 'passed':
       return ChartPalette.semantic('Success', isDarkMode)
-    case 'healed':
-      return ChartPalette.categorical(0, isDarkMode)
     case 'failed':
       return ChartPalette.semantic('Attention', isDarkMode)
   }

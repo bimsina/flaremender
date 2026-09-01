@@ -113,7 +113,7 @@ export function RunDetail({
 }) {
   return (
     <div className="grid gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <Text variant="secondary">
           {data.run.purpose === 'draft-check'
             ? 'Draft check · excluded from regression results'
@@ -121,22 +121,6 @@ export function RunDetail({
               ? 'Generation verification · excluded from regression results'
               : 'Regression execution'}
         </Text>
-        <div className="flex gap-2">
-          <LinkButton
-            variant="secondary"
-            size="sm"
-            href={`/api/reports/runs/${data.run.id}?format=json`}
-          >
-            Export JSON
-          </LinkButton>
-          <LinkButton
-            variant="secondary"
-            size="sm"
-            href={`/api/reports/runs/${data.run.id}?format=junit`}
-          >
-            Export JUnit
-          </LinkButton>
-        </div>
       </div>
       {variant === 'page' ? (
         <RunSummary data={data} projectId={projectId} lastAttempt={data.attempts.at(-1) ?? null} />

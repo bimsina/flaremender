@@ -6,14 +6,14 @@ import type { RunStatus } from '#/db/schema/app.ts'
 
 const ENTRIES = [
   { key: 'passed', label: 'Passed', dot: 'bg-kumo-success' },
-  { key: 'healed', label: 'Healed', dot: 'bg-kumo-info' },
   { key: 'failed', label: 'Failed', dot: 'bg-kumo-danger' },
   { key: 'error', label: 'Error', dot: 'bg-kumo-warning' },
   { key: 'active', label: 'Running', dot: 'bg-kumo-interact' },
 ] as const
 
 function bucket(status: RunStatus): (typeof ENTRIES)[number]['key'] {
-  return status === 'queued' || status === 'running' ? 'active' : status
+  if (status === 'queued' || status === 'running') return 'active'
+  return status === 'healed' ? 'passed' : status
 }
 
 export function RunStatusSummary({ runs }: { runs: Array<{ status: RunStatus }> }) {

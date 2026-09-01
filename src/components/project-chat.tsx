@@ -1,4 +1,13 @@
-import { Banner, Button, InputArea, LayerCard, Loader, Text, cn } from '@cloudflare/kumo'
+import {
+  Banner,
+  Button,
+  InputArea,
+  LayerCard,
+  LinkButton,
+  Loader,
+  Text,
+  cn,
+} from '@cloudflare/kumo'
 import {
   ArrowUpIcon,
   ChatCircleDotsIcon,
@@ -66,10 +75,15 @@ export function ProjectChatTab({ projectId }: { projectId: string }) {
 
         <Composer value={draft} onValueChange={setDraft} onSubmit={submit} busy={chat.busy} />
 
-        <Text variant="secondary" size="base">
-          Store credentials in Environments. Chat messages are sent to the selected AI provider;
-          detected credentials are encrypted and redacted from the saved transcript.
-        </Text>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Text variant="secondary" size="base">
+            Do not paste secret values here. Messages reach the selected AI provider before stored
+            transcripts can be redacted.
+          </Text>
+          <LinkButton href={`/projects/${projectId}?tab=environments`} variant="ghost" size="sm">
+            Add credentials
+          </LinkButton>
+        </div>
       </div>
     </div>
   )

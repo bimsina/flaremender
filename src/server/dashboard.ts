@@ -167,6 +167,20 @@ export const getProjectOverview = createServerFn({ method: 'GET' })
         .where(and(...filters, failuresOnly ? inArray(run.status, ['failed', 'error']) : undefined))
         .orderBy(desc(run.startedAt), desc(run.id))
         .limit(failuresOnly ? 5 : 8)
-    const [recent, failures] = await Promise.all([readRows(false), readRows(true)])
-    return { recent, failures }
+    const [recent, failures, completed] = await Promise.all([
+      readRows(false),
+      readRows(true),
+      context.db
+        .select({ id: run.id })
+        .from(run)
+        .where(
+          and(
+            eq(run.projectId, data.projectId),
+            eq(run.purpose, 'regression'),
+            inArray(run.status, ['passed', 'healed', 'failed', 'error']),
+          ),
+        )
+        .limit(1),
+    ])
+    return { recent, failures, hasCompletedRegression: completed.length > 0 }
   })

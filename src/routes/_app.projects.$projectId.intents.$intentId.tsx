@@ -19,6 +19,7 @@ import {
 import {
   ArrowCounterClockwiseIcon,
   CaretDownIcon,
+  CheckIcon,
   ClockCounterClockwiseIcon,
   ClockIcon,
   DotsThreeIcon,
@@ -144,6 +145,13 @@ function IntentDetail() {
       row.scriptVersionId === currentVersion?.id &&
       row.environmentId === targetEnvironmentId &&
       row.purpose === 'regression',
+  )
+  const currentDraftCheck = runs.find(
+    (row) =>
+      row.scriptVersionId === currentVersion?.id &&
+      row.environmentId === targetEnvironmentId &&
+      row.purpose === 'draft-check' &&
+      TERMINAL.has(row.status),
   )
   const visibleStatus =
     intent.readiness === 'draft'
@@ -337,6 +345,9 @@ function IntentDetail() {
             environmentId={targetEnvironmentId}
             onEnvironmentChange={setEnvironmentId}
             generatePending={generate.isPending}
+            draftCheckPassed={
+              currentDraftCheck?.status === 'passed' || currentDraftCheck?.status === 'healed'
+            }
             onGenerate={() =>
               guard.confirm(() => {
                 setEditorKey((key) => key + 1)
@@ -399,6 +410,7 @@ function ScriptTab({
   environmentId,
   onEnvironmentChange,
   generatePending,
+  draftCheckPassed,
   onGenerate,
   onEditDescription,
 }: {
@@ -418,6 +430,7 @@ function ScriptTab({
   environmentId: string | null
   onEnvironmentChange: (value: string | null) => void
   generatePending: boolean
+  draftCheckPassed: boolean
   onGenerate: () => void
   onEditDescription: () => void
 }) {
@@ -435,6 +448,7 @@ function ScriptTab({
     return () => onDirtyChange(false)
   }, [dirty, onDirtyChange])
   const untouched = currentVersion === null && !dirty
+  const canSave = dirty || currentVersion === null
 
   const hero = currentVersion === null && !authoring && !generating
 
@@ -486,6 +500,7 @@ function ScriptTab({
   })
 
   const [confirmReady, setConfirmReady] = useState(false)
+  const [confirmDraft, setConfirmDraft] = useState(false)
   const ready = useMutation({
     mutationFn: () =>
       setTestReadiness({
@@ -497,6 +512,7 @@ function ScriptTab({
       }),
     onSuccess: async () => {
       setConfirmReady(false)
+      setConfirmDraft(false)
       await queryClient.invalidateQueries()
     },
   })
@@ -601,6 +617,15 @@ function ScriptTab({
                 />
               ) : null}
 
+              {readiness === 'ready' && dirty ? (
+                <Banner
+                  variant="alert"
+                  icon={<WarningCircleIcon weight="fill" />}
+                  title="Saving will return this test to Draft"
+                  description="Suites and scheduled runs will pause until you check this version and mark it ready again."
+                />
+              ) : null}
+
               <CodeEditor
                 ariaLabel="Playwright script"
                 value={code}
@@ -623,35 +648,37 @@ function ScriptTab({
                           : 'Not saved yet.'}
                 </Text>
 
-                <div className="flex flex-wrap items-center gap-2">
-                  <Input
-                    size="sm"
-                    className="w-56"
-                    aria-label="Version note"
-                    placeholder="Note (optional)"
-                    value={note}
-                    disabled={generating || save.isPending}
-                    onChange={(event) => setNote(event.target.value)}
-                  />
-                  <Button
-                    variant={dirty ? 'primary' : 'secondary'}
-                    icon={<FloppyDiskIcon size={16} />}
-                    loading={save.isPending}
-                    disabled={(!dirty && currentVersion !== null) || generating}
-                    onClick={() => save.mutate(false)}
-                  >
-                    Save version
-                  </Button>
-                  <Button
-                    variant="primary"
-                    icon={<PlayIcon size={16} />}
-                    loading={save.isPending}
-                    disabled={generating || environmentId === null}
-                    onClick={() => save.mutate(true)}
-                  >
-                    Save and run
-                  </Button>
-                </div>
+                {canSave ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Input
+                      size="sm"
+                      className="w-56"
+                      aria-label="Version note"
+                      placeholder="Note (optional)"
+                      value={note}
+                      disabled={generating || save.isPending}
+                      onChange={(event) => setNote(event.target.value)}
+                    />
+                    <Button
+                      variant="secondary"
+                      icon={<FloppyDiskIcon size={16} />}
+                      loading={save.isPending}
+                      disabled={generating}
+                      onClick={() => save.mutate(false)}
+                    >
+                      Save draft
+                    </Button>
+                    <Button
+                      variant="primary"
+                      icon={<PlayIcon size={16} />}
+                      loading={save.isPending}
+                      disabled={generating || environmentId === null}
+                      onClick={() => save.mutate(true)}
+                    >
+                      Save draft &amp; check
+                    </Button>
+                  </div>
+                ) : null}
               </div>
             </div>
           </LayerCard>
@@ -673,12 +700,25 @@ function ScriptTab({
               variant="secondary"
               disabled={dirty || generating}
               loading={ready.isPending}
-              onClick={() => (readiness === 'ready' ? ready.mutate() : setConfirmReady(true))}
+              onClick={() =>
+                readiness === 'ready' ? setConfirmDraft(true) : setConfirmReady(true)
+              }
             >
               {readiness === 'ready' ? 'Return to draft' : 'Mark ready'}
             </Button>
           </div>
           {ready.error ? <Text variant="error">{ready.error.message}</Text> : null}
+          {readiness === 'draft' && draftCheckPassed && !dirty ? (
+            <Banner
+              variant="default"
+              icon={<CheckIcon weight="bold" />}
+              title="Draft passed"
+              description="This saved version passed in the selected environment and can now join suites and schedules."
+              action={
+                <Banner.Action onClick={() => setConfirmReady(true)}>Mark ready</Banner.Action>
+              }
+            />
+          ) : null}
         </Section>
       ) : null}
       <Dialog.Root open={confirmReady} onOpenChange={setConfirmReady}>
@@ -698,6 +738,25 @@ function ScriptTab({
               </Button>
               <Button variant="primary" loading={ready.isPending} onClick={() => ready.mutate()}>
                 Mark ready
+              </Button>
+            </div>
+          </div>
+        </Dialog>
+      </Dialog.Root>
+      <Dialog.Root open={confirmDraft} onOpenChange={setConfirmDraft}>
+        <Dialog size="sm" className="p-6">
+          <div className="grid gap-4">
+            <Dialog.Title>Return this test to Draft?</Dialog.Title>
+            <Text>
+              It will stop participating in suites and its schedule will pause until you mark it
+              ready again.
+            </Text>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setConfirmDraft(false)}>
+                Keep ready
+              </Button>
+              <Button variant="primary" loading={ready.isPending} onClick={() => ready.mutate()}>
+                Return to draft
               </Button>
             </div>
           </div>
@@ -915,7 +974,6 @@ function RunsTab({ projectId, runs }: { projectId: string; runs: Array<RunRowDat
                   passed: 'Passed',
                   failed: 'Failed',
                   error: 'Errored',
-                  healed: 'Healed',
                   queued: 'Queued',
                   running: 'Running',
                 }}
@@ -1236,13 +1294,28 @@ function EditIntentForm({
   const toast = useKumoToastManager()
   const [title, setTitle] = useState(intent.title)
   const [description, setDescription] = useState(intent.description)
+  const titleChanged = title.trim() !== intent.title
+  const descriptionChanged = description !== intent.description
+  const dirty = titleChanged || descriptionChanged
 
   const mutation = useMutation({
     mutationFn: () =>
-      updateIntent({ data: { intentId: intent.id, title: title.trim(), description } }),
-    onSuccess: async () => {
+      updateIntent({
+        data: {
+          intentId: intent.id,
+          ...(titleChanged ? { title: title.trim() } : {}),
+          ...(descriptionChanged ? { description } : {}),
+        },
+      }),
+    onSuccess: async (result) => {
       await queryClient.invalidateQueries()
-      toast.add({ variant: 'success', title: 'Intent updated' })
+      toast.add({
+        variant: 'success',
+        title: 'Test updated',
+        description: result.readinessReset
+          ? 'Expected behavior changed. Review or regenerate the script, check the draft, then mark it ready again.'
+          : undefined,
+      })
       onOpenChange(false)
     },
   })
@@ -1289,6 +1362,7 @@ function EditIntentForm({
         />
         <InputArea
           label="What should happen?"
+          description="Changing expected behavior returns this test to Draft so its script can be reviewed."
           autoResize
           minRows={8}
           maxRows={20}
@@ -1310,7 +1384,7 @@ function EditIntentForm({
           type="submit"
           variant="primary"
           loading={mutation.isPending}
-          disabled={!title.trim() || description.trim().length < 10}
+          disabled={!dirty || !title.trim() || description.trim().length < 10}
         >
           Save changes
         </Button>
@@ -1338,7 +1412,7 @@ function DeleteIntentDialog({
     mutationFn: () => deleteIntent({ data: { intentId: intent.id } }),
     onSuccess: async () => {
       await queryClient.invalidateQueries()
-      toast.add({ variant: 'success', title: 'Intent deleted' })
+      toast.add({ variant: 'success', title: 'Test deleted' })
       onOpenChange(false)
       await navigate({ to: '/projects/$projectId', params: { projectId } })
     },

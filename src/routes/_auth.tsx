@@ -14,7 +14,7 @@ export const Route = createFileRoute('/_auth')({
 
 function AuthLayout() {
   return (
-    <StandaloneShell eyebrow="Plain-English tests that compile to Playwright and repair themselves.">
+    <StandaloneShell eyebrow="Plain-English tests that compile to Playwright and run in real browsers.">
       <Outlet />
     </StandaloneShell>
   )

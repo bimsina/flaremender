@@ -238,9 +238,7 @@ function isIncomplete(notes: string | null): boolean {
 }
 
 function versionNote(loaded: LoadedGeneration, stuckReason: string | null): string {
-  const origin = loaded.previousVersionId
-    ? 'Regenerated from the intent'
-    : 'Generated from the intent'
+  const origin = loaded.previousVersionId ? 'Regenerated from the test' : 'Generated from the test'
 
   if (!stuckReason) return origin
 

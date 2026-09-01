@@ -20,7 +20,6 @@ import {
   DotsThreeIcon,
   ListChecksIcon,
   PlayIcon,
-  PlusIcon,
   SparkleIcon,
   TestTubeIcon,
   TrashIcon,
@@ -34,13 +33,14 @@ import { useMemo, useState } from 'react'
 import { EnvironmentsPanel } from '#/components/environments-panel.tsx'
 import { InlineEmpty, ListRow, ListToolbar, Section, SettingRow } from '#/components/list.tsx'
 import { PageBody, PageHeader } from '#/components/page.tsx'
+import { NewTestMenu } from '#/components/new-test-menu.tsx'
 import { ProjectOverview } from '#/components/project-overview.tsx'
 import { ProjectChatTab } from '#/components/project-chat.tsx'
 import { ProjectRunsTab } from '#/components/project-runs.tsx'
 import { RelativeTime } from '#/components/relative-time.tsx'
 import { IntentStatusBadge } from '#/components/status-badge.tsx'
 import { SuiteProgress } from '#/components/suite-progress.tsx'
-import type { IntentStatus } from '#/db/schema/app.ts'
+import type { IntentStatus, RunStatus } from '#/db/schema/app.ts'
 import { describeCron } from '#/lib/cron.ts'
 import {
   allowedModelsQuery,
@@ -65,13 +65,58 @@ import { runSuite } from '#/server/suites.ts'
 const TABS = ['overview', 'chat', 'intents', 'runs', 'environments', 'settings'] as const
 type Tab = (typeof TABS)[number]
 
+const TEST_READINESS_FILTERS = ['all', 'proposed', 'draft', 'ready'] as const
+type TestReadinessFilter = (typeof TEST_READINESS_FILTERS)[number]
+const TEST_RESULT_FILTERS = ['all', 'passed', 'failed', 'error', 'not-run'] as const
+type TestResultFilter = (typeof TEST_RESULT_FILTERS)[number]
+const RUN_STATUS_FILTERS = ['all', 'passed', 'failed', 'error', 'running'] as const
+type RunStatusFilter = (typeof RUN_STATUS_FILTERS)[number]
+const RUN_TRIGGER_FILTERS = ['all', 'manual', 'regenerate', 'schedule'] as const
+type RunTriggerFilter = (typeof RUN_TRIGGER_FILTERS)[number]
+
 function isTab(value: unknown): value is Tab {
   return typeof value === 'string' && (TABS as ReadonlyArray<string>).includes(value)
 }
 
+function oneOf<const Values extends ReadonlyArray<string>>(
+  values: Values,
+  value: unknown,
+): value is Values[number] {
+  return typeof value === 'string' && values.includes(value)
+}
+
+type ProjectSearch = {
+  tab?: Tab
+  environmentId?: string
+  variable?: string
+  editEnvironment?: 'edit'
+  testsQuery?: string
+  testReadiness?: TestReadinessFilter
+  testResult?: TestResultFilter
+  runsQuery?: string
+  runStatus?: RunStatusFilter
+  runTrigger?: RunTriggerFilter
+}
+
 export const Route = createFileRoute('/_app/projects/$projectId/')({
-  validateSearch: (search: Record<string, unknown>): { tab?: Tab } =>
-    isTab(search.tab) ? { tab: search.tab } : {},
+  validateSearch: (search: Record<string, unknown>): ProjectSearch => ({
+    ...(isTab(search.tab) ? { tab: search.tab } : {}),
+    ...(typeof search.environmentId === 'string' ? { environmentId: search.environmentId } : {}),
+    ...(typeof search.variable === 'string' ? { variable: search.variable } : {}),
+    ...(search.editEnvironment === 'edit' ||
+    search.editEnvironment === true ||
+    search.editEnvironment === 'true'
+      ? { editEnvironment: 'edit' as const }
+      : {}),
+    ...(typeof search.testsQuery === 'string' ? { testsQuery: search.testsQuery } : {}),
+    ...(oneOf(TEST_READINESS_FILTERS, search.testReadiness)
+      ? { testReadiness: search.testReadiness }
+      : {}),
+    ...(oneOf(TEST_RESULT_FILTERS, search.testResult) ? { testResult: search.testResult } : {}),
+    ...(typeof search.runsQuery === 'string' ? { runsQuery: search.runsQuery } : {}),
+    ...(oneOf(RUN_STATUS_FILTERS, search.runStatus) ? { runStatus: search.runStatus } : {}),
+    ...(oneOf(RUN_TRIGGER_FILTERS, search.runTrigger) ? { runTrigger: search.runTrigger } : {}),
+  }),
   loader: async ({ context, params }) => {
     await Promise.all([
       context.queryClient.ensureQueryData({
@@ -123,7 +168,6 @@ function ProjectDetail() {
   const toast = useKumoToastManager()
 
   const [addingIntent, setAddingIntent] = useState(false)
-  const [environmentId, setEnvironmentId] = useState<string | null>(null)
   const [watchingSuite, setWatchingSuite] = useState<string | null>(null)
 
   const runnableCount = intents.filter(
@@ -131,7 +175,11 @@ function ProjectDetail() {
   ).length
 
   const defaultEnvironment = environments.find((row) => row.isDefault) ?? environments[0] ?? null
-  const targetEnvironmentId = environmentId ?? defaultEnvironment?.id ?? null
+  const requestedEnvironment = environments.find((row) => row.id === search.environmentId)
+  const targetEnvironmentId = requestedEnvironment?.id ?? defaultEnvironment?.id ?? null
+
+  const updateSearch = (patch: Partial<ProjectSearch>) =>
+    void navigate({ search: (previous) => ({ ...previous, ...patch }), replace: true })
 
   const inFlightSuite = suiteRuns.find((row) => row.status === 'queued' || row.status === 'running')
   const liveSuiteRunId = watchingSuite ?? inFlightSuite?.id ?? null
@@ -147,7 +195,7 @@ function ProjectDetail() {
     onSuccess: async (result) => {
       setWatchingSuite(result.suiteRunId)
       await queryClient.invalidateQueries()
-      if (tab !== 'intents') void navigate({ search: { tab: 'intents' }, replace: true })
+      if (tab !== 'intents') updateSearch({ tab: 'intents' })
       toast.add({
         variant: 'info',
         title: 'Suite queued',
@@ -182,7 +230,7 @@ function ProjectDetail() {
       disabled={runAllDisabled}
       onClick={() => suite.mutate()}
     >
-      Run suite
+      Run {runnableCount} test{runnableCount === 1 ? '' : 's'}
     </Button>
   )
 
@@ -212,7 +260,7 @@ function ProjectDetail() {
             ]}
             value={tab}
             onValueChange={(value) => {
-              if (isTab(value)) void navigate({ search: { tab: value }, replace: true })
+              if (isTab(value)) updateSearch({ tab: value })
             }}
           />
         }
@@ -226,7 +274,9 @@ function ProjectDetail() {
                   placeholder="No environment"
                   items={environmentItems}
                   value={targetEnvironmentId}
-                  onValueChange={(value: string | null) => setEnvironmentId(value)}
+                  onValueChange={(value: string | null) =>
+                    updateSearch({ environmentId: value ?? undefined })
+                  }
                 />
               ) : null}
               {runAllDisabled ? (
@@ -243,13 +293,7 @@ function ProjectDetail() {
               ) : (
                 runAllButton
               )}
-              <Button
-                variant="primary"
-                icon={<PlusIcon size={16} />}
-                onClick={() => setAddingIntent(true)}
-              >
-                New test
-              </Button>
+              <NewTestMenu projectId={projectId} onCreateManual={() => setAddingIntent(true)} />
             </>
           ) : null
         }
@@ -262,7 +306,7 @@ function ProjectDetail() {
             tests={intents}
             environments={environments}
             environmentId={targetEnvironmentId}
-            onEnvironmentChange={setEnvironmentId}
+            onEnvironmentChange={(value) => updateSearch({ environmentId: value ?? undefined })}
             onCreateManual={() => setAddingIntent(true)}
             onRun={() => suite.mutate()}
             running={suite.isPending}
@@ -275,6 +319,10 @@ function ProjectDetail() {
             intents={intents}
             liveSuiteRunId={liveSuiteRunId}
             onCreate={() => setAddingIntent(true)}
+            search={search.testsQuery ?? ''}
+            readiness={search.testReadiness ?? 'all'}
+            result={search.testResult ?? 'all'}
+            onFiltersChange={(patch) => updateSearch(patch)}
           />
         ) : null}
         {tab === 'runs' ? (
@@ -282,9 +330,21 @@ function ProjectDetail() {
             projectId={projectId}
             environments={environments}
             liveSuiteRunId={liveSuiteRunId}
+            search={search.runsQuery ?? ''}
+            status={search.runStatus ?? 'all'}
+            trigger={search.runTrigger ?? 'all'}
+            environmentId={search.environmentId ?? 'all'}
+            onFiltersChange={(patch) => updateSearch(patch)}
           />
         ) : null}
-        {tab === 'environments' ? <EnvironmentsPanel projectId={projectId} /> : null}
+        {tab === 'environments' ? (
+          <EnvironmentsPanel
+            projectId={projectId}
+            focusEnvironmentId={search.environmentId}
+            focusVariable={search.variable}
+            editEnvironment={search.editEnvironment === 'edit'}
+          />
+        ) : null}
         {tab === 'settings' ? <SettingsTab project={project} /> : null}
       </PageBody>
 
@@ -302,49 +362,62 @@ type IntentRow = {
   title: string
   description: string
   status: IntentStatus
+  readiness: 'draft' | 'ready'
   schedule: string | null
   currentVersion: number
   updatedAt: Date
   lastRunEnvironmentName: string | null
   lastRunAt: Date | null
+  lastRunStatus: RunStatus | null
 }
 
-const STATUS_FILTERS = {
-  all: 'Any status',
+const READINESS_FILTERS = {
+  all: 'Any readiness',
   proposed: 'Proposed',
   draft: 'Draft',
-  generating: 'Generating',
   ready: 'Ready to run',
-  passing: 'Passing',
-  failing: 'Failing',
 } as const
 
-type StatusFilter = keyof typeof STATUS_FILTERS
+const RESULT_FILTERS = {
+  all: 'Any result',
+  passed: 'Passed',
+  failed: 'Failed',
+  error: 'Errored',
+  'not-run': 'Not run',
+} as const
 
 function IntentsTab({
   projectId,
   intents,
   liveSuiteRunId,
   onCreate,
+  search,
+  readiness,
+  result,
+  onFiltersChange,
 }: {
   projectId: string
   intents: Array<IntentRow>
   liveSuiteRunId: string | null
   onCreate: () => void
+  search: string
+  readiness: TestReadinessFilter
+  result: TestResultFilter
+  onFiltersChange: (patch: Partial<ProjectSearch>) => void
 }) {
   const queryClient = useQueryClient()
-
-  const [search, setSearch] = useState('')
-  const [status, setStatus] = useState<StatusFilter>('all')
 
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase()
     return intents.filter((row) => {
-      if (status !== 'all' && row.status !== status) return false
+      const rowReadiness = row.status === 'proposed' ? 'proposed' : row.readiness
+      if (readiness !== 'all' && rowReadiness !== readiness) return false
+      const rowResult = row.lastRunStatus === 'healed' ? 'passed' : (row.lastRunStatus ?? 'not-run')
+      if (result !== 'all' && rowResult !== result) return false
       if (!needle) return true
       return `${row.title} ${row.description}`.toLowerCase().includes(needle)
     })
-  }, [intents, search, status])
+  }, [intents, search, readiness, result])
 
   if (intents.length === 0) {
     return (
@@ -354,9 +427,7 @@ function IntentsTab({
         description="Describe what a user should be able to do — or let the assistant go round your app and suggest what is worth testing."
         contents={
           <div className="flex flex-wrap items-center justify-center gap-2">
-            <Button variant="primary" icon={<PlusIcon size={16} />} onClick={onCreate}>
-              Describe a test
-            </Button>
+            <NewTestMenu projectId={projectId} onCreateManual={onCreate} />
             <ExploreButton projectId={projectId} />
           </div>
         }
@@ -372,30 +443,45 @@ function IntentsTab({
         <SuiteProgress key={liveSuiteRunId} suiteRunId={liveSuiteRunId} projectId={projectId} />
       ) : null}
 
-      {proposedCount > 0 && status !== 'proposed' ? (
+      {proposedCount > 0 && readiness !== 'proposed' ? (
         <Banner
           variant="default"
           icon={<ListChecksIcon weight="fill" />}
           title={`${proposedCount} proposed test${proposedCount === 1 ? '' : 's'} to review`}
           description="Proposals do not run and are not counted until you approve them."
-          action={<Banner.Action onClick={() => setStatus('proposed')}>Review them</Banner.Action>}
+          action={
+            <Banner.Action onClick={() => onFiltersChange({ testReadiness: 'proposed' })}>
+              Review them
+            </Banner.Action>
+          }
         />
       ) : null}
 
       <ListToolbar
         value={search}
-        onValueChange={setSearch}
+        onValueChange={(value) => onFiltersChange({ testsQuery: value || undefined })}
         placeholder="Search tests"
         onRefresh={() => {
           void queryClient.invalidateQueries({ queryKey: intentsQuery(projectId).queryKey })
         }}
       >
         <Select
-          aria-label="Filter by status"
+          aria-label="Filter by readiness"
+          className="w-44"
+          items={READINESS_FILTERS}
+          value={readiness}
+          onValueChange={(value: TestReadinessFilter | null) =>
+            onFiltersChange({ testReadiness: value === 'all' ? undefined : (value ?? undefined) })
+          }
+        />
+        <Select
+          aria-label="Filter by result"
           className="w-40"
-          items={STATUS_FILTERS}
-          value={status}
-          onValueChange={(value: StatusFilter | null) => setStatus(value ?? 'all')}
+          items={RESULT_FILTERS}
+          value={result}
+          onValueChange={(value: TestResultFilter | null) =>
+            onFiltersChange({ testResult: value === 'all' ? undefined : (value ?? undefined) })
+          }
         />
       </ListToolbar>
 
@@ -528,7 +614,7 @@ function IntentActions({
     onSuccess: async () => {
       await queryClient.invalidateQueries()
       setDeleting(false)
-      toast.add({ variant: 'success', title: 'Intent deleted', description: intent.title })
+      toast.add({ variant: 'success', title: 'Test deleted', description: intent.title })
     },
   })
 
@@ -694,10 +780,7 @@ function SettingsTab({ project }: { project: ProjectRow }) {
         <ProjectContextCard project={project} />
       </Section>
 
-      <Section
-        title="Model"
-        description="Which model generates and repairs scripts in this project."
-      >
+      <Section title="Model" description="Which model generates scripts in this project.">
         <ProjectModelCard project={project} />
       </Section>
 
@@ -924,7 +1007,7 @@ function DeleteProjectCard({ project }: { project: ProjectRow }) {
             Delete this project
           </Text>
           <Text variant="secondary" size="base">
-            Every environment, intent, script version and run under {project.name} goes with it.
+            Every environment, test, script version and run under {project.name} goes with it.
           </Text>
         </div>
 

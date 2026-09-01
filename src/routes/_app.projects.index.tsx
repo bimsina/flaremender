@@ -90,7 +90,7 @@ function Projects() {
               <StatTile
                 label="Failing"
                 value={totals.failing}
-                hint={totals.failing === 0 ? 'Nothing to repair' : 'Need a look'}
+                hint={totals.failing === 0 ? 'No failing tests' : 'Need a look'}
               />
             </section>
 
