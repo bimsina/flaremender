@@ -1,4 +1,4 @@
-import { Banner, Breadcrumbs, Button, Loader, Text } from '@cloudflare/kumo'
+import { Banner, Breadcrumbs, LinkButton, Loader, Text } from '@cloudflare/kumo'
 import { DownloadSimpleIcon, WarningCircleIcon } from '@phosphor-icons/react'
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
@@ -116,10 +116,9 @@ function TracePage() {
   }, [theme])
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <PageHeader
         title="Trace"
-        description={`Run ${shortId(runId)}`}
         breadcrumbs={
           <Breadcrumbs size="base">
             <Breadcrumbs.Link href="/projects">Projects</Breadcrumbs.Link>
@@ -133,19 +132,24 @@ function TracePage() {
             <Breadcrumbs.Current>Trace</Breadcrumbs.Current>
           </Breadcrumbs>
         }
-        actions={
+        headerActions={
           key.length > 0 ? (
-            <a href={`/api/artifacts/${key}`} target="_blank" rel="noreferrer">
-              <Button variant="secondary" size="sm" icon={<DownloadSimpleIcon size={14} />}>
-                Download
-              </Button>
-            </a>
+            <LinkButton
+              href={`/api/artifacts/${key}`}
+              download={`trace-${shortId(runId)}.zip`}
+              variant="secondary"
+              size="sm"
+              icon={<DownloadSimpleIcon size={14} />}
+              aria-label="Download trace"
+            >
+              <span className="hidden sm:inline">Download</span>
+            </LinkButton>
           ) : undefined
         }
       />
 
       {key.length === 0 ? (
-        <div className="p-6">
+        <div className="flex-1 p-4 sm:p-6 lg:p-8">
           <Banner
             variant="error"
             icon={<WarningCircleIcon weight="fill" />}
@@ -154,19 +158,20 @@ function TracePage() {
           />
         </div>
       ) : signed.isPending ? (
-        <div className="flex flex-1 items-center justify-center gap-2">
+        <div className="flex flex-1 items-center justify-center gap-2 bg-kumo-canvas">
           <Loader size="sm" />
           <Text as="span" variant="secondary" size="base">
             Preparing the trace…
           </Text>
         </div>
       ) : signed.error ? (
-        <div className="p-6">
+        <div className="flex-1 p-4 sm:p-6 lg:p-8">
           <Banner
             variant="error"
             icon={<WarningCircleIcon weight="fill" />}
             title="Could not open this trace"
             description={signed.error.message}
+            action={<Banner.Action onClick={() => void signed.refetch()}>Try again</Banner.Action>}
           />
         </div>
       ) : (
@@ -174,7 +179,7 @@ function TracePage() {
           ref={iframeRef}
           src={`/pw-trace/index.html?trace=${encodeURIComponent(signed.data.url)}`}
           title="Playwright trace viewer"
-          className="w-full flex-1 border-0"
+          className="min-h-0 w-full flex-1 border-0 bg-kumo-canvas"
           onLoad={() => {
             const doc = iframeRef.current?.contentDocument
             if (doc?.head) themeViewer(doc, theme)
