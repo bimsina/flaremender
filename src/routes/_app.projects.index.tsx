@@ -1,36 +1,15 @@
 import { Table, TablePagination, useTablePagination } from '#/components/table.tsx'
-import {
-  Badge,
-  Banner,
-  Button,
-  Dialog,
-  DropdownMenu,
-  Empty,
-  Input,
-  InputArea,
-  Select,
-  Text,
-  useKumoToastManager,
-} from '@cloudflare/kumo'
-import {
-  DotsThreeIcon,
-  FolderIcon,
-  GearIcon,
-  PlusIcon,
-  StackIcon,
-  TestTubeIcon,
-  WarningCircleIcon,
-  XIcon,
-} from '@phosphor-icons/react'
-import { useMutation, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
+import { Badge, Button, DropdownMenu, Empty, Select, Text } from '@cloudflare/kumo'
+import { DotsThreeIcon, FolderIcon, GearIcon, StackIcon, TestTubeIcon } from '@phosphor-icons/react'
+import { useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 
 import { ListToolbar } from '#/components/list.tsx'
 import { PageBody, PageHeader, StatTile } from '#/components/page.tsx'
+import { NewProjectButton } from '#/components/new-project-button.tsx'
 import { RelativeTime } from '#/components/relative-time.tsx'
 import { projectsQuery } from '#/lib/queries.ts'
-import { createProject } from '#/server/projects.ts'
 
 export const Route = createFileRoute('/_app/projects/')({
   loader: ({ context }) =>
@@ -51,7 +30,6 @@ function Projects() {
   const { data: projects } = useSuspenseQuery(projectsQuery())
   const queryClient = useQueryClient()
 
-  const [creating, setCreating] = useState(false)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
 
@@ -88,11 +66,7 @@ function Projects() {
       <PageHeader
         title="Projects"
         description="Each project owns its environments, its tests and their run history."
-        actions={
-          <Button variant="primary" icon={<PlusIcon size={16} />} onClick={() => setCreating(true)}>
-            Create project
-          </Button>
-        }
+        actions={<NewProjectButton>Create project</NewProjectButton>}
       />
 
       <PageBody className="grid gap-6">
@@ -101,15 +75,7 @@ function Projects() {
             icon={<FolderIcon size={48} className="text-kumo-inactive" />}
             title="No projects found"
             description="A project is a set of environments plus the tests that run against them."
-            contents={
-              <Button
-                variant="primary"
-                icon={<PlusIcon size={16} />}
-                onClick={() => setCreating(true)}
-              >
-                Create your first project
-              </Button>
-            }
+            contents={<NewProjectButton>Create your first project</NewProjectButton>}
           />
         ) : (
           <>
@@ -241,8 +207,6 @@ function Projects() {
           </>
         )}
       </PageBody>
-
-      <CreateProjectDialog open={creating} onOpenChange={setCreating} />
     </>
   )
 }
@@ -275,132 +239,5 @@ function ProjectActions({ projectId }: { projectId: string }) {
         </DropdownMenu.Item>
       </DropdownMenu.Content>
     </DropdownMenu>
-  )
-}
-
-function CreateProjectDialog({
-  open,
-  onOpenChange,
-}: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-}) {
-  return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog className="px-6 py-5">
-        <CreateProjectForm onOpenChange={onOpenChange} />
-      </Dialog>
-    </Dialog.Root>
-  )
-}
-
-function CreateProjectForm({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
-  const queryClient = useQueryClient()
-  const navigate = useNavigate()
-  const toast = useKumoToastManager()
-
-  const [name, setName] = useState('')
-  const [baseUrl, setBaseUrl] = useState('')
-  const [description, setDescription] = useState('')
-
-  const mutation = useMutation({
-    mutationFn: () =>
-      createProject({
-        data: { name: name.trim(), baseUrl, description: description.trim() || null },
-      }),
-    onSuccess: async (result) => {
-      await queryClient.invalidateQueries()
-      toast.add({ variant: 'success', title: 'Project created', description: name })
-      onOpenChange(false)
-      await navigate({ to: '/projects/$projectId', params: { projectId: result.id } })
-    },
-  })
-
-  return (
-    <form
-      className="grid gap-5"
-      onSubmit={(event) => {
-        event.preventDefault()
-        mutation.mutate()
-      }}
-    >
-      <div className="flex items-start justify-between gap-4">
-        <div className="grid gap-1.5">
-          <Dialog.Title>
-            <Text as="span" variant="heading">
-              Create project
-            </Text>
-          </Dialog.Title>
-          <Dialog.Description>
-            <Text as="span" variant="secondary">
-              The base URL becomes this project's first environment, named Production.
-            </Text>
-          </Dialog.Description>
-        </div>
-        <Dialog.Close
-          aria-label="Close"
-          render={(props) => (
-            <Button {...props} variant="ghost" shape="square" size="sm" aria-label="Close">
-              <XIcon size={16} />
-            </Button>
-          )}
-        />
-      </div>
-
-      {mutation.error ? (
-        <Banner
-          variant="error"
-          icon={<WarningCircleIcon weight="fill" />}
-          title="Could not create project"
-          description={mutation.error.message}
-        />
-      ) : null}
-
-      <div className="grid gap-4">
-        <Input
-          label="Name"
-          placeholder="Marketing site"
-          required
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-        />
-        <Input
-          label="Base URL"
-          description="Relative URLs in a script resolve against this."
-          placeholder="https://example.com"
-          required
-          value={baseUrl}
-          onChange={(event) => setBaseUrl(event.target.value)}
-        />
-        <InputArea
-          label="Description"
-          description="Optional. What this suite covers."
-          placeholder="Checkout and signup flows for the storefront."
-          autoResize
-          minRows={3}
-          maxRows={8}
-          value={description}
-          onChange={(event) => setDescription(event.target.value)}
-        />
-      </div>
-
-      <div className="flex justify-end gap-2">
-        <Dialog.Close
-          render={(props) => (
-            <Button {...props} variant="secondary">
-              Cancel
-            </Button>
-          )}
-        />
-        <Button
-          type="submit"
-          variant="primary"
-          loading={mutation.isPending}
-          disabled={!name.trim() || !baseUrl.trim()}
-        >
-          Create project
-        </Button>
-      </div>
-    </form>
   )
 }

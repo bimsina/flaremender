@@ -24,6 +24,7 @@ import { Route as AppAdminIndexRouteImport } from './routes/_app.admin.index'
 import { Route as AppAdminOrganizationsRouteImport } from './routes/_app.admin.organizations'
 import { Route as AppAdminSettingsRouteImport } from './routes/_app.admin.settings'
 import { Route as AppProjectsIndexRouteImport } from './routes/_app.projects.index'
+import { Route as AppProjectsNewRouteImport } from './routes/_app.projects.new'
 import { Route as ApiArtifactsSplatRouteImport } from './routes/api/artifacts.$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiSpikeBrowserRouteImport } from './routes/api/spike/browser'
@@ -109,6 +110,11 @@ const AppProjectsIndexRoute = AppProjectsIndexRouteImport.update({
   path: '/projects/',
   getParentRoute: () => AppRoute,
 } as any)
+const AppProjectsNewRoute = AppProjectsNewRouteImport.update({
+  id: '/projects/new',
+  path: '/projects/new',
+  getParentRoute: () => AppRoute,
+} as any)
 const ApiArtifactsSplatRoute = ApiArtifactsSplatRouteImport.update({
   id: '/api/artifacts/$',
   path: '/api/artifacts/$',
@@ -176,6 +182,7 @@ export interface FileRoutesByFullPath {
   '/accept-invitation/$invitationId': typeof AcceptInvitationInvitationIdRoute
   '/admin/organizations': typeof AppAdminOrganizationsRoute
   '/admin/settings': typeof AppAdminSettingsRoute
+  '/projects/new': typeof AppProjectsNewRoute
   '/api/artifacts/$': typeof ApiArtifactsSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/spike/browser': typeof ApiSpikeBrowserRoute
@@ -200,6 +207,7 @@ export interface FileRoutesByTo {
   '/accept-invitation/$invitationId': typeof AcceptInvitationInvitationIdRoute
   '/admin/organizations': typeof AppAdminOrganizationsRoute
   '/admin/settings': typeof AppAdminSettingsRoute
+  '/projects/new': typeof AppProjectsNewRoute
   '/api/artifacts/$': typeof ApiArtifactsSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/spike/browser': typeof ApiSpikeBrowserRoute
@@ -228,6 +236,7 @@ export interface FileRoutesById {
   '/accept-invitation/$invitationId': typeof AcceptInvitationInvitationIdRoute
   '/_app/admin/organizations': typeof AppAdminOrganizationsRoute
   '/_app/admin/settings': typeof AppAdminSettingsRoute
+  '/_app/projects/new': typeof AppProjectsNewRoute
   '/api/artifacts/$': typeof ApiArtifactsSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/spike/browser': typeof ApiSpikeBrowserRoute
@@ -255,6 +264,7 @@ export interface FileRouteTypes {
     | '/accept-invitation/$invitationId'
     | '/admin/organizations'
     | '/admin/settings'
+    | '/projects/new'
     | '/api/artifacts/$'
     | '/api/auth/$'
     | '/api/spike/browser'
@@ -279,6 +289,7 @@ export interface FileRouteTypes {
     | '/accept-invitation/$invitationId'
     | '/admin/organizations'
     | '/admin/settings'
+    | '/projects/new'
     | '/api/artifacts/$'
     | '/api/auth/$'
     | '/api/spike/browser'
@@ -306,6 +317,7 @@ export interface FileRouteTypes {
     | '/accept-invitation/$invitationId'
     | '/_app/admin/organizations'
     | '/_app/admin/settings'
+    | '/_app/projects/new'
     | '/api/artifacts/$'
     | '/api/auth/$'
     | '/api/spike/browser'
@@ -441,6 +453,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProjectsIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/projects/new': {
+      id: '/_app/projects/new'
+      path: '/projects/new'
+      fullPath: '/projects/new'
+      preLoaderRoute: typeof AppProjectsNewRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/api/artifacts/$': {
       id: '/api/artifacts/$'
       path: '/api/artifacts/$'
@@ -535,6 +554,7 @@ interface AppRouteChildren {
   AppDashboardRoute: typeof AppDashboardRoute
   AppOrganizationRoute: typeof AppOrganizationRoute
   AppSettingsRoute: typeof AppSettingsRoute
+  AppProjectsNewRoute: typeof AppProjectsNewRoute
   AppProjectsIndexRoute: typeof AppProjectsIndexRoute
   AppProjectsProjectIdIndexRoute: typeof AppProjectsProjectIdIndexRoute
   AppProjectsProjectIdIntentsIntentIdRoute: typeof AppProjectsProjectIdIntentsIntentIdRoute
@@ -547,6 +567,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppDashboardRoute: AppDashboardRoute,
   AppOrganizationRoute: AppOrganizationRoute,
   AppSettingsRoute: AppSettingsRoute,
+  AppProjectsNewRoute: AppProjectsNewRoute,
   AppProjectsIndexRoute: AppProjectsIndexRoute,
   AppProjectsProjectIdIndexRoute: AppProjectsProjectIdIndexRoute,
   AppProjectsProjectIdIntentsIntentIdRoute:

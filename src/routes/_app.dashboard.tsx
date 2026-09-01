@@ -1,6 +1,6 @@
 import { Table, TablePagination, useTablePagination } from '#/components/table.tsx'
 import { LinkButton, Empty, Select, Text } from '@cloudflare/kumo'
-import { ArrowRightIcon, FolderIcon, PlusIcon } from '@phosphor-icons/react'
+import { ArrowRightIcon, FolderIcon } from '@phosphor-icons/react'
 import { useSuspenseQuery } from '@tanstack/react-query'
 import { Link, createLink, createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
@@ -8,6 +8,7 @@ import { useState } from 'react'
 const RouterLinkButton = createLink(LinkButton)
 
 import { PageBody, PageHeader, StatTile } from '#/components/page.tsx'
+import { NewProjectButton } from '#/components/new-project-button.tsx'
 import { ListToolbar } from '#/components/list.tsx'
 import { Duration } from '#/components/duration.tsx'
 import { RunTrend } from '#/components/run-trend.tsx'
@@ -78,11 +79,7 @@ function Dashboard() {
         description={
           activeOrg ? `Suite health for ${activeOrg.name}.` : 'Suite health for this organization.'
         }
-        actions={
-          <RouterLinkButton to="/projects" variant="primary" icon={PlusIcon}>
-            New project
-          </RouterLinkButton>
-        }
+        actions={<NewProjectButton />}
       />
 
       <PageBody className="grid gap-8">
@@ -134,11 +131,7 @@ function Dashboard() {
               icon={<FolderIcon size={32} className="text-kumo-inactive" />}
               title="Nothing has run yet"
               description="Create a project, describe a test, write its script, then run it."
-              contents={
-                <RouterLinkButton to="/projects" variant="primary" icon={PlusIcon}>
-                  Create a project
-                </RouterLinkButton>
-              }
+              contents={<NewProjectButton>Create a project</NewProjectButton>}
             />
           ) : (
             <Table
