@@ -78,9 +78,7 @@ function themeViewer(doc: Document, theme: ResolvedTheme) {
     ':root.light-mode, :root.dark-mode {',
     ...Object.entries(VIEWER_VARS).map(([name, token]) => `  ${name}: ${colors[token]};`),
     '}',
-    `.header { background-color: ${colors['--color-kumo-canvas']} !important;`,
-    `  color: ${colors['--text-color-kumo-default']} !important;`,
-    `  border-bottom: 1px solid ${colors['--color-kumo-line']}; }`,
+    '.workbench-loader > .header { display: none !important; }',
   ].join('\n')
 
   const existing = doc.getElementById('kumo-theme')
