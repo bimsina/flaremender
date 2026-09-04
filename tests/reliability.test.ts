@@ -5,6 +5,7 @@ import { attempt, generationJob, intent, run } from '../src/db/schema/app.ts'
 import { recordRunError, recordRunResult } from '../src/engine/run-records.ts'
 import type { ExecutedRun, LoadedRun } from '../src/engine/run-steps.ts'
 import { createInstrumentation } from '../src/engine/harness/instrument.ts'
+import { scrubPatterns, scrubWith } from '../src/engine/runner/scrub.ts'
 import { writeArtifacts } from '../src/engine/runner/artifacts.ts'
 import { exportRun, junitReport } from '../src/lib/report-export.ts'
 import { readJob, readRunReport, readSuiteReport } from '../src/server/reports.server.ts'
@@ -273,6 +274,24 @@ test('concurrent instrumented steps retain start order and redact labels', async
   await first
   assert.match(instrumentation.steps[0].label, /slow/)
   assert.match(instrumentation.steps[1].label, /\*\*\*/)
+})
+
+test('a secret longer than the argument limit is redacted before it is truncated', async () => {
+  // A 107-character JWT: longer than MAX_ARG_LENGTH, so clipping it first would leave
+  // the scrubber nothing to match and write the surviving prefix into the step label.
+  const token =
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk'
+  const patterns = scrubPatterns([token])
+  const instrumentation = createInstrumentation({
+    redact: (text) => scrubWith(text, patterns),
+  })
+  const target = instrumentation.watch({ fill: async (_value: string) => {} }, 'page')
+
+  await target.fill(token)
+
+  const [step] = instrumentation.steps
+  assert.equal(step.label, "page.fill('***')")
+  assert.ok(!step.label.includes(token.slice(0, 20)), 'no prefix of the token may survive')
 })
 
 test('saving and restoring preserve immutable history and reset version readiness', async () => {

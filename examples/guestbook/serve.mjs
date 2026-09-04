@@ -13,8 +13,8 @@ createServer(async (req, res) => {
     res.end(html)
   } catch {
     res.writeHead(500)
-    res.end('taskbox: could not read index.html')
+    res.end('guestbook: could not read index.html')
   }
 }).listen(port, () => {
-  console.log(`taskbox listening on http://localhost:${port}`)
+  console.log(`guestbook listening on http://localhost:${port}`)
 })

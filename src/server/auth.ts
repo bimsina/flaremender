@@ -4,6 +4,9 @@ import { env } from 'cloudflare:workers'
 import { createMiddleware, createServerOnlyFn } from '@tanstack/react-start'
 import { getRequest } from '@tanstack/react-start/server'
 
+import { and, eq } from 'drizzle-orm'
+
+import { member } from '#/db/schema/auth.ts'
 import { createDb } from '#/db/index.ts'
 import { createAuth } from '#/lib/auth.ts'
 
@@ -22,12 +25,27 @@ export const authMiddleware = createMiddleware({ type: 'function' }).server(asyn
   return next({ context: { db: getDb(), user: result.user, session: result.session } })
 })
 
-/** Never accept the active organization ID from client input. */
+/**
+ * Never accept the active organization ID from client input, and never trust the
+ * session's copy of it on its own. Removing a member does not revoke their existing
+ * sessions, so membership is re-read on every organization-scoped call.
+ */
 export const orgMiddleware = createMiddleware({ type: 'function' })
   .middleware([authMiddleware])
   .server(async ({ next, context }) => {
     const organizationId = context.session.activeOrganizationId
     if (!organizationId) throw new AuthError('Select or create an organization first.', 400)
+
+    const [membership] = await context.db
+      .select({ id: member.id })
+      .from(member)
+      .where(and(eq(member.organizationId, organizationId), eq(member.userId, context.user.id)))
+      .limit(1)
+
+    if (!membership) {
+      throw new AuthError('You are no longer a member of that organization.', 403)
+    }
+
     return next({ context: { organizationId } })
   })
 

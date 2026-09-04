@@ -32,21 +32,24 @@ function findLocalD1Sqlite(): string {
   return latest.full
 }
 
-function loadWranglerIds(): { accountId: string; databaseId: string } {
-  const raw = fs.readFileSync('wrangler.jsonc', 'utf8')
-  const json = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
-  const parsed = JSON.parse(json) as {
-    account_id: string
-    d1_databases: Array<{ database_id: string }>
-  }
-  const databaseId = parsed.d1_databases[0]?.database_id
-  if (!parsed.account_id || !databaseId) {
-    throw new Error('account_id / d1 database_id missing from wrangler.jsonc')
-  }
-  return { accountId: parsed.account_id, databaseId }
-}
+/**
+ * Remote credentials come from the environment only. `wrangler.jsonc` carries no
+ * account id, and its `database_id` is a placeholder the deploy flow rewrites, so
+ * neither is a trustworthy source for drizzle-kit.
+ */
+function remoteCredentials(): { accountId: string; databaseId: string; token: string } {
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID
+  const databaseId = process.env.CLOUDFLARE_DATABASE_ID
+  const token = process.env.CLOUDFLARE_D1_TOKEN ?? process.env.CLOUDFLARE_API_TOKEN
 
-const wranglerIds = remote ? loadWranglerIds() : null
+  if (!accountId || !databaseId || !token) {
+    throw new Error(
+      'Remote drizzle-kit needs CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_DATABASE_ID and CLOUDFLARE_D1_TOKEN (or CLOUDFLARE_API_TOKEN). Find the ids with `wrangler d1 info flaremender`.',
+    )
+  }
+
+  return { accountId, databaseId, token }
+}
 
 export default defineConfig({
   out: './migrations',
@@ -56,11 +59,7 @@ export default defineConfig({
   ...(remote
     ? {
         driver: 'd1-http' as const,
-        dbCredentials: {
-          accountId: process.env.CLOUDFLARE_ACCOUNT_ID ?? wranglerIds!.accountId,
-          databaseId: process.env.CLOUDFLARE_DATABASE_ID ?? wranglerIds!.databaseId,
-          token: process.env.CLOUDFLARE_D1_TOKEN ?? process.env.CLOUDFLARE_API_TOKEN!,
-        },
+        dbCredentials: remoteCredentials(),
       }
     : {
         dbCredentials: {

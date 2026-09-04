@@ -4,7 +4,9 @@
   "compatibility_date": "2026-08-01",
   "compatibility_flags": ["nodejs_compat"],
   "main": "src/server.ts",
-  "account_id": "00000000000000000000000000000000",
+  // `database_id` is a placeholder. The Deploy to Cloudflare button provisions a real
+  // database and rewrites this value. Deploying by hand? Run `wrangler d1 create
+  // flaremender` and paste the id it prints here.
   "d1_databases": [
     {
       "binding": "DB",
@@ -13,6 +15,9 @@
       "migrations_dir": "migrations",
     },
   ],
+  // Set to "true" to close public registration. The first account (which becomes the
+  // instance admin) and anyone holding a pending invitation can still sign up.
+  "vars": { "DISABLE_SIGNUP": "false" },
   "browser": { "binding": "BROWSER" },
   "ai": { "binding": "AI", "remote": true },
   "ratelimits": [

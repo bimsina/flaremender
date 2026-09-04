@@ -38,9 +38,17 @@ function isLocatorLike(value: unknown): boolean {
   return typeof candidate.click === 'function' && typeof candidate.first === 'function'
 }
 
-function describeArg(value: unknown): string {
+type Redact = (text: string) => string
+
+/**
+ * Redact before truncating. The scrubber replaces whole values, so a secret that has
+ * already been clipped no longer matches any of its patterns and the surviving prefix
+ * would be written to the step label, the logs and the run channel.
+ */
+function describeArg(value: unknown, redact: Redact): string {
   if (typeof value === 'string') {
-    const clipped = value.length > MAX_ARG_LENGTH ? `${value.slice(0, MAX_ARG_LENGTH)}…` : value
+    const safe = redact(value)
+    const clipped = safe.length > MAX_ARG_LENGTH ? `${safe.slice(0, MAX_ARG_LENGTH)}…` : safe
     return `'${clipped}'`
   }
   if (typeof value === 'number' || typeof value === 'boolean' || value === null) {
@@ -52,20 +60,22 @@ function describeArg(value: unknown): string {
   const path = pathOf(value)
   if (path !== undefined) return path
 
-  if (Array.isArray(value)) return `[${value.map(describeArg).join(', ')}]`
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => describeArg(item, redact)).join(', ')}]`
+  }
 
   if (typeof value === 'object') {
     const entries = Object.entries(value as Record<string, unknown>)
       .slice(0, 4)
-      .map(([key, item]) => `${key}: ${describeArg(item)}`)
+      .map(([key, item]) => `${key}: ${describeArg(item, redact)}`)
     return `{ ${entries.join(', ')} }`
   }
 
-  return String(value)
+  return redact(String(value))
 }
 
-function describeArgs(args: Array<unknown>): string {
-  return args.map(describeArg).join(', ')
+function describeArgs(args: Array<unknown>, redact: Redact): string {
+  return args.map((arg) => describeArg(arg, redact)).join(', ')
 }
 
 function clip(label: string): string {
@@ -113,7 +123,7 @@ export function createInstrumentation(options: {
   async function settle(rawLabel: string, promise: Promise<unknown>): Promise<unknown> {
     const started = Date.now()
     const index = nextIndex++
-    const label = options.redact(clip(rawLabel))
+    const label = clip(options.redact(rawLabel))
 
     options.onStepStarted?.(index, label)
 
@@ -139,7 +149,7 @@ export function createInstrumentation(options: {
         const name = String(property)
 
         return function instrumented(this: unknown, ...args: Array<unknown>) {
-          const label = `${path}.${name}(${describeArgs(args)})`
+          const label = `${path}.${name}(${describeArgs(args, options.redact)})`
           // Playwright private fields require the real object as the receiver.
           const result = (value as (...rest: Array<unknown>) => unknown).apply(
             object,
@@ -157,7 +167,7 @@ export function createInstrumentation(options: {
   function watchExpect<T extends object>(target: T): T {
     return new Proxy(target, {
       apply(object, thisArg, args: Array<unknown>) {
-        const label = `expect(${describeArg(args[0])})`
+        const label = `expect(${describeArg(args[0], options.redact)})`
         const matchers = Reflect.apply(
           object as unknown as (...rest: Array<unknown>) => unknown,
           thisArg,
@@ -187,7 +197,7 @@ export function createInstrumentation(options: {
         if (typeof value !== 'function') return value
 
         return function instrumented(this: unknown, ...args: Array<unknown>) {
-          const label = `${path}.${name}(${describeArgs(args)})`
+          const label = `${path}.${name}(${describeArgs(args, options.redact)})`
           const result = (value as (...rest: Array<unknown>) => unknown).apply(
             object,
             args.map(unwrap),

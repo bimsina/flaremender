@@ -1,4 +1,5 @@
 import { betterAuth } from 'better-auth'
+import { APIError } from 'better-auth/api'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { apiKey } from '@better-auth/api-key'
 import { admin } from 'better-auth/plugins/admin'
@@ -6,7 +7,7 @@ import { organization } from 'better-auth/plugins/organization'
 import { createAccessControl } from 'better-auth/plugins/access'
 import { defaultStatements } from 'better-auth/plugins/organization/access'
 import { tanstackStartCookies } from 'better-auth/tanstack-start'
-import { eq } from 'drizzle-orm'
+import { and, eq, gt } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
 
 import * as schema from '#/db/schema'
@@ -46,8 +47,42 @@ const organizationRoles = {
 export const WEBHOOK_API_KEY_CONFIG = 'project-webhook'
 export const WEBHOOK_API_KEY_PREFIX = 'flm_pk_'
 
+/**
+ * `DISABLE_SIGNUP` closes public registration on a deployed instance. Two signups
+ * still get through, because closing them completely would lock everyone out:
+ * the very first account, which bootstraps the instance and becomes its admin,
+ * and anyone holding a pending organization invitation.
+ */
+function isTruthy(value: string | undefined): boolean {
+  return value === '1' || value?.toLowerCase() === 'true'
+}
+
+async function assertSignUpAllowed(
+  db: ReturnType<typeof drizzle<typeof schema>>,
+  email: string,
+): Promise<void> {
+  const [invited] = await db
+    .select({ id: schema.invitation.id })
+    .from(schema.invitation)
+    .where(
+      and(
+        eq(schema.invitation.email, email.toLowerCase()),
+        eq(schema.invitation.status, 'pending'),
+        gt(schema.invitation.expiresAt, new Date()),
+      ),
+    )
+    .limit(1)
+
+  if (invited) return
+
+  throw new APIError('FORBIDDEN', {
+    message: 'Registration is closed on this instance. Ask an administrator for an invitation.',
+  })
+}
+
 export function createAuth(d1: D1Database, env: Cloudflare.Env) {
   const db = drizzle(d1, { schema })
+  const signUpDisabled = isTruthy(env.DISABLE_SIGNUP)
 
   return betterAuth({
     database: drizzleAdapter(db, { provider: 'sqlite', schema }),
@@ -59,9 +94,10 @@ export function createAuth(d1: D1Database, env: Cloudflare.Env) {
         create: {
           before: async (newUser) => {
             const [existing] = await db.select({ id: schema.user.id }).from(schema.user).limit(1)
-            if (existing) return
+            if (!existing) return { data: { ...newUser, role: 'admin' } }
 
-            return { data: { ...newUser, role: 'admin' } }
+            if (signUpDisabled) await assertSignUpAllowed(db, newUser.email)
+            return
           },
         },
       },

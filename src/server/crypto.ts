@@ -17,7 +17,7 @@ export function readEncryptionKey(): string {
   const secret = env.ENCRYPTION_KEY
   if (typeof secret !== 'string' || secret.length === 0) {
     throw new CryptoError(
-      'ENCRYPTION_KEY is not set. Add it to .dev.vars for local development, or set it as a Worker secret (`wrangler secret put ENCRYPTION_KEY`) before storing credentials.',
+      'ENCRYPTION_KEY is not set. Add it to .env.local for local development, or set it as a Worker secret (`wrangler secret put ENCRYPTION_KEY`) before storing credentials.',
     )
   }
   return secret

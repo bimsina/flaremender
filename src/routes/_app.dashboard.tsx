@@ -86,7 +86,9 @@ function Dashboard() {
       <PageHeader
         title={`Welcome back, ${session.user.name.split(' ')[0]}`}
         description={
-          activeOrg ? `Suite health for ${activeOrg.name}.` : 'Suite health for this organization.'
+          activeOrg
+            ? `Suite health for ${activeOrg.name.replace(/\.$/, '')}.`
+            : 'Suite health for this organization.'
         }
         actions={<NewProjectButton />}
       />

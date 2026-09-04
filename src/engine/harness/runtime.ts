@@ -221,9 +221,11 @@ export default class Harness extends WorkerEntrypoint<HarnessEnv> {
     const scrubber = createScrubber(Object.values(creds))
 
     const logs: Array<string> = []
+    // Redact before truncating: a clipped secret no longer matches the scrubber.
     const push = (line: string) => {
       if (logs.length >= MAX_LOG_LINES) return
-      logs.push(line.length > MAX_LOG_LINE_LENGTH ? `${line.slice(0, MAX_LOG_LINE_LENGTH)}…` : line)
+      const safe = scrubber.text(line)
+      logs.push(safe.length > MAX_LOG_LINE_LENGTH ? `${safe.slice(0, MAX_LOG_LINE_LENGTH)}…` : safe)
     }
 
     const runId = this.env.RUN_ID ?? ''
@@ -428,9 +430,11 @@ export default class Harness extends WorkerEntrypoint<HarnessEnv> {
     const channel = createEmitter(this.env.CHANNEL)
 
     const logs: Array<string> = []
+    // Redact before truncating: a clipped secret no longer matches the scrubber.
     const push = (line: string) => {
       if (logs.length >= MAX_LOG_LINES) return
-      logs.push(line.length > MAX_LOG_LINE_LENGTH ? `${line.slice(0, MAX_LOG_LINE_LENGTH)}…` : line)
+      const safe = scrubber.text(line)
+      logs.push(safe.length > MAX_LOG_LINE_LENGTH ? `${safe.slice(0, MAX_LOG_LINE_LENGTH)}…` : safe)
     }
 
     const instrumentation = createInstrumentation({

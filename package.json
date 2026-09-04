@@ -1,6 +1,25 @@
 {
   "name": "flaremender",
   "private": true,
+  "description": "Open-source, Cloudflare-native end-to-end test runner. Describe a test in plain English, generate a Playwright script, run it in a real browser on your own account.",
+  "keywords": [
+    "ai-agents",
+    "browser-rendering",
+    "cloudflare-workers",
+    "end-to-end-testing",
+    "playwright",
+    "test-automation"
+  ],
+  "homepage": "https://github.com/bimsina/flaremender#readme",
+  "bugs": {
+    "url": "https://github.com/bimsina/flaremender/issues"
+  },
+  "license": "MIT",
+  "author": "Bibek Timsina",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bimsina/flaremender.git"
+  },
   "type": "module",
   "imports": {
     "#/*": "./src/*"
@@ -12,20 +31,24 @@
     "generate-routes": "tsr generate",
     "build": "pnpm run harness && pnpm run trace-viewer && vite build",
     "preview": "vite preview",
-    "deploy": "pnpm run build && wrangler deploy",
+    "deploy": "pnpm run build && wrangler d1 migrations apply DB --remote && wrangler deploy",
     "cf-typegen": "wrangler types",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "wrangler d1 migrations apply flaremender --local",
-    "db:migrate:remote": "wrangler d1 migrations apply flaremender --remote",
+    "db:migrate": "wrangler d1 migrations apply DB --local",
+    "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
     "db:push": "drizzle-kit push",
     "db:push:remote": "DRIZZLE_D1_REMOTE=true drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "auth:generate": "npx --yes auth@latest generate --config ./auth.config.ts --output ./src/db/schema/auth.ts --yes",
+    "typecheck": "tsc --noEmit",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
     "test": "node --import tsx --test tests/*.test.ts",
+    "demo": "pnpm run demo:seed && pnpm run screenshots",
+    "screenshots": "node --import tsx scripts/capture-screenshots.ts",
+    "demo:seed": "node --import tsx --env-file=.env.local scripts/seed-demo.ts",
     "manual:fixtures": "node --import tsx scripts/seed-manual-fixtures.ts",
     "manual:app": "node examples/reliability/serve.mjs",
     "manual:verify": "node --import tsx scripts/verify-manual-fixtures.ts"
@@ -85,5 +108,42 @@
     "vite": "8.2.2",
     "wrangler": "4.127.1"
   },
-  "packageManager": "pnpm@11.24.0"
+  "packageManager": "pnpm@11.24.0",
+  "cloudflare": {
+    "label": "Flaremender — AI end-to-end test runner",
+    "products": [
+      "Workers",
+      "D1",
+      "R2",
+      "Browser Rendering",
+      "Workflows",
+      "Durable Objects",
+      "Workers AI"
+    ],
+    "categories": [
+      "starter"
+    ],
+    "docs_url": "https://github.com/bimsina/flaremender#readme",
+    "publish": false,
+    "bindings": {
+      "BETTER_AUTH_SECRET": {
+        "description": "Signing key for session cookies. Generate one with `openssl rand -hex 32`. Changing it signs everyone out."
+      },
+      "BETTER_AUTH_URL": {
+        "description": "The public origin of this deployment, with no trailing slash — for example `https://flaremender.your-subdomain.workers.dev`. Sign-in breaks if it does not match the URL you actually visit."
+      },
+      "ENCRYPTION_KEY": {
+        "description": "Passphrase used to encrypt environment variables and provider API keys at rest (AES-256-GCM). Generate one with `openssl rand -hex 32`. **Set it once** — changing it makes every stored secret permanently unreadable."
+      },
+      "ANTHROPIC_API_KEY": {
+        "description": "Optional. An Anthropic API key for test generation and exploration. You can skip this and add a key from the admin console after signing in."
+      },
+      "OPENAI_API_KEY": {
+        "description": "Optional. An OpenAI API key for test generation and exploration. You can skip this and add a key from the admin console after signing in."
+      },
+      "GOOGLE_API_KEY": {
+        "description": "Optional. A Google AI API key for test generation and exploration. You can skip this and add a key from the admin console after signing in."
+      }
+    }
+  }
 }
