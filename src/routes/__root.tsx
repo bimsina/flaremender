@@ -47,7 +47,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   const initialMode = theme === 'dark' ? 'dark' : 'light'
 
   return (
-    <html lang="en" data-mode={initialMode} data-theme-preference={theme}>
+    <html lang="en" data-mode={initialMode} data-theme-preference={theme} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         <HeadContent />

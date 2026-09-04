@@ -5,7 +5,7 @@ import { env } from 'cloudflare:workers'
 import { and, eq, inArray, ne, sql } from 'drizzle-orm'
 
 import type { Db } from '#/db/index.ts'
-import type { GenerationJobKind, IntentStatus } from '#/db/schema/app.ts'
+import type { GenerationJobKind, IntentStatus, RunTrigger, SuiteTrigger } from '#/db/schema/app.ts'
 import {
   environment,
   environmentVariable,
@@ -153,6 +153,10 @@ export async function queueIntentRun(
     organizationId: string
     environment: TargetEnvironment
     scriptVersionId: string
+    runId?: string
+    trigger?: RunTrigger
+    webhookApiKeyId?: string
+    webhookApiKeyName?: string
   },
 ) {
   const [test] = await db.select().from(intent).where(eq(intent.id, input.intentId)).limit(1)
@@ -161,7 +165,7 @@ export async function queueIntentRun(
       ? ('regression' as const)
       : ('draft-check' as const)
   const row = {
-    id: createId('run'),
+    id: input.runId ?? createId('run'),
     intentId: input.intentId,
     environmentId: input.environment.id,
     projectId: input.projectId,
@@ -170,11 +174,13 @@ export async function queueIntentRun(
     environmentName: input.environment.name,
     baseUrl: input.environment.baseUrl,
     status: 'queued' as const,
-    trigger: 'manual' as const,
+    trigger: input.trigger ?? ('manual' as const),
+    webhookApiKeyId: input.webhookApiKeyId,
+    webhookApiKeyName: input.webhookApiKeyName,
     startedAt: new Date(),
   }
 
-  await db.insert(run).values(row)
+  await db.insert(run).values(row).onConflictDoNothing()
 
   await enqueueWork(
     () =>
@@ -475,10 +481,15 @@ export async function queueSuiteRun(
     projectId: string
     organizationId: string
     environment: TargetEnvironment
-    createdBy: string
+    createdBy: string | null
+    suiteRunId?: string
+    trigger?: SuiteTrigger
+    intentIds?: Array<string>
+    webhookApiKeyId?: string
+    webhookApiKeyName?: string
   },
 ) {
-  const runnable = await countRunnableIntents(db, input.projectId)
+  const runnable = input.intentIds?.length ?? (await countRunnableIntents(db, input.projectId))
   if (runnable === 0) {
     throw new ValidationError(
       'Mark at least one saved test ready before running a suite. Draft checks are excluded.',
@@ -486,24 +497,30 @@ export async function queueSuiteRun(
   }
 
   const row = {
-    id: createId('srun'),
+    id: input.suiteRunId ?? createId('srun'),
     projectId: input.projectId,
     environmentId: input.environment.id,
     environmentName: input.environment.name,
     baseUrl: input.environment.baseUrl,
     status: 'queued' as const,
-    trigger: 'manual' as const,
+    trigger: input.trigger ?? ('manual' as const),
     createdBy: input.createdBy,
+    webhookApiKeyId: input.webhookApiKeyId,
+    webhookApiKeyName: input.webhookApiKeyName,
     startedAt: new Date(),
   }
 
-  await db.insert(suiteRun).values(row)
+  await db.insert(suiteRun).values(row).onConflictDoNothing()
 
   await enqueueWork(
     () =>
       env.SUITE_WORKFLOW.create({
         id: row.id,
-        params: { suiteRunId: row.id, organizationId: input.organizationId },
+        params: {
+          suiteRunId: row.id,
+          organizationId: input.organizationId,
+          intentIds: input.intentIds,
+        },
       }),
     async () => (await env.SUITE_WORKFLOW.get(row.id)).status(),
     () =>

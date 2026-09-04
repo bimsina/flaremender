@@ -38,6 +38,7 @@ const TRIGGER_FILTERS = {
   manual: 'Manual',
   regenerate: 'Regenerated',
   schedule: 'Schedule',
+  webhook: 'Webhook',
 } as const
 
 type TriggerFilter = keyof typeof TRIGGER_FILTERS
@@ -46,6 +47,7 @@ const TRIGGER_LABEL: Record<string, string> = {
   manual: 'Manual',
   regenerate: 'Regenerated',
   schedule: 'Schedule',
+  webhook: 'Webhook',
 }
 
 interface ProjectRunRow {

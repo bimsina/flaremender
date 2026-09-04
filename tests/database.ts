@@ -46,6 +46,7 @@ export function testDatabase() {
   sqlite.exec(`
     INSERT INTO user (id, name, email) VALUES ('usr_test', 'Test author', 'author@fixtures.test');
     INSERT INTO organization (id, name, slug, created_at) VALUES ('org_test', 'Test org', 'test-org', 1), ('org_other', 'Other org', 'other-org', 1);
+    INSERT INTO member (id, organization_id, user_id, role, created_at) VALUES ('mem_test', 'org_test', 'usr_test', 'owner', 1);
     INSERT INTO project (id, organization_id, name, slug, created_by) VALUES ('prj_test', 'org_test', 'Fixture project', 'fixtures', 'usr_test');
     INSERT INTO environment (id, project_id, name, base_url, is_default, created_by) VALUES ('env_test', 'prj_test', 'Local', 'http://localhost:4175', 1, 'usr_test');
     INSERT INTO intent (id, project_id, title, description, status, readiness, current_version_id, created_by) VALUES ('int_test', 'prj_test', 'Expected <behavior>', 'Expected behavior', 'ready', 'ready', 'sv_1', 'usr_test');

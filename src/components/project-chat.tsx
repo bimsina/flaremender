@@ -15,7 +15,7 @@ import {
   WarningCircleIcon,
   XIcon,
 } from '@phosphor-icons/react'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import { ChatCardView } from '#/components/chat-cards.tsx'
 import { RelativeTime } from '#/components/relative-time.tsx'
@@ -46,6 +46,7 @@ export function ProjectChatTab({ projectId }: { projectId: string }) {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-4">
       <Transcript
+        key={projectId}
         messages={chat.messages}
         pending={chat.pending}
         projectId={projectId}
@@ -105,21 +106,52 @@ function Transcript({
   onSuggestion: (text: string) => void
 }) {
   const bottom = useRef<HTMLDivElement>(null)
+  const container = useRef<HTMLElement>(null)
   const following = useRef(true)
+  const initialized = useRef(false)
+  const scrollToLatest = useCallback(() => {
+    const current = container.current
+    if (!current) return
+    current.scrollTop = current.scrollHeight
+    following.current = true
+  }, [])
+
   useEffect(() => {
-    const container = bottom.current?.closest('main')
-    if (!container) return
+    const current = bottom.current?.closest<HTMLElement>('main')
+    if (!current) return
+    container.current = current
     const track = () => {
-      following.current =
-        container.scrollHeight - container.scrollTop - container.clientHeight < 180
+      following.current = current.scrollHeight - current.scrollTop - current.clientHeight < 180
     }
-    container.addEventListener('scroll', track, { passive: true })
-    return () => container.removeEventListener('scroll', track)
+    current.addEventListener('scroll', track, { passive: true })
+    return () => {
+      current.removeEventListener('scroll', track)
+      container.current = null
+    }
   }, [empty])
 
+  useEffect(() => {
+    if (loading || empty || initialized.current) return
+
+    let secondFrame = 0
+    const firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => {
+        scrollToLatest()
+        initialized.current = true
+      })
+    })
+
+    return () => {
+      cancelAnimationFrame(firstFrame)
+      cancelAnimationFrame(secondFrame)
+    }
+  }, [empty, loading, scrollToLatest])
+
   useLayoutEffect(() => {
-    if (following.current) bottom.current?.scrollIntoView({ block: 'end' })
-  }, [messages, pending])
+    if (initialized.current && following.current) {
+      scrollToLatest()
+    }
+  }, [messages, pending, scrollToLatest])
 
   if (loading && empty) {
     return (

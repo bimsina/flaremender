@@ -25,6 +25,7 @@ import { getRun, listProjectRuns, listRuns } from '#/server/runs.ts'
 import { getQuickSearchResources } from '#/server/search.ts'
 import { fetchSession, fetchThemePreference } from '#/server/session.ts'
 import { getSuiteRun, listSuiteRuns } from '#/server/suites.ts'
+import { getProjectWebhookSettings } from '#/server/webhook-settings.ts'
 
 export const sessionQuery = () =>
   queryOptions({
@@ -69,6 +70,12 @@ export const projectQuery = (projectId: string) =>
   queryOptions({
     queryKey: ['project', projectId] as const,
     queryFn: () => getProject({ data: { projectId } }),
+  })
+
+export const projectWebhookSettingsQuery = (projectId: string) =>
+  queryOptions({
+    queryKey: ['project', projectId, 'webhooks'] as const,
+    queryFn: () => getProjectWebhookSettings({ data: { projectId } }),
   })
 
 export const intentsQuery = (projectId: string) =>

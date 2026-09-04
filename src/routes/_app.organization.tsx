@@ -538,7 +538,6 @@ function InviteMemberForm() {
         />
         <Select
           label="Role"
-          hideLabel={false}
           value={role}
           onValueChange={(value) => setRole(value ?? 'member')}
           items={{ member: 'Member', admin: 'Admin' }}
@@ -549,7 +548,7 @@ function InviteMemberForm() {
         <Dialog.Close
           render={(props) => (
             <Button {...props} variant="secondary">
-              Done
+              {link ? 'Done' : 'Cancel'}
             </Button>
           )}
         />

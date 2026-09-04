@@ -12,7 +12,7 @@ subsequent milestone; current failures remain failures until a new run verifies 
 | App   | TanStack Start (file router, server functions) on Cloudflare Workers |
 | UI    | Cloudflare Kumo + Tailwind v4, Phosphor icons                        |
 | Data  | D1 via Drizzle ORM                                                   |
-| Auth  | Better Auth with the `organization` and `admin` plugins              |
+| Auth  | Better Auth with organization, admin and project API-key plugins     |
 
 ## Getting started
 
@@ -226,6 +226,12 @@ Authenticated JSON and JUnit exports are available from run and suite reports.
 They use persisted results, exclude source code and environment variables, and
 mark draft checks and generation verification as skipped JUnit cases.
 
+External systems can trigger every ready test in a project or one ready test
+through the versioned webhook API. Project API keys are created under Project
+Settings and sent only in the `Authorization: Bearer` header. See the
+[webhook API guide](docs/webhooks.md) for request, polling, idempotency and
+report examples.
+
 See [the local reliability walkthrough](docs/reliability-walkthrough.md) for
 repeatable fixtures, verification commands and the remaining milestone gates.
 
@@ -287,7 +293,7 @@ blocking script in `<head>` so there is no flash before hydration.
 ## Commands
 
 ```bash
-pnpm dev             # build the harness, then dev server on :3000
+pnpm dev             # build the harness, then dev server on :3009
 pnpm build           # build the harness, then production build
 pnpm harness         # rebuild src/engine/harness/harness.generated.js only
 pnpm deploy          # build and deploy to Cloudflare

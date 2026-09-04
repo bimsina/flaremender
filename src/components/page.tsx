@@ -65,7 +65,7 @@ export function PageHeader({
 
           <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="grid min-w-0 gap-1.5">
-              <h1 className="min-w-0 text-xl leading-7 font-semibold tracking-tight">{title}</h1>
+              <h1 className="min-w-0 text-xl leading-7 font-semibold">{title}</h1>
               {description ? (
                 <div className="min-w-0 text-base text-kumo-subtle">{description}</div>
               ) : null}

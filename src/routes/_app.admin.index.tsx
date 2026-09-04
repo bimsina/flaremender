@@ -451,7 +451,6 @@ function CreateUserDialog({
             />
             <Select
               label="Role"
-              hideLabel={false}
               value={role}
               onValueChange={(value) => setRole(value ?? 'user')}
               items={{ user: 'User', admin: 'Admin' }}

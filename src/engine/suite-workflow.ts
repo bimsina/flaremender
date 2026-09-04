@@ -32,7 +32,9 @@ interface LoadedSuite {
   environmentId: string
   environmentName: string
   baseUrl: string
-  trigger: 'manual' | 'schedule'
+  trigger: 'manual' | 'schedule' | 'webhook'
+  webhookApiKeyId: string | null
+  webhookApiKeyName: string | null
   members: Array<SuiteMember>
 }
 
@@ -152,6 +154,8 @@ export class SuiteWorkflow extends WorkflowEntrypoint<Cloudflare.Env, SuiteWorkf
       environmentName: row.suiteRun.environmentName ?? row.environment.name,
       baseUrl: row.suiteRun.baseUrl ?? row.environment.baseUrl,
       trigger: row.suiteRun.trigger,
+      webhookApiKeyId: row.suiteRun.webhookApiKeyId,
+      webhookApiKeyName: row.suiteRun.webhookApiKeyName,
       members: members.map((member) => ({
         intentId: member.intentId,
         scriptVersionId: member.scriptVersionId!,
@@ -223,6 +227,8 @@ export class SuiteWorkflow extends WorkflowEntrypoint<Cloudflare.Env, SuiteWorkf
         suiteRunId,
         status: 'queued',
         trigger: suite.trigger,
+        webhookApiKeyId: suite.webhookApiKeyId,
+        webhookApiKeyName: suite.webhookApiKeyName,
         startedAt: new Date(),
       })
       .onConflictDoNothing()

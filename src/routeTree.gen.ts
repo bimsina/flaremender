@@ -32,9 +32,13 @@ import { Route as ApiSpikeWorkflowStatusRouteImport } from './routes/api/spike/w
 import { Route as AppProjectsProjectIdIndexRouteImport } from './routes/_app.projects.$projectId.index'
 import { Route as ApiReportsKindIdRouteImport } from './routes/api/reports.$kind.$id'
 import { Route as ApiSpikeLoaderIndexRouteImport } from './routes/api/spike/loader/index'
+import { Route as ApiV1ExecutionsExecutionIdRouteImport } from './routes/api.v1.executions.$executionId'
 import { Route as AppProjectsProjectIdIntentsIntentIdRouteImport } from './routes/_app.projects.$projectId.intents.$intentId'
 import { Route as AppProjectsProjectIdRunsRunIdRouteImport } from './routes/_app.projects.$projectId.runs.$runId'
+import { Route as ApiV1ExecutionsExecutionIdReportRouteImport } from './routes/api.v1.executions.$executionId.report'
+import { Route as ApiV1ProjectsProjectIdRunsRouteImport } from './routes/api.v1.projects.$projectId.runs'
 import { Route as AppProjectsProjectIdRunsRunIdTraceRouteImport } from './routes/_app.projects.$projectId.runs.$runId_.trace'
+import { Route as ApiV1ProjectsProjectIdTestsTestIdRunsRouteImport } from './routes/api.v1.projects.$projectId.tests.$testId.runs'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -151,6 +155,12 @@ const ApiSpikeLoaderIndexRoute = ApiSpikeLoaderIndexRouteImport.update({
   path: '/api/spike/loader/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiV1ExecutionsExecutionIdRoute =
+  ApiV1ExecutionsExecutionIdRouteImport.update({
+    id: '/api/v1/executions/$executionId',
+    path: '/api/v1/executions/$executionId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const AppProjectsProjectIdIntentsIntentIdRoute =
   AppProjectsProjectIdIntentsIntentIdRouteImport.update({
     id: '/projects/$projectId/intents/$intentId',
@@ -163,11 +173,29 @@ const AppProjectsProjectIdRunsRunIdRoute =
     path: '/projects/$projectId/runs/$runId',
     getParentRoute: () => AppRoute,
   } as any)
+const ApiV1ExecutionsExecutionIdReportRoute =
+  ApiV1ExecutionsExecutionIdReportRouteImport.update({
+    id: '/report',
+    path: '/report',
+    getParentRoute: () => ApiV1ExecutionsExecutionIdRoute,
+  } as any)
+const ApiV1ProjectsProjectIdRunsRoute =
+  ApiV1ProjectsProjectIdRunsRouteImport.update({
+    id: '/api/v1/projects/$projectId/runs',
+    path: '/api/v1/projects/$projectId/runs',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const AppProjectsProjectIdRunsRunIdTraceRoute =
   AppProjectsProjectIdRunsRunIdTraceRouteImport.update({
     id: '/projects/$projectId/runs/$runId_/trace',
     path: '/projects/$projectId/runs/$runId/trace',
     getParentRoute: () => AppRoute,
+  } as any)
+const ApiV1ProjectsProjectIdTestsTestIdRunsRoute =
+  ApiV1ProjectsProjectIdTestsTestIdRunsRouteImport.update({
+    id: '/api/v1/projects/$projectId/tests/$testId/runs',
+    path: '/api/v1/projects/$projectId/tests/$testId/runs',
+    getParentRoute: () => rootRouteImport,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -190,11 +218,15 @@ export interface FileRoutesByFullPath {
   '/admin/': typeof AppAdminIndexRoute
   '/projects/': typeof AppProjectsIndexRoute
   '/api/reports/$kind/$id': typeof ApiReportsKindIdRoute
+  '/api/v1/executions/$executionId': typeof ApiV1ExecutionsExecutionIdRouteWithChildren
   '/projects/$projectId/': typeof AppProjectsProjectIdIndexRoute
   '/api/spike/loader/': typeof ApiSpikeLoaderIndexRoute
   '/projects/$projectId/intents/$intentId': typeof AppProjectsProjectIdIntentsIntentIdRoute
   '/projects/$projectId/runs/$runId': typeof AppProjectsProjectIdRunsRunIdRoute
+  '/api/v1/executions/$executionId/report': typeof ApiV1ExecutionsExecutionIdReportRoute
+  '/api/v1/projects/$projectId/runs': typeof ApiV1ProjectsProjectIdRunsRoute
   '/projects/$projectId/runs/$runId/trace': typeof AppProjectsProjectIdRunsRunIdTraceRoute
+  '/api/v1/projects/$projectId/tests/$testId/runs': typeof ApiV1ProjectsProjectIdTestsTestIdRunsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -215,11 +247,15 @@ export interface FileRoutesByTo {
   '/admin': typeof AppAdminIndexRoute
   '/projects': typeof AppProjectsIndexRoute
   '/api/reports/$kind/$id': typeof ApiReportsKindIdRoute
+  '/api/v1/executions/$executionId': typeof ApiV1ExecutionsExecutionIdRouteWithChildren
   '/projects/$projectId': typeof AppProjectsProjectIdIndexRoute
   '/api/spike/loader': typeof ApiSpikeLoaderIndexRoute
   '/projects/$projectId/intents/$intentId': typeof AppProjectsProjectIdIntentsIntentIdRoute
   '/projects/$projectId/runs/$runId': typeof AppProjectsProjectIdRunsRunIdRoute
+  '/api/v1/executions/$executionId/report': typeof ApiV1ExecutionsExecutionIdReportRoute
+  '/api/v1/projects/$projectId/runs': typeof ApiV1ProjectsProjectIdRunsRoute
   '/projects/$projectId/runs/$runId/trace': typeof AppProjectsProjectIdRunsRunIdTraceRoute
+  '/api/v1/projects/$projectId/tests/$testId/runs': typeof ApiV1ProjectsProjectIdTestsTestIdRunsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -244,11 +280,15 @@ export interface FileRoutesById {
   '/_app/admin/': typeof AppAdminIndexRoute
   '/_app/projects/': typeof AppProjectsIndexRoute
   '/api/reports/$kind/$id': typeof ApiReportsKindIdRoute
+  '/api/v1/executions/$executionId': typeof ApiV1ExecutionsExecutionIdRouteWithChildren
   '/_app/projects/$projectId/': typeof AppProjectsProjectIdIndexRoute
   '/api/spike/loader/': typeof ApiSpikeLoaderIndexRoute
   '/_app/projects/$projectId/intents/$intentId': typeof AppProjectsProjectIdIntentsIntentIdRoute
   '/_app/projects/$projectId/runs/$runId': typeof AppProjectsProjectIdRunsRunIdRoute
+  '/api/v1/executions/$executionId/report': typeof ApiV1ExecutionsExecutionIdReportRoute
+  '/api/v1/projects/$projectId/runs': typeof ApiV1ProjectsProjectIdRunsRoute
   '/_app/projects/$projectId/runs/$runId_/trace': typeof AppProjectsProjectIdRunsRunIdTraceRoute
+  '/api/v1/projects/$projectId/tests/$testId/runs': typeof ApiV1ProjectsProjectIdTestsTestIdRunsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -272,11 +312,15 @@ export interface FileRouteTypes {
     | '/admin/'
     | '/projects/'
     | '/api/reports/$kind/$id'
+    | '/api/v1/executions/$executionId'
     | '/projects/$projectId/'
     | '/api/spike/loader/'
     | '/projects/$projectId/intents/$intentId'
     | '/projects/$projectId/runs/$runId'
+    | '/api/v1/executions/$executionId/report'
+    | '/api/v1/projects/$projectId/runs'
     | '/projects/$projectId/runs/$runId/trace'
+    | '/api/v1/projects/$projectId/tests/$testId/runs'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -297,11 +341,15 @@ export interface FileRouteTypes {
     | '/admin'
     | '/projects'
     | '/api/reports/$kind/$id'
+    | '/api/v1/executions/$executionId'
     | '/projects/$projectId'
     | '/api/spike/loader'
     | '/projects/$projectId/intents/$intentId'
     | '/projects/$projectId/runs/$runId'
+    | '/api/v1/executions/$executionId/report'
+    | '/api/v1/projects/$projectId/runs'
     | '/projects/$projectId/runs/$runId/trace'
+    | '/api/v1/projects/$projectId/tests/$testId/runs'
   id:
     | '__root__'
     | '/'
@@ -325,11 +373,15 @@ export interface FileRouteTypes {
     | '/_app/admin/'
     | '/_app/projects/'
     | '/api/reports/$kind/$id'
+    | '/api/v1/executions/$executionId'
     | '/_app/projects/$projectId/'
     | '/api/spike/loader/'
     | '/_app/projects/$projectId/intents/$intentId'
     | '/_app/projects/$projectId/runs/$runId'
+    | '/api/v1/executions/$executionId/report'
+    | '/api/v1/projects/$projectId/runs'
     | '/_app/projects/$projectId/runs/$runId_/trace'
+    | '/api/v1/projects/$projectId/tests/$testId/runs'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -343,7 +395,10 @@ export interface RootRouteChildren {
   ApiSpikeBrowserRoute: typeof ApiSpikeBrowserRoute
   ApiSpikeWorkflowStatusRoute: typeof ApiSpikeWorkflowStatusRoute
   ApiReportsKindIdRoute: typeof ApiReportsKindIdRoute
+  ApiV1ExecutionsExecutionIdRoute: typeof ApiV1ExecutionsExecutionIdRouteWithChildren
   ApiSpikeLoaderIndexRoute: typeof ApiSpikeLoaderIndexRoute
+  ApiV1ProjectsProjectIdRunsRoute: typeof ApiV1ProjectsProjectIdRunsRoute
+  ApiV1ProjectsProjectIdTestsTestIdRunsRoute: typeof ApiV1ProjectsProjectIdTestsTestIdRunsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -509,6 +564,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSpikeLoaderIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/v1/executions/$executionId': {
+      id: '/api/v1/executions/$executionId'
+      path: '/api/v1/executions/$executionId'
+      fullPath: '/api/v1/executions/$executionId'
+      preLoaderRoute: typeof ApiV1ExecutionsExecutionIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_app/projects/$projectId/intents/$intentId': {
       id: '/_app/projects/$projectId/intents/$intentId'
       path: '/projects/$projectId/intents/$intentId'
@@ -523,12 +585,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProjectsProjectIdRunsRunIdRouteImport
       parentRoute: typeof AppRoute
     }
+    '/api/v1/executions/$executionId/report': {
+      id: '/api/v1/executions/$executionId/report'
+      path: '/report'
+      fullPath: '/api/v1/executions/$executionId/report'
+      preLoaderRoute: typeof ApiV1ExecutionsExecutionIdReportRouteImport
+      parentRoute: typeof ApiV1ExecutionsExecutionIdRoute
+    }
+    '/api/v1/projects/$projectId/runs': {
+      id: '/api/v1/projects/$projectId/runs'
+      path: '/api/v1/projects/$projectId/runs'
+      fullPath: '/api/v1/projects/$projectId/runs'
+      preLoaderRoute: typeof ApiV1ProjectsProjectIdRunsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_app/projects/$projectId/runs/$runId_/trace': {
       id: '/_app/projects/$projectId/runs/$runId_/trace'
       path: '/projects/$projectId/runs/$runId/trace'
       fullPath: '/projects/$projectId/runs/$runId/trace'
       preLoaderRoute: typeof AppProjectsProjectIdRunsRunIdTraceRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/api/v1/projects/$projectId/tests/$testId/runs': {
+      id: '/api/v1/projects/$projectId/tests/$testId/runs'
+      path: '/api/v1/projects/$projectId/tests/$testId/runs'
+      fullPath: '/api/v1/projects/$projectId/tests/$testId/runs'
+      preLoaderRoute: typeof ApiV1ProjectsProjectIdTestsTestIdRunsRouteImport
+      parentRoute: typeof rootRouteImport
     }
   }
 }
@@ -591,6 +674,21 @@ const AuthRouteChildren: AuthRouteChildren = {
 
 const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
 
+interface ApiV1ExecutionsExecutionIdRouteChildren {
+  ApiV1ExecutionsExecutionIdReportRoute: typeof ApiV1ExecutionsExecutionIdReportRoute
+}
+
+const ApiV1ExecutionsExecutionIdRouteChildren: ApiV1ExecutionsExecutionIdRouteChildren =
+  {
+    ApiV1ExecutionsExecutionIdReportRoute:
+      ApiV1ExecutionsExecutionIdReportRoute,
+  }
+
+const ApiV1ExecutionsExecutionIdRouteWithChildren =
+  ApiV1ExecutionsExecutionIdRoute._addFileChildren(
+    ApiV1ExecutionsExecutionIdRouteChildren,
+  )
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
@@ -602,7 +700,11 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSpikeBrowserRoute: ApiSpikeBrowserRoute,
   ApiSpikeWorkflowStatusRoute: ApiSpikeWorkflowStatusRoute,
   ApiReportsKindIdRoute: ApiReportsKindIdRoute,
+  ApiV1ExecutionsExecutionIdRoute: ApiV1ExecutionsExecutionIdRouteWithChildren,
   ApiSpikeLoaderIndexRoute: ApiSpikeLoaderIndexRoute,
+  ApiV1ProjectsProjectIdRunsRoute: ApiV1ProjectsProjectIdRunsRoute,
+  ApiV1ProjectsProjectIdTestsTestIdRunsRoute:
+    ApiV1ProjectsProjectIdTestsTestIdRunsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

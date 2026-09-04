@@ -47,7 +47,7 @@ import { RunDetailPanel } from '#/components/run-detail.tsx'
 import { RunLivePanel } from '#/components/run-live-panel.tsx'
 import { RunStatusSummary } from '#/components/run-status-summary.tsx'
 import { IntentStatusBadge, RunStatusBadge, ScriptAuthorBadge } from '#/components/status-badge.tsx'
-import type { RunPurpose, RunStatus, ScriptAuthor } from '#/db/schema/app.ts'
+import type { RunPurpose, RunStatus, RunTrigger, ScriptAuthor } from '#/db/schema/app.ts'
 import { hasSupportedAssertions } from '#/lib/assertions.ts'
 import { describeCron, isValidCron } from '#/lib/cron.ts'
 import { shortId } from '#/lib/ids.ts'
@@ -914,7 +914,7 @@ type RunRowData = {
   purpose: RunPurpose
   id: string
   status: RunStatus
-  trigger: 'manual' | 'regenerate' | 'schedule'
+  trigger: RunTrigger
   environmentName: string
   version: number
   durationMs: number | null

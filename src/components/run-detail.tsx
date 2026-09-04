@@ -57,6 +57,7 @@ const TRIGGER_LABEL: Record<RunTrigger, string> = {
   manual: 'Manual',
   regenerate: 'Regenerated',
   schedule: 'Schedule',
+  webhook: 'Webhook',
 }
 
 export function RunDetailPanel({ runId, projectId }: { runId: string; projectId: string }) {

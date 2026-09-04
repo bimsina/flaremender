@@ -60,7 +60,7 @@ export function ListToolbar({
 }) {
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
-      <InputGroup className="min-w-0 basis-64 flex-1">
+      <InputGroup className="w-full basis-full flex-none sm:w-auto sm:min-w-0 sm:basis-64 sm:flex-1">
         <InputGroup.Addon>
           <MagnifyingGlassIcon size={16} />
         </InputGroup.Addon>

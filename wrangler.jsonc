@@ -15,6 +15,18 @@
   ],
   "browser": { "binding": "BROWSER" },
   "ai": { "binding": "AI", "remote": true },
+  "ratelimits": [
+    {
+      "name": "WEBHOOK_TRIGGER_RATE_LIMITER",
+      "namespace_id": "11758001",
+      "simple": { "limit": 10, "period": 60 },
+    },
+    {
+      "name": "WEBHOOK_READ_RATE_LIMITER",
+      "namespace_id": "11758002",
+      "simple": { "limit": 120, "period": 60 },
+    },
+  ],
   "r2_buckets": [
     {
       "binding": "ARTIFACTS",

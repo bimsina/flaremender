@@ -36,24 +36,28 @@ export function QuickSearch({ isAdmin }: { isAdmin: boolean }) {
 
   const pages = [
     {
+      id: 'page:dashboard',
       title: 'Dashboard',
       group: 'Overview',
       icon: GaugeIcon,
       options: linkOptions({ to: '/dashboard' }),
     },
     {
+      id: 'page:projects',
       title: 'Projects',
       group: 'Build',
       icon: FolderIcon,
       options: linkOptions({ to: '/projects' }),
     },
     {
+      id: 'page:members',
       title: 'Members',
       group: 'Manage account',
       icon: BuildingsIcon,
       options: linkOptions({ to: '/organization' }),
     },
     {
+      id: 'page:settings',
       title: 'Settings',
       group: 'Manage account',
       icon: GearIcon,
@@ -62,6 +66,7 @@ export function QuickSearch({ isAdmin }: { isAdmin: boolean }) {
     ...(isAdmin
       ? [
           {
+            id: 'page:administration',
             title: 'Administration',
             group: 'Manage account',
             icon: ShieldCheckIcon,
@@ -70,6 +75,7 @@ export function QuickSearch({ isAdmin }: { isAdmin: boolean }) {
         ]
       : []),
     ...(resources?.projects ?? []).map((project) => ({
+      id: `project:${project.id}`,
       title: project.name,
       group: 'Projects',
       keywords: project.name,
@@ -82,6 +88,7 @@ export function QuickSearch({ isAdmin }: { isAdmin: boolean }) {
       }),
     })),
     ...(resources?.tests ?? []).map((test) => ({
+      id: `test:${test.id}`,
       title: test.title,
       group: 'Tests',
       keywords: `${test.title} ${test.projectName}`,
@@ -93,6 +100,7 @@ export function QuickSearch({ isAdmin }: { isAdmin: boolean }) {
       }),
     })),
     ...(resources?.runs ?? []).map((run) => ({
+      id: `run:${run.id}`,
       title: run.intentTitle,
       group: 'Runs',
       keywords: `${run.intentTitle} ${run.projectName} ${run.id} ${shortId(run.id)} ${run.status}`,
@@ -158,6 +166,7 @@ export function QuickSearch({ isAdmin }: { isAdmin: boolean }) {
           <CommandPalette.Results>
             {(item) => (
               <CommandPalette.ResultItem
+                key={item.id}
                 value={item}
                 title={item.title}
                 breadcrumbs={'breadcrumbs' in item ? item.breadcrumbs : [item.group]}

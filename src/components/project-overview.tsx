@@ -204,6 +204,11 @@ export function ProjectOverview({
         <Section
           title="Recent failures"
           description="Failed runs in this environment, including earlier versions. Open a report to inspect the recorded expectation and evidence."
+          actions={
+            <LinkButton href={`/projects/${projectId}?tab=runs`} variant="ghost" size="sm">
+              View all runs
+            </LinkButton>
+          }
         >
           <LayerCard className="px-5 py-2">
             {data.failures.map((row) => (
@@ -234,54 +239,56 @@ export function ProjectOverview({
           </LayerCard>
         </Section>
       ) : null}
-      <Section
-        title="Recent regression results"
-        description="Results for the selected environment and the exact saved versions that ran. Draft checks and AI verification are excluded."
-      >
-        <LayerCard className="px-5 py-2">
-          {isPending ? (
-            <div className="py-4">
-              <Text variant="secondary">Loading results…</Text>
-            </div>
-          ) : null}
-          {error ? (
-            <div className="py-4">
-              <Text variant="error">{error.message}</Text>
-            </div>
-          ) : null}
-          {data?.recent.length === 0 ? (
-            <div className="py-4">
-              <Text variant="secondary">
-                No regression runs yet. Save a test, check the draft and mark it ready.
-              </Text>
-            </div>
-          ) : null}
-          {data?.recent.map((row) => (
-            <div
-              key={row.id}
-              className="flex flex-wrap items-center justify-between gap-3 border-b border-kumo-hairline py-3 last:border-b-0"
-            >
-              <div className="grid min-w-0 gap-1">
-                <a
-                  className="font-medium text-kumo-link"
-                  href={`/projects/${projectId}/runs/${row.id}`}
-                >
-                  {row.title}
-                </a>
-                <Text variant="secondary">
-                  {row.environmentName} · v{row.version} · <RelativeTime value={row.startedAt} />
-                </Text>
-                {row.errorMessage ? (
-                  <div className="line-clamp-2 break-words">
-                    <Text variant="error">{row.errorMessage.split('\n')[0]}</Text>
-                  </div>
-                ) : null}
+      {!data?.failures?.length ? (
+        <Section
+          title="Recent regression results"
+          description="Results for the selected environment and the exact saved versions that ran. Draft checks and AI verification are excluded."
+        >
+          <LayerCard className="px-5 py-2">
+            {isPending ? (
+              <div className="py-4">
+                <Text variant="secondary">Loading results…</Text>
               </div>
-              <RunStatusBadge status={row.status} />
-            </div>
-          ))}
-        </LayerCard>
-      </Section>
+            ) : null}
+            {error ? (
+              <div className="py-4">
+                <Text variant="error">{error.message}</Text>
+              </div>
+            ) : null}
+            {data?.recent.length === 0 ? (
+              <div className="py-4">
+                <Text variant="secondary">
+                  No regression runs yet. Save a test, check the draft and mark it ready.
+                </Text>
+              </div>
+            ) : null}
+            {data?.recent.map((row) => (
+              <div
+                key={row.id}
+                className="flex flex-wrap items-center justify-between gap-3 border-b border-kumo-hairline py-3 last:border-b-0"
+              >
+                <div className="grid min-w-0 gap-1">
+                  <a
+                    className="font-medium text-kumo-link"
+                    href={`/projects/${projectId}/runs/${row.id}`}
+                  >
+                    {row.title}
+                  </a>
+                  <Text variant="secondary">
+                    {row.environmentName} · v{row.version} · <RelativeTime value={row.startedAt} />
+                  </Text>
+                  {row.errorMessage ? (
+                    <div className="line-clamp-2 break-words">
+                      <Text variant="error">{row.errorMessage.split('\n')[0]}</Text>
+                    </div>
+                  ) : null}
+                </div>
+                <RunStatusBadge status={row.status} />
+              </div>
+            ))}
+          </LayerCard>
+        </Section>
+      ) : null}
     </div>
   )
 }

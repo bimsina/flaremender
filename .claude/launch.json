@@ -5,7 +5,7 @@
       "name": "flaremender",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["dev"],
-      "port": 3000
+      "port": 3009
     },
     {
       "name": "taskbox",

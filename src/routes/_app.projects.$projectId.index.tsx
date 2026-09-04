@@ -18,6 +18,7 @@ import {
   BinocularsIcon,
   ClockIcon,
   DotsThreeIcon,
+  KeyIcon,
   ListChecksIcon,
   PlayIcon,
   SparkleIcon,
@@ -34,6 +35,7 @@ import { EnvironmentsPanel } from '#/components/environments-panel.tsx'
 import { InlineEmpty, ListRow, ListToolbar, Section, SettingRow } from '#/components/list.tsx'
 import { PageBody, PageHeader } from '#/components/page.tsx'
 import { NewTestMenu } from '#/components/new-test-menu.tsx'
+import { MonoPanel } from '#/components/mono-panel.tsx'
 import { ProjectOverview } from '#/components/project-overview.tsx'
 import { ProjectChatTab } from '#/components/project-chat.tsx'
 import { ProjectRunsTab } from '#/components/project-runs.tsx'
@@ -48,6 +50,7 @@ import {
   environmentsQuery,
   intentsQuery,
   projectQuery,
+  projectWebhookSettingsQuery,
   projectRunsQuery,
   runTrendQuery,
   suiteRunsQuery,
@@ -61,6 +64,7 @@ import {
 import { createIntent, deleteIntent, runIntent } from '#/server/intents.ts'
 import { deleteProject, setProjectModel, updateProject } from '#/server/projects.ts'
 import { runSuite } from '#/server/suites.ts'
+import { createProjectWebhookKey, revokeProjectWebhookKey } from '#/server/webhook-settings.ts'
 
 const TABS = ['overview', 'chat', 'intents', 'runs', 'environments', 'settings'] as const
 type Tab = (typeof TABS)[number]
@@ -71,7 +75,7 @@ const TEST_RESULT_FILTERS = ['all', 'passed', 'failed', 'error', 'not-run'] as c
 type TestResultFilter = (typeof TEST_RESULT_FILTERS)[number]
 const RUN_STATUS_FILTERS = ['all', 'passed', 'failed', 'error', 'running'] as const
 type RunStatusFilter = (typeof RUN_STATUS_FILTERS)[number]
-const RUN_TRIGGER_FILTERS = ['all', 'manual', 'regenerate', 'schedule'] as const
+const RUN_TRIGGER_FILTERS = ['all', 'manual', 'regenerate', 'schedule', 'webhook'] as const
 type RunTriggerFilter = (typeof RUN_TRIGGER_FILTERS)[number]
 
 function isTab(value: unknown): value is Tab {
@@ -148,6 +152,10 @@ export const Route = createFileRoute('/_app/projects/$projectId/')({
         revalidateIfStale: true,
       }),
       context.queryClient.ensureQueryData({ ...allowedModelsQuery(), revalidateIfStale: true }),
+      context.queryClient.ensureQueryData({
+        ...projectWebhookSettingsQuery(params.projectId),
+        revalidateIfStale: true,
+      }),
     ])
   },
   component: ProjectDetail,
@@ -785,12 +793,311 @@ function SettingsTab({ project }: { project: ProjectRow }) {
       </Section>
 
       <Section
+        title="Webhooks"
+        description="Trigger this project or one ready test from CI and other external systems."
+      >
+        <ProjectWebhooksCard projectId={project.id} />
+      </Section>
+
+      <Section
         title="Danger zone"
         description="Destructive and permanent. There is no undo and no export."
       >
         <DeleteProjectCard project={project} />
       </Section>
     </div>
+  )
+}
+
+const WEBHOOK_EXPIRATIONS = {
+  '30': '30 days',
+  '90': '90 days',
+  '365': 'One year',
+  never: 'No expiration',
+} as const
+
+function ProjectWebhooksCard({ projectId }: { projectId: string }) {
+  const { data } = useSuspenseQuery(projectWebhookSettingsQuery(projectId))
+  const queryClient = useQueryClient()
+  const toast = useKumoToastManager()
+  const [creating, setCreating] = useState(false)
+  const [name, setName] = useState('CI webhook')
+  const [expiration, setExpiration] = useState<keyof typeof WEBHOOK_EXPIRATIONS>('90')
+  const [createdKey, setCreatedKey] = useState<string | null>(null)
+  const [revokeTarget, setRevokeTarget] = useState<{ id: string; name: string } | null>(null)
+
+  const createKey = useMutation({
+    mutationFn: () =>
+      createProjectWebhookKey({
+        data: {
+          projectId,
+          name: name.trim(),
+          expiresInDays: expiration === 'never' ? null : Number(expiration),
+        },
+      }),
+    onSuccess: async (result) => {
+      setCreatedKey(result.key)
+      await queryClient.invalidateQueries({
+        queryKey: projectWebhookSettingsQuery(projectId).queryKey,
+      })
+    },
+  })
+
+  const revokeKey = useMutation({
+    mutationFn: (keyId: string) => revokeProjectWebhookKey({ data: { projectId, keyId } }),
+    onSuccess: async () => {
+      setRevokeTarget(null)
+      await queryClient.invalidateQueries({
+        queryKey: projectWebhookSettingsQuery(projectId).queryKey,
+      })
+      toast.add({ variant: 'success', title: 'API key revoked' })
+    },
+  })
+
+  const curl = [
+    'curl --request POST \\',
+    `  --url "${data.projectRunUrl}" \\`,
+    '  --header "Authorization: Bearer $KUMO_API_KEY" \\',
+    '  --header "Content-Type: application/json" \\',
+    '  --header "Idempotency-Key: deploy-$CI_COMMIT_SHA" \\',
+    `  --data '{"environmentId":"your-environment-id"}'`,
+  ].join('\n')
+
+  return (
+    <>
+      <LayerCard className="grid gap-5 px-5 py-4">
+        <div className="grid gap-1.5">
+          <Text as="h3" bold>
+            Inbound run endpoints
+          </Text>
+          <Text variant="secondary" size="base">
+            Send an empty JSON body to use the default environment. Poll the returned statusUrl
+            until the execution finishes.
+          </Text>
+        </div>
+
+        <div className="grid gap-3">
+          <MonoPanel label="Run every ready test" text={data.projectRunUrl} />
+          <MonoPanel label="Run one ready test" text={data.testRunUrl} />
+          <MonoPanel label="curl example" text={curl} />
+        </div>
+
+        <div className="flex flex-wrap items-start justify-between gap-3 border-t border-kumo-line pt-4">
+          <div className="grid gap-1">
+            <Text as="h3" bold>
+              Project API keys
+            </Text>
+            <Text variant="secondary" size="base">
+              Use the Bearer header. Never put API keys in URLs or commit them to a repository.
+            </Text>
+          </div>
+          {data.canManage ? (
+            <Button
+              variant="primary"
+              icon={<KeyIcon size={16} />}
+              onClick={() => {
+                setCreatedKey(null)
+                setCreating(true)
+              }}
+            >
+              Create API key
+            </Button>
+          ) : null}
+        </div>
+
+        {data.canManage ? (
+          data.keys.length > 0 ? (
+            <div className="divide-y divide-kumo-line ring ring-kumo-line rounded-md">
+              {data.keys.map((key) => (
+                <div
+                  key={key.id}
+                  className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
+                >
+                  <div className="grid min-w-0 gap-1">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <Text as="span" bold>
+                        {key.name}
+                      </Text>
+                      <Text as="span" variant={key.enabled ? 'secondary' : 'error'} size="base">
+                        {key.enabled ? 'Active' : 'Revoked'}
+                      </Text>
+                    </span>
+                    <Text variant="secondary" size="base">
+                      <span className="font-mono text-[0.9em]">{key.start}…</span> · created by{' '}
+                      {key.createdByName} ·{' '}
+                      {key.lastRequest ? (
+                        <>
+                          last used <RelativeTime value={key.lastRequest} />
+                        </>
+                      ) : (
+                        'never used'
+                      )}{' '}
+                      ·{' '}
+                      {key.expiresAt ? (
+                        <>
+                          expires <RelativeTime value={key.expiresAt} />
+                        </>
+                      ) : (
+                        'never expires'
+                      )}
+                    </Text>
+                  </div>
+                  {key.enabled ? (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setRevokeTarget({ id: key.id, name: key.name })}
+                    >
+                      Revoke
+                    </Button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <InlineEmpty message="No API keys have been created for this project." />
+          )
+        ) : (
+          <Text variant="secondary" size="base">
+            Organization owners and admins manage the API keys for this project.
+          </Text>
+        )}
+      </LayerCard>
+
+      <Dialog.Root
+        open={creating}
+        onOpenChange={(open) => {
+          setCreating(open)
+          if (!open) {
+            setCreatedKey(null)
+            createKey.reset()
+          }
+        }}
+      >
+        <Dialog className="px-6 py-5">
+          <div className="grid gap-5">
+            <div className="grid gap-1.5">
+              <Dialog.Title>
+                <Text as="span" variant="heading">
+                  Create a project API key
+                </Text>
+              </Dialog.Title>
+              <Dialog.Description>
+                <Text as="span" variant="secondary">
+                  This key can trigger and read runs for this project only.
+                </Text>
+              </Dialog.Description>
+            </div>
+
+            {createKey.error ? (
+              <Banner
+                variant="error"
+                icon={<WarningCircleIcon weight="fill" />}
+                title="Could not create the key"
+                description={createKey.error.message}
+              />
+            ) : null}
+
+            {createdKey ? (
+              <div className="grid gap-3">
+                <Banner
+                  variant="alert"
+                  icon={<WarningCircleIcon weight="fill" />}
+                  title="Copy this key now"
+                  description="For security, the complete key will not be shown again after this dialog closes."
+                />
+                <MonoPanel label="API key" text={createdKey} />
+              </div>
+            ) : (
+              <div className="grid gap-4">
+                <Input
+                  label="Name"
+                  required
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                />
+                <Select
+                  aria-label="Expiration"
+                  label="Expiration"
+                  items={WEBHOOK_EXPIRATIONS}
+                  value={expiration}
+                  onValueChange={(value: keyof typeof WEBHOOK_EXPIRATIONS | null) =>
+                    setExpiration(value ?? '90')
+                  }
+                />
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <Dialog.Close
+                render={(props) => (
+                  <Button {...props} variant="secondary">
+                    {createdKey ? 'Done' : 'Cancel'}
+                  </Button>
+                )}
+              />
+              {!createdKey ? (
+                <Button
+                  variant="primary"
+                  loading={createKey.isPending}
+                  disabled={!name.trim()}
+                  onClick={() => createKey.mutate()}
+                >
+                  Create key
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        </Dialog>
+      </Dialog.Root>
+
+      <Dialog.Root
+        open={revokeTarget !== null}
+        onOpenChange={(open) => !open && setRevokeTarget(null)}
+      >
+        <Dialog className="px-6 py-5">
+          <div className="grid gap-5">
+            <div className="grid gap-1.5">
+              <Dialog.Title>
+                <Text as="span" variant="heading">
+                  Revoke this API key?
+                </Text>
+              </Dialog.Title>
+              <Dialog.Description>
+                <Text as="span" variant="secondary">
+                  {revokeTarget?.name ?? 'This key'} will stop working immediately. It cannot be
+                  restored.
+                </Text>
+              </Dialog.Description>
+            </div>
+            {revokeKey.error ? (
+              <Banner
+                variant="error"
+                icon={<WarningCircleIcon weight="fill" />}
+                title="Could not revoke the key"
+                description={revokeKey.error.message}
+              />
+            ) : null}
+            <div className="flex justify-end gap-2">
+              <Dialog.Close
+                render={(props) => (
+                  <Button {...props} variant="secondary">
+                    Cancel
+                  </Button>
+                )}
+              />
+              <Button
+                variant="destructive"
+                loading={revokeKey.isPending}
+                onClick={() => revokeTarget && revokeKey.mutate(revokeTarget.id)}
+              >
+                Revoke key
+              </Button>
+            </div>
+          </div>
+        </Dialog>
+      </Dialog.Root>
+    </>
   )
 }
 
@@ -1103,12 +1410,12 @@ function CreateIntentForm({
         <div className="grid gap-1.5">
           <Dialog.Title>
             <Text as="span" variant="heading">
-              Describe a test
+              Create a manual test
             </Text>
           </Dialog.Title>
           <Dialog.Description>
             <Text as="span" variant="secondary">
-              One instruction per line. Quote the exact label of anything you click or type into.
+              Start with expected behavior, then write the Playwright script.
             </Text>
           </Dialog.Description>
         </div>

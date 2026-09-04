@@ -3,7 +3,7 @@ import { and, asc, desc, eq, inArray, isNotNull, notInArray, sql } from 'drizzle
 
 import type { Db } from '#/db/index.ts'
 import { createDb } from '#/db/index.ts'
-import { instanceSettings, intent, run, suiteRun } from '#/db/schema/app.ts'
+import { apiExecutionRequest, instanceSettings, intent, run, suiteRun } from '#/db/schema/app.ts'
 
 export const DEFAULT_RETENTION_RUNS = 50
 
@@ -20,6 +20,7 @@ export interface RetentionSummary {
   objectsDeleted: number
   carriedOver: number
   orphanSuitesDeleted: number
+  idempotencyRecordsDeleted: number
   failures: number
 }
 
@@ -70,6 +71,7 @@ export async function sweepRetention(env: Cloudflare.Env): Promise<RetentionSumm
     objectsDeleted: 0,
     carriedOver: 0,
     orphanSuitesDeleted: 0,
+    idempotencyRecordsDeleted: 0,
     failures: 0,
   }
 
@@ -108,10 +110,22 @@ export async function sweepRetention(env: Cloudflare.Env): Promise<RetentionSumm
     console.error('[retention] orphan suite cleanup failed:', error)
   }
 
+  try {
+    const removed = await db
+      .delete(apiExecutionRequest)
+      .where(sql`${apiExecutionRequest.expiresAt} <= ${Date.now()}`)
+      .returning({ id: apiExecutionRequest.id })
+    summary.idempotencyRecordsDeleted = removed.length
+  } catch (error) {
+    summary.failures++
+    console.error('[retention] idempotency cleanup failed:', error)
+  }
+
   console.log(
     `[retention] keep=${summary.keep} intents=${summary.intentsTouched} ` +
       `runs-deleted=${summary.runsDeleted} r2-objects=${summary.objectsDeleted} ` +
       `carried-over=${summary.carriedOver} orphan-suites=${summary.orphanSuitesDeleted} ` +
+      `idempotency=${summary.idempotencyRecordsDeleted} ` +
       `failures=${summary.failures}`,
   )
 

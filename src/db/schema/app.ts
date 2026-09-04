@@ -29,7 +29,7 @@ export type GenerationJobKind = (typeof GENERATION_JOB_KINDS)[number]
 export const RUN_STATUSES = ['queued', 'running', 'passed', 'healed', 'failed', 'error'] as const
 export type RunStatus = (typeof RUN_STATUSES)[number]
 
-export const RUN_TRIGGERS = ['manual', 'regenerate', 'schedule'] as const
+export const RUN_TRIGGERS = ['manual', 'regenerate', 'schedule', 'webhook'] as const
 export const RUN_PURPOSES = ['regression', 'draft-check', 'generation-verification'] as const
 export type RunPurpose = (typeof RUN_PURPOSES)[number]
 
@@ -38,7 +38,7 @@ export type RunTrigger = (typeof RUN_TRIGGERS)[number]
 export const SUITE_RUN_STATUSES = ['queued', 'running', 'passed', 'failed', 'error'] as const
 export type SuiteRunStatus = (typeof SUITE_RUN_STATUSES)[number]
 
-export const SUITE_TRIGGERS = ['manual', 'schedule'] as const
+export const SUITE_TRIGGERS = ['manual', 'schedule', 'webhook'] as const
 export type SuiteTrigger = (typeof SUITE_TRIGGERS)[number]
 
 export const ATTEMPT_OUTCOMES = ['passed', 'failed', 'error'] as const
@@ -211,6 +211,8 @@ export const suiteRun = sqliteTable(
     failedCount: integer('failed_count').default(0).notNull(),
     errorCount: integer('error_count').default(0).notNull(),
     createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+    webhookApiKeyId: text('webhook_api_key_id'),
+    webhookApiKeyName: text('webhook_api_key_name'),
     startedAt: integer('started_at', { mode: 'timestamp_ms' }).default(now).notNull(),
     finishedAt: integer('finished_at', { mode: 'timestamp_ms' }),
   },
@@ -243,6 +245,8 @@ export const run = sqliteTable(
     modelId: text('model_id'),
     workflowInstanceId: text('workflow_instance_id'),
     artifactPrefix: text('artifact_prefix'),
+    webhookApiKeyId: text('webhook_api_key_id'),
+    webhookApiKeyName: text('webhook_api_key_name'),
     startedAt: integer('started_at', { mode: 'timestamp_ms' }).default(now).notNull(),
     finishedAt: integer('finished_at', { mode: 'timestamp_ms' }),
   },
@@ -251,6 +255,32 @@ export const run = sqliteTable(
     index('run_projectId_idx').on(table.projectId),
     index('run_environmentId_idx').on(table.environmentId),
     index('run_suiteRunId_idx').on(table.suiteRunId),
+  ],
+)
+
+export const apiExecutionRequest = sqliteTable(
+  'api_execution_request',
+  {
+    id: text('id').primaryKey(),
+    apiKeyId: text('api_key_id').notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    requestFingerprint: text('request_fingerprint').notNull(),
+    executionKind: text('execution_kind').$type<'run' | 'suite'>().notNull(),
+    executionId: text('execution_id').notNull(),
+    dispatchState: text('dispatch_state')
+      .$type<'pending' | 'accepted' | 'failed'>()
+      .default('pending')
+      .notNull(),
+    lastError: text('last_error'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).default(now).notNull(),
+    expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (table) => [
+    uniqueIndex('api_execution_request_key_idempotency_uidx').on(
+      table.apiKeyId,
+      table.idempotencyKey,
+    ),
+    index('api_execution_request_expiresAt_idx').on(table.expiresAt),
   ],
 )
 
