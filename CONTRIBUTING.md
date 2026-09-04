@@ -31,9 +31,11 @@ and fourteen days of runs straight into the local D1 database. It talks to no mo
 and drives no browser, so it costs nothing and is safe to re-run. The random numbers
 are seeded, so re-running produces the same shape of history, shifted to end today.
 
-`pnpm screenshots` signs in as that account with headless Chromium and writes
-lossless WebP to `docs/screenshots/` at 2x. Re-run it after any UI change the docs
-show. It needs `cwebp` or `magick` on PATH (`brew install webp`, or
+`pnpm screenshots` signs in as that account with headless Chromium and walks the app
+twice, once in light and once in dark, writing lossless WebP to `docs/screenshots/`
+at 2x. The docs pair each `name.webp` with its `name-dark.webp` in a `<picture>`, so
+GitHub shows whichever matches the reader's theme. Re-run it after any UI change the
+docs show. It needs `cwebp` or `magick` on PATH (`brew install webp`, or
 `brew install imagemagick`); without either it leaves the PNGs in place and says so.
 
 Both take an email as their first argument if you would rather use your own account.

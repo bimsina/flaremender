@@ -7,10 +7,15 @@
  *   pnpm demo:seed      # once, to fill the charts
  *   pnpm screenshots
  *
- * Signs in as the demo account, walks the app, and writes lossless WebP to
- * docs/screenshots/. Playwright only encodes PNG, so each capture is converted and
- * the PNG discarded. Lossless keeps the text crisp at 2x and still lands around 70%
- * smaller than the PNG; for flat UI colour it is no larger than lossy q80 would be.
+ * Signs in as the demo account, then walks it twice: once in light and once in dark,
+ * writing `name.webp` and `name-dark.webp`. The docs pair them in a <picture> so
+ * GitHub shows whichever matches the reader's theme. The app resolves its own theme
+ * from prefers-color-scheme when nobody has chosen one, so emulating the media query
+ * is enough.
+ *
+ * Output is lossless WebP. Playwright only encodes PNG, so each capture is converted
+ * and the PNG discarded. Lossless keeps the text crisp at 2x and still lands around
+ * 70% smaller than the PNG; for flat UI colour it is no larger than lossy q80.
  */
 import { chromium } from 'playwright-core'
 import { execFile } from 'node:child_process'
@@ -151,52 +156,58 @@ async function main() {
     }
   }
 
-  console.log('Capturing')
-  await page.waitForLoadState('networkidle')
-  await shot('dashboard')
-
   const storefront = '/projects/prj_demo_storefront'
-  for (const [path, name] of [
-    [storefront, 'project-overview'],
-    [`${storefront}?tab=chat`, 'project-chat'],
-    [`${storefront}?tab=intents`, 'project-tests'],
-  ] as const) {
-    await open(path)
-    await shot(name)
+
+  const walk = async (theme: 'light' | 'dark') => {
+    const suffix = theme === 'dark' ? '-dark' : ''
+    console.log(`\nCapturing ${theme}`)
+    await page.emulateMedia({ colorScheme: theme })
+
+    await open('/dashboard')
+    await shot(`dashboard${suffix}`)
+
+    for (const [path, name] of [
+      [storefront, 'project-overview'],
+      [`${storefront}?tab=chat`, 'project-chat'],
+      [`${storefront}?tab=intents`, 'project-tests'],
+    ] as const) {
+      await open(path)
+      await shot(`${name}${suffix}`)
+    }
+
+    // The failing test, so the evidence panels have something in them.
+    await open(`${storefront}/intents/int_storefront_5`)
+    await shot(`test-detail${suffix}`, { fullPage: true })
+
+    // Environments, with the variable list open so the masked values show.
+    await open(`${storefront}?tab=environments`)
+    const variables = page.getByRole('button', { name: /Variables \(2\)/ }).first()
+    if ((await variables.count()) > 0) {
+      await variables.click()
+      await page.waitForTimeout(500)
+    }
+    await shot(`project-environments${suffix}`)
+
+    // Run history lives under the test's own Runs tab, as expandable rows.
+    await open(`${storefront}/intents/int_storefront_5?tab=runs`)
+    await shot(`test-runs${suffix}`)
+
+    const expander = page.locator('tbody tr button, tbody tr [role="button"]').first()
+    if ((await expander.count()) > 0) {
+      await expander.click()
+      await page.waitForTimeout(800)
+    }
+
+    const runLink = page.locator('a[href*="/runs/"]').first()
+    if ((await runLink.count()) === 0) {
+      throw new Error('No run linked from the failing test; is the demo data seeded?')
+    }
+    await open((await runLink.getAttribute('href'))!)
+    await shot(`run-detail${suffix}`, { fullPage: true })
   }
 
-  // The failing test, so the evidence panels have something in them.
-  await open(`${storefront}/intents/int_storefront_5`)
-  await shot('test-detail', { fullPage: true })
-
-  // Environments, with the variable list open so the masked values show.
-  await open(`${storefront}?tab=environments`)
-  const variables = page.getByRole('button', { name: /Variables \(2\)/ }).first()
-  if ((await variables.count()) > 0) {
-    await variables.click()
-    await page.waitForTimeout(500)
-  }
-  await shot('project-environments')
-
-  // Run history lives under the test's own Runs tab, as expandable rows.
-  await open(`${storefront}/intents/int_storefront_5?tab=runs`)
-  await shot('test-runs')
-
-  const expander = page.locator('tbody tr button, tbody tr [role="button"]').first()
-  if ((await expander.count()) > 0) {
-    await expander.click()
-    await page.waitForTimeout(800)
-  }
-
-  const runLink = page.locator('a[href*="/runs/"]').first()
-  if ((await runLink.count()) > 0) {
-    const href = await runLink.getAttribute('href')
-    await open(href!)
-    await shot('run-detail', { fullPage: true })
-  } else {
-    await shot('run-evidence', { fullPage: true })
-    console.log('  (no dedicated run page linked; captured the expanded row instead)')
-  }
+  await walk('light')
+  await walk('dark')
 
   await context.close()
   await browser.close()

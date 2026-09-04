@@ -12,7 +12,11 @@ and your run history stay there.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/bimsina/flaremender)
 
-![The Flaremender dashboard: three projects, a fourteen-day run history and a 92 percent pass rate](docs/screenshots/dashboard.webp)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dashboard-dark.webp">
+  <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/dashboard.webp">
+  <img alt="The Flaremender dashboard: three projects, a fourteen-day run history and a 92 percent pass rate" src="docs/screenshots/dashboard.webp">
+</picture>
 
 ## What it does
 
@@ -30,7 +34,11 @@ and your run history stay there.
 Ask for a test in the project chat, and the assistant answers with cards. Each card
 is a real row, not something that exists only in the conversation.
 
-![The project chat: a request for a discount-code test, the intent card it created, and the failed run it reports back](docs/screenshots/project-chat.webp)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/project-chat-dark.webp">
+  <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/project-chat.webp">
+  <img alt="The project chat: a request for a discount-code test, the intent card it created, and the failed run it reports back" src="docs/screenshots/project-chat.webp">
+</picture>
 
 What you get is ordinary Playwright, so anything in the Playwright docs works:
 
@@ -45,7 +53,11 @@ export default async function ({ page, expect, secret }) {
 When a test fails, the evidence is already there. Note the second step: the password
 went in through `secret()`, so what was stored is `***`.
 
-![A failed run: the recorded timeout error and a step history where the filled password reads three asterisks](docs/screenshots/run-detail.webp)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/run-detail-dark.webp">
+  <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/run-detail.webp">
+  <img alt="A failed run: the recorded timeout error and a step history where the filled password reads three asterisks" src="docs/screenshots/run-detail.webp">
+</picture>
 
 ## Deploy it
 

@@ -6,7 +6,11 @@ deploy it.
 
 Projects open on an overview: what is ready, what is drafted, and what failed last.
 
-![A project overview: ten ready tests, one draft, the latest regression result and recent failures](screenshots/project-overview.webp)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="screenshots/project-overview-dark.webp">
+  <source media="(prefers-color-scheme: light)" srcset="screenshots/project-overview.webp">
+  <img alt="A project overview: ten ready tests, one draft, the latest regression result and recent failures" src="screenshots/project-overview.webp">
+</picture>
 
 ## The shape of the codebase
 
@@ -74,7 +78,11 @@ script.
 
 #### What a script looks like
 
-![A test's Script tab, showing the generated Playwright code with the expected behaviour above it](screenshots/test-detail.webp)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="screenshots/test-detail-dark.webp">
+  <source media="(prefers-color-scheme: light)" srcset="screenshots/test-detail.webp">
+  <img alt="A test's Script tab, showing the generated Playwright code with the expected behaviour above it" src="screenshots/test-detail.webp">
+</picture>
 
 ```js
 export default async function ({ page, expect, secret }) {
@@ -164,7 +172,11 @@ wandering is the job: it may navigate freely and abandon what it tries. Only
 `rejectUnsafeInteraction` still applies, because `evaluate` and `force: true` are
 how an agent breaks somebody's real app.
 
-![The Tests tab listing ten passing tests, one failing, and a banner offering a proposed test to review](screenshots/project-tests.webp)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="screenshots/project-tests-dark.webp">
+  <source media="(prefers-color-scheme: light)" srcset="screenshots/project-tests.webp">
+  <img alt="The Tests tab listing ten passing tests, one failing, and a banner offering a proposed test to review" src="screenshots/project-tests.webp">
+</picture>
 
 **`'proposed'` is not a test yet.** A proposed intent is excluded from "run all",
 from the scheduler, and from every count that answers "how many tests does this
@@ -183,7 +195,11 @@ environment snapshots and cannot certify a newly edited version.
 
 Each test keeps its own run history and duration trend.
 
-![A test's run history: 3 passed, 18 failed, and a duration chart across twenty-two runs](screenshots/test-runs.webp)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="screenshots/test-runs-dark.webp">
+  <source media="(prefers-color-scheme: light)" srcset="screenshots/test-runs.webp">
+  <img alt="A test's run history: 3 passed, 18 failed, and a duration chart across twenty-two runs" src="screenshots/test-runs.webp">
+</picture>
 
 Authenticated JSON and JUnit exports are available from run and suite reports.
 They use persisted results, exclude source code and environment variables, and

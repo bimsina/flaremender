@@ -88,7 +88,11 @@ A project's environments hold the base URL a run points at and the credentials i
 read. Values are write-only: encrypted at rest, and only the last four characters are
 ever shown again.
 
-![The Environments tab with a Production and a Staging environment, and a warning that variable values are write-only](screenshots/project-environments.webp)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="screenshots/project-environments-dark.webp">
+  <source media="(prefers-color-scheme: light)" srcset="screenshots/project-environments.webp">
+  <img alt="The Environments tab with a Production and a Staging environment, and a warning that variable values are write-only" src="screenshots/project-environments.webp">
+</picture>
 
 ### First sign-in
 
