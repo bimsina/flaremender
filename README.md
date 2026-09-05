@@ -48,6 +48,9 @@ and your run history stay there.
   whether the repaired version waits for a person or is adopted on the spot.
 - **Sandboxes what it wrote.** Scripts execute in a Dynamic Worker with no database,
   no object storage and no ambient network.
+- **Traced end to end.** Workers Traces are on out of the box, with a named span for
+  every model call, browser step, notification and MCP tool call, so a slow or
+  failed generation reads as a waterfall in the Cloudflare dashboard.
 
 Ask for a test in the project chat, and the assistant answers with cards. Each card
 is a real row, not something that exists only in the conversation.

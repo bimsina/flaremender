@@ -5,7 +5,8 @@ import { pruneToolResults } from '#/engine/agent-transcript.ts'
 import type { ActResponse } from '#/engine/contract.ts'
 import { fetchDocs } from '#/engine/explore/docs.ts'
 import { EXPLORE_SYSTEM_PROMPT } from '#/engine/explore/prompts.ts'
-import { resolveModel } from '#/engine/generation/llm.ts'
+import { modelSpanAttributes, resolveModel } from '#/engine/generation/llm.ts'
+import { span } from '#/engine/tracing.ts'
 import { loadCredentials } from '#/engine/generation/loop.ts'
 import { formatObservation } from '#/engine/generation/prompts.ts'
 import {
@@ -443,24 +444,38 @@ export async function runExploreTurn(
     },
   })
 
-  const result = await generateText({
-    model: resolved.model,
-    ...(resolved.providerOptions ? { providerOptions: resolved.providerOptions } : {}),
-    system: EXPLORE_SYSTEM_PROMPT,
-    messages: pruneToolResults(input.messages, {
-      keep: RESULTS_KEPT_IN_FULL,
-      replacements: PRUNED_FIELDS,
-    }),
-    tools: {
-      observe: observeTool,
-      navigate: navigateTool,
-      interact: interactTool,
-      read_docs: readDocsTool,
-      propose: proposeTool,
-      finish: finishTool,
+  const result = await span(
+    'model.generate',
+    modelSpanAttributes(resolved, input.jobId, 'exploration'),
+    async (set) => {
+      const generated = await generateText({
+        model: resolved.model,
+        ...(resolved.providerOptions ? { providerOptions: resolved.providerOptions } : {}),
+        system: EXPLORE_SYSTEM_PROMPT,
+        messages: pruneToolResults(input.messages, {
+          keep: RESULTS_KEPT_IN_FULL,
+          replacements: PRUNED_FIELDS,
+        }),
+        tools: {
+          observe: observeTool,
+          navigate: navigateTool,
+          interact: interactTool,
+          read_docs: readDocsTool,
+          propose: proposeTool,
+          finish: finishTool,
+        },
+        stopWhen: [stepCountIs(MAX_TOOL_STEPS), hasToolCall('finish')],
+      })
+      set({
+        'model.steps': generated.steps.length,
+        'tokens.input': generated.usage?.inputTokens ?? 0,
+        'tokens.output': generated.usage?.outputTokens ?? 0,
+        'turn.proposals': state.proposals.length,
+        'turn.finished': state.finished,
+      })
+      return generated
     },
-    stopWhen: [stepCountIs(MAX_TOOL_STEPS), hasToolCall('finish')],
-  })
+  )
 
   return {
     messagesJson: JSON.stringify(result.response.messages),

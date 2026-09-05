@@ -28,6 +28,7 @@ import { readJob, readRunReport } from '#/server/reports.server.ts'
 import { assertProject, loadEnvironment, loadRun, loadSuiteRun } from '#/server/scope.ts'
 import { ValidationError } from '#/server/validate.ts'
 import { WebhookApiError, applyRateLimit } from '#/server/webhooks.ts'
+import { span } from '#/engine/tracing.ts'
 
 export const MCP_SCOPES = ['read', 'write'] as const
 export type McpScope = (typeof MCP_SCOPES)[number]
@@ -89,15 +90,23 @@ function describe(error: unknown): string {
 }
 
 /** Every tool runs through this so a thrown error becomes an honest tool result. */
-function guarded<Input>(handler: (input: Input, who: McpProps, db: Db) => Promise<unknown>) {
-  return async (input: Input) => {
-    try {
-      const who = principal()
-      return text(await handler(input, who, createDb(env.DB)))
-    } catch (error) {
-      return failure(describe(error))
-    }
-  }
+function guarded<Input>(
+  name: string,
+  handler: (input: Input, who: McpProps, db: Db) => Promise<unknown>,
+) {
+  return (input: Input) =>
+    span('mcp.tool', { 'tool.name': name }, async (set) => {
+      try {
+        const who = principal()
+        set({ 'organization.id': who.organizationId, 'user.id': who.userId })
+        const result = text(await handler(input, who, createDb(env.DB)))
+        set({ ok: true })
+        return result
+      } catch (error) {
+        set({ ok: false })
+        return failure(describe(error))
+      }
+    })
 }
 
 function links(who: McpProps) {
@@ -231,7 +240,7 @@ export function createFlaremenderMcpServer() {
       inputSchema: {},
       annotations: { readOnlyHint: true },
     },
-    guarded(async (_input, who, db) => {
+    guarded('list_projects', async (_input, who, db) => {
       requireScope(who, 'read')
       await limited(who, 'read')
 
@@ -292,7 +301,7 @@ export function createFlaremenderMcpServer() {
       },
       annotations: { readOnlyHint: true },
     },
-    guarded(async ({ projectId, status }, who, db) => {
+    guarded('list_tests', async ({ projectId, status }, who, db) => {
       requireScope(who, 'read')
       await limited(who, 'read')
       await assertProject(db, who.organizationId, projectId)
@@ -341,7 +350,7 @@ export function createFlaremenderMcpServer() {
       inputSchema: { testId: z.string() },
       annotations: { readOnlyHint: true },
     },
-    guarded(async ({ testId }, who, db) => {
+    guarded('get_test', async ({ testId }, who, db) => {
       requireScope(who, 'read')
       await limited(who, 'read')
       const { test, project: owner } = await loadTest(db, who, testId)
@@ -415,37 +424,44 @@ export function createFlaremenderMcpServer() {
         environmentId: z.string().optional().describe('Defaults to the project default.'),
       },
     },
-    guarded(async ({ projectId, title, description, generate, environmentId }, who, db) => {
-      requireScope(who, 'write')
-      await limited(who, 'trigger')
-      await assertProject(db, who.organizationId, projectId)
+    guarded(
+      'create_test',
+      async ({ projectId, title, description, generate, environmentId }, who, db) => {
+        requireScope(who, 'write')
+        await limited(who, 'trigger')
+        await assertProject(db, who.organizationId, projectId)
 
-      const created = await createIntentRecord(db, {
-        projectId,
-        title: title.trim(),
-        description: description.trim(),
-        createdBy: who.userId,
-      })
-
-      let job: { id: string } | null = null
-      if (generate ?? true) {
-        const target = await pickEnvironment(db, who, projectId, environmentId, 'generate')
-        const queued = await queueGeneration(db, {
-          intentId: created.id,
+        const created = await createIntentRecord(db, {
           projectId,
-          organizationId: who.organizationId,
-          environment: target,
+          title: title.trim(),
+          description: description.trim(),
           createdBy: who.userId,
         })
-        job = { id: queued.jobId }
-      }
 
-      return {
-        test: { id: created.id, title: created.title, status: job ? 'generating' : created.status },
-        job: job ? { id: job.id, hint: 'Poll get_job with this id.' } : null,
-        dashboardUrl: links(who).test(projectId, created.id),
-      }
-    }),
+        let job: { id: string } | null = null
+        if (generate ?? true) {
+          const target = await pickEnvironment(db, who, projectId, environmentId, 'generate')
+          const queued = await queueGeneration(db, {
+            intentId: created.id,
+            projectId,
+            organizationId: who.organizationId,
+            environment: target,
+            createdBy: who.userId,
+          })
+          job = { id: queued.jobId }
+        }
+
+        return {
+          test: {
+            id: created.id,
+            title: created.title,
+            status: job ? 'generating' : created.status,
+          },
+          job: job ? { id: job.id, hint: 'Poll get_job with this id.' } : null,
+          dashboardUrl: links(who).test(projectId, created.id),
+        }
+      },
+    ),
   )
 
   server.registerTool(
@@ -458,7 +474,7 @@ export function createFlaremenderMcpServer() {
         environmentId: z.string().optional().describe('Defaults to the project default.'),
       },
     },
-    guarded(async ({ testId, environmentId }, who, db) => {
+    guarded('generate_test', async ({ testId, environmentId }, who, db) => {
       requireScope(who, 'write')
       await limited(who, 'trigger')
       const { test, project: owner } = await loadTest(db, who, testId)
@@ -502,7 +518,7 @@ export function createFlaremenderMcpServer() {
         environmentId: z.string().optional(),
       },
     },
-    guarded(async ({ projectId, focus, environmentId }, who, db) => {
+    guarded('explore_project', async ({ projectId, focus, environmentId }, who, db) => {
       requireScope(who, 'write')
       await limited(who, 'trigger')
       await assertProject(db, who.organizationId, projectId)
@@ -533,7 +549,7 @@ export function createFlaremenderMcpServer() {
       inputSchema: { jobId: z.string() },
       annotations: { readOnlyHint: true },
     },
-    guarded(async ({ jobId }, who, db) => {
+    guarded('get_job', async ({ jobId }, who, db) => {
       requireScope(who, 'read')
       await limited(who, 'read')
       return jobSummary(db, who, jobId)
@@ -550,7 +566,7 @@ export function createFlaremenderMcpServer() {
         environmentId: z.string().optional().describe('Defaults to the project default.'),
       },
     },
-    guarded(async ({ testId, environmentId }, who, db) => {
+    guarded('run_test', async ({ testId, environmentId }, who, db) => {
       requireScope(who, 'write')
       await limited(who, 'trigger')
       const { test, project: owner } = await loadTest(db, who, testId)
@@ -596,7 +612,7 @@ export function createFlaremenderMcpServer() {
         testIds: z.array(z.string()).max(200).optional().describe('Restrict to these tests.'),
       },
     },
-    guarded(async ({ projectId, environmentId, testIds }, who, db) => {
+    guarded('run_suite', async ({ projectId, environmentId, testIds }, who, db) => {
       requireScope(who, 'write')
       await limited(who, 'trigger')
       await assertProject(db, who.organizationId, projectId)
@@ -631,7 +647,7 @@ export function createFlaremenderMcpServer() {
       inputSchema: { runId: z.string() },
       annotations: { readOnlyHint: true },
     },
-    guarded(async ({ runId }, who, db) => {
+    guarded('get_run', async ({ runId }, who, db) => {
       requireScope(who, 'read')
       await limited(who, 'read')
       const report = await readRunReport(db, who.organizationId, runId)
@@ -652,7 +668,7 @@ export function createFlaremenderMcpServer() {
       inputSchema: { suiteRunId: z.string() },
       annotations: { readOnlyHint: true },
     },
-    guarded(async ({ suiteRunId }, who, db) => {
+    guarded('get_suite_run', async ({ suiteRunId }, who, db) => {
       requireScope(who, 'read')
       await limited(who, 'read')
       const scoped = await loadSuiteRun(db, who.organizationId, suiteRunId)
@@ -711,7 +727,7 @@ export function createFlaremenderMcpServer() {
         'Ask the AI to fix the script behind a failed run. It replays the flow in a real browser, patches the failing step, verifies the fix, and leaves the new version for a person to accept (or adopts it, if the heal policy is set to auto). Returns a job to poll.',
       inputSchema: { runId: z.string() },
     },
-    guarded(async ({ runId }, who, db) => {
+    guarded('repair_run', async ({ runId }, who, db) => {
       requireScope(who, 'write')
       await limited(who, 'trigger')
       const scoped = await loadRun(db, who.organizationId, runId)

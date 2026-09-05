@@ -9,6 +9,7 @@ import type {
   SessionStartResponse,
 } from '#/engine/contract.ts'
 import HARNESS_SOURCE from '#/engine/harness/harness.generated.js?raw'
+import { span } from '#/engine/tracing.ts'
 
 const HARNESS_COMPATIBILITY_DATE = '2026-08-01'
 
@@ -89,13 +90,31 @@ export async function executeInDynamicWorker(options: ExecuteOptions): Promise<H
     channel: options.channel,
   })
 
-  return harness.execute({
-    timeoutMs: options.timeoutMs ?? DEFAULT_SCRIPT_TIMEOUT_MS,
-    actionTimeoutMs: options.actionTimeoutMs ?? 30_000,
-    trace: options.trace ?? true,
-    sessionId: options.sessionId ?? null,
-    keepSessionAlive: options.keepSessionAlive ?? false,
-  })
+  return span(
+    'harness.execute',
+    {
+      'run.id': options.runId,
+      'script.chars': options.code.length,
+      'session.reused': Boolean(options.sessionId),
+      'trace.requested': options.trace ?? true,
+    },
+    async (set) => {
+      const response = await harness.execute({
+        timeoutMs: options.timeoutMs ?? DEFAULT_SCRIPT_TIMEOUT_MS,
+        actionTimeoutMs: options.actionTimeoutMs ?? 30_000,
+        trace: options.trace ?? true,
+        sessionId: options.sessionId ?? null,
+        keepSessionAlive: options.keepSessionAlive ?? false,
+      })
+      set({
+        'run.outcome': response.result.outcome,
+        'run.steps': response.result.steps.length,
+        'run.duration_ms': response.result.durationMs,
+        'run.error_kind': response.errorKind,
+      })
+      return response
+    },
+  )
 }
 
 export async function releaseBrowserSession(options: {
@@ -110,7 +129,7 @@ export async function releaseBrowserSession(options: {
     runId: '',
   })
 
-  return harness.release(options.sessionId)
+  return span('harness.release', {}, () => harness.release(options.sessionId))
 }
 
 export interface GenerationSessionOptions {
@@ -133,9 +152,13 @@ export async function startGenerationSession(
     channel: options.channel,
   })
 
-  return harness.startSession({
-    actionTimeoutMs: options.actionTimeoutMs ?? GENERATION_ACTION_TIMEOUT_MS,
-    snapshotLimit: options.snapshotLimit ?? DEFAULT_SNAPSHOT_LIMIT,
+  return span('harness.session.start', { 'job.id': options.jobId }, async (set) => {
+    const response = await harness.startSession({
+      actionTimeoutMs: options.actionTimeoutMs ?? GENERATION_ACTION_TIMEOUT_MS,
+      snapshotLimit: options.snapshotLimit ?? DEFAULT_SNAPSHOT_LIMIT,
+    })
+    set({ 'session.started': Boolean(response.sessionId) })
+    return response
   })
 }
 
@@ -154,11 +177,15 @@ export async function observeInDynamicWorker(
     channel: options.channel,
   })
 
-  return harness.observe({
-    sessionId: options.sessionId,
-    actionTimeoutMs: options.actionTimeoutMs ?? GENERATION_ACTION_TIMEOUT_MS,
-    timeoutMs: DEFAULT_FRAGMENT_TIMEOUT_MS,
-    snapshotLimit: options.snapshotLimit ?? DEFAULT_SNAPSHOT_LIMIT,
+  return span('harness.observe', { 'job.id': options.jobId }, async (set) => {
+    const response = await harness.observe({
+      sessionId: options.sessionId,
+      actionTimeoutMs: options.actionTimeoutMs ?? GENERATION_ACTION_TIMEOUT_MS,
+      timeoutMs: DEFAULT_FRAGMENT_TIMEOUT_MS,
+      snapshotLimit: options.snapshotLimit ?? DEFAULT_SNAPSHOT_LIMIT,
+    })
+    set({ ok: response.observation !== null, 'session.lost': response.sessionLost })
+    return response
   })
 }
 
@@ -180,11 +207,24 @@ export async function actInDynamicWorker(
     channel: options.channel,
   })
 
-  return harness.act({
-    sessionId: options.sessionId,
-    actionTimeoutMs: options.actionTimeoutMs ?? GENERATION_ACTION_TIMEOUT_MS,
-    timeoutMs: options.timeoutMs ?? DEFAULT_FRAGMENT_TIMEOUT_MS,
-    snapshotLimit: options.snapshotLimit ?? DEFAULT_SNAPSHOT_LIMIT,
-    stepIndexOffset: options.stepIndexOffset ?? 0,
-  })
+  return span(
+    'harness.act',
+    { 'job.id': options.jobId, 'fragment.chars': options.code.length },
+    async (set) => {
+      const response = await harness.act({
+        sessionId: options.sessionId,
+        actionTimeoutMs: options.actionTimeoutMs ?? GENERATION_ACTION_TIMEOUT_MS,
+        timeoutMs: options.timeoutMs ?? DEFAULT_FRAGMENT_TIMEOUT_MS,
+        snapshotLimit: options.snapshotLimit ?? DEFAULT_SNAPSHOT_LIMIT,
+        stepIndexOffset: options.stepIndexOffset ?? 0,
+      })
+      set({
+        ok: response.ok,
+        'fragment.steps': response.steps.length,
+        'fragment.duration_ms': response.durationMs,
+        'session.lost': response.sessionLost,
+      })
+      return response
+    },
+  )
 }

@@ -5,6 +5,7 @@
  * failure ends up as a delivery row, not an exception.
  */
 import { and, desc, eq, inArray, sql } from 'drizzle-orm'
+import { span } from '#/engine/tracing.ts'
 
 import { createDb, type Db } from '#/db/index.ts'
 import {
@@ -324,7 +325,32 @@ async function deliverOnce(
   return { responseStatus: response.status, error: null }
 }
 
-export async function deliver(
+export function deliver(
+  env: Cloudflare.Env,
+  destination: Destination,
+  event: NotificationEvent,
+  subjectId: string,
+): Promise<DeliveryOutcome> {
+  return span(
+    'notify.deliver',
+    {
+      'destination.kind': destination.kind,
+      'destination.id': destination.id,
+      'event.type': event.type,
+    },
+    async (set) => {
+      const outcome = await deliverWithRetries(env, destination, event, subjectId)
+      set({
+        'delivery.status': outcome.status,
+        'delivery.response_status': outcome.responseStatus,
+        'delivery.error': outcome.error,
+      })
+      return outcome
+    },
+  )
+}
+
+async function deliverWithRetries(
   env: Cloudflare.Env,
   destination: Destination,
   event: NotificationEvent,

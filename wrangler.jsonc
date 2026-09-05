@@ -29,6 +29,14 @@
   // placeholder that the Deploy button replaces; by hand, `wrangler kv namespace create
   // OAUTH_KV` prints the real one. See docs/mcp.md.
   "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "00000000000000000000000000000000" }],
+  // Logs and traces in the Workers Observability dashboard. Every generation turn, model
+  // call, browser step and notification is a named span; lower the sampling rates on a
+  // busy instance. See docs/architecture.md, "Observability".
+  "observability": {
+    "enabled": true,
+    "logs": { "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 1 },
+  },
   "browser": { "binding": "BROWSER" },
   "ai": { "binding": "AI", "remote": true },
   "ratelimits": [

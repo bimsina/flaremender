@@ -370,6 +370,31 @@ organization, which scopes, which origin). The consent page itself is
 client and the scopes and asks which organization the connection may act in. Grants
 and tokens live in the `OAUTH_KV` namespace. See [docs/mcp.md](mcp.md).
 
+### Observability
+
+`wrangler.jsonc` turns on Workers Logs and Traces, so every request, Workflow
+step, binding call and outbound fetch is already recorded. On top of that the
+engine names the parts that matter with custom spans (`src/engine/tracing.ts`,
+a thin wrapper over `tracing.enterSpan` from `cloudflare:workers`):
+
+| Span                    | Where                        | Carries                                                       |
+| ----------------------- | ---------------------------- | ------------------------------------------------------------- |
+| `model.generate`        | a generation or explore turn | model id, provider, route, key source, gateway, tokens, steps |
+| `model.stream`          | a project chat turn          | the same, plus whether the turn failed                        |
+| `harness.execute`       | a run                        | run id, script size, outcome, steps, duration, error kind     |
+| `harness.act`           | one fragment during a turn   | job id, fragment size, ok, steps, duration, session lost      |
+| `harness.observe`       | reading the page             | job id, ok, session lost                                      |
+| `harness.session.start` | opening a browser            | job id, whether it came up                                    |
+| `notify.deliver`        | one notification             | destination kind, event type, status, response status, error  |
+| `mcp.tool`              | one MCP tool call            | tool name, organization, user, ok                             |
+
+An error inside a span marks it with `error` and `error.message` before
+rethrowing. Open Workers → your Worker → Observability in the Cloudflare
+dashboard to see a generation as a waterfall: the model call, the browser steps
+it caused, the D1 writes between them. Traces also export to any OpenTelemetry
+destination from the dashboard. Both sampling rates are 1 in the shipped config;
+lower `head_sampling_rate` on a busy instance.
+
 ### Schedules and retention
 
 Two cron triggers reach `scheduled` in `src/server.ts`, told apart by the

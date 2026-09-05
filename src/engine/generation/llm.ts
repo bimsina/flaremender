@@ -232,3 +232,20 @@ export async function resolveModel(
     `${PROVIDER_LABELS[provider]} has no API key, so "${modelId}" cannot run. Add one under Organization → Model providers, ask an administrator to add one in Administration → Settings or set the ${PROVIDER_SECRET_VARS[provider]} Worker secret, or turn on AI Gateway in Administration → Settings to pay with Cloudflare credits instead.`,
   )
 }
+
+/** The attributes a `model.*` span carries, so traces can be filtered by route and key. */
+export function modelSpanAttributes(
+  resolved: ResolvedModel,
+  subjectId: string,
+  kind: 'generation' | 'exploration' | 'chat',
+) {
+  return {
+    'model.id': resolved.modelId,
+    'model.provider': resolved.provider,
+    'model.route': resolved.route,
+    'model.key_source': resolved.keySource,
+    'model.gateway': resolved.gatewayId,
+    'subject.id': subjectId,
+    kind,
+  }
+}

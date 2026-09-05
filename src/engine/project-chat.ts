@@ -16,7 +16,8 @@ import type {
 } from '#/engine/chat/contract.ts'
 import { CHAT_SYSTEM_PROMPT, buildChatContext } from '#/engine/chat/prompts.ts'
 import { type ChatToolBus, buildChatTools } from '#/engine/chat/tools.ts'
-import { resolveModel } from '#/engine/generation/llm.ts'
+import { modelSpanAttributes, resolveModel } from '#/engine/generation/llm.ts'
+import { span } from '#/engine/tracing.ts'
 import { type Scrubber, createScrubber } from '#/engine/runner/scrub.ts'
 import { createId } from '#/lib/ids.ts'
 import { decryptSecret } from '#/server/crypto.ts'
@@ -419,43 +420,55 @@ export class ProjectChat extends DurableObject<Cloudflare.Env> {
       modelId = resolved.modelId
       const history = await this.#loadHistory(session)
 
-      const result = streamText({
-        model: resolved.model,
-        ...(resolved.providerOptions ? { providerOptions: resolved.providerOptions } : {}),
-        system: session.systemPrompt,
-        messages: history,
-        tools: buildChatTools(
-          {
-            db: session.db,
-            projectId: session.request.projectId,
-            organizationId: session.request.organizationId,
-            userId: session.request.userId,
-          },
-          bus,
-        ),
-        stopWhen: stepCountIs(MAX_TOOL_STEPS),
-      })
+      await span(
+        'model.stream',
+        modelSpanAttributes(resolved, session.request.projectId, 'chat'),
+        async (set) => {
+          const result = streamText({
+            model: resolved.model,
+            ...(resolved.providerOptions ? { providerOptions: resolved.providerOptions } : {}),
+            system: session.systemPrompt,
+            messages: history,
+            tools: buildChatTools(
+              {
+                db: session.db,
+                projectId: session.request.projectId,
+                organizationId: session.request.organizationId,
+                userId: session.request.userId,
+              },
+              bus,
+            ),
+            stopWhen: stepCountIs(MAX_TOOL_STEPS),
+          })
 
-      for await (const part of result.fullStream) {
-        if (part.type === 'text-delta') {
-          this.#appendText(session, part.text)
-          await this.#emit(
-            { type: 'text.delta', messageId, text: part.text, at: Date.now() },
-            session,
-          )
-          continue
-        }
+          for await (const part of result.fullStream) {
+            if (part.type === 'text-delta') {
+              this.#appendText(session, part.text)
+              await this.#emit(
+                { type: 'text.delta', messageId, text: part.text, at: Date.now() },
+                session,
+              )
+              continue
+            }
 
-        if (part.type === 'error') {
-          failure = part.error instanceof Error ? part.error.message : String(part.error)
-        }
-      }
+            if (part.type === 'error') {
+              failure = part.error instanceof Error ? part.error.message : String(part.error)
+            }
+          }
 
-      try {
-        const total = await result.totalUsage
-        usage.inputTokens = total.inputTokens ?? 0
-        usage.outputTokens = total.outputTokens ?? 0
-      } catch {}
+          try {
+            const total = await result.totalUsage
+            usage.inputTokens = total.inputTokens ?? 0
+            usage.outputTokens = total.outputTokens ?? 0
+          } catch {}
+
+          set({
+            'tokens.input': usage.inputTokens,
+            'tokens.output': usage.outputTokens,
+            'turn.failed': failure !== null,
+          })
+        },
+      )
     } catch (error) {
       failure = error instanceof Error ? error.message : String(error)
     }

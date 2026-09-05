@@ -5,7 +5,8 @@ import { createDb } from '#/db/index.ts'
 import { environmentVariable } from '#/db/schema/app.ts'
 import { pruneToolResults } from '#/engine/agent-transcript.ts'
 import type { ActResponse, PageObservation } from '#/engine/contract.ts'
-import { resolveModel } from '#/engine/generation/llm.ts'
+import { modelSpanAttributes, resolveModel } from '#/engine/generation/llm.ts'
+import { span } from '#/engine/tracing.ts'
 import {
   type GenerationContext,
   SYSTEM_PROMPT,
@@ -392,17 +393,31 @@ export async function runTurn(env: Cloudflare.Env, input: TurnInput): Promise<Tu
     },
   })
 
-  const result = await generateText({
-    model: resolved.model,
-    ...(resolved.providerOptions ? { providerOptions: resolved.providerOptions } : {}),
-    system: input.systemPrompt ?? SYSTEM_PROMPT,
-    messages: pruneToolResults(input.messages, {
-      keep: OBSERVATIONS_KEPT_IN_FULL,
-      replacements: PRUNED_FIELDS,
-    }),
-    tools: { observe: observeTool, act: actTool, finish: finishTool },
-    stopWhen: [stepCountIs(MAX_TOOL_STEPS), hasToolCall('finish')],
-  })
+  const result = await span(
+    'model.generate',
+    modelSpanAttributes(resolved, input.jobId, 'generation'),
+    async (set) => {
+      const generated = await generateText({
+        model: resolved.model,
+        ...(resolved.providerOptions ? { providerOptions: resolved.providerOptions } : {}),
+        system: input.systemPrompt ?? SYSTEM_PROMPT,
+        messages: pruneToolResults(input.messages, {
+          keep: OBSERVATIONS_KEPT_IN_FULL,
+          replacements: PRUNED_FIELDS,
+        }),
+        tools: { observe: observeTool, act: actTool, finish: finishTool },
+        stopWhen: [stepCountIs(MAX_TOOL_STEPS), hasToolCall('finish')],
+      })
+      set({
+        'model.steps': generated.steps.length,
+        'tokens.input': generated.usage?.inputTokens ?? 0,
+        'tokens.output': generated.usage?.outputTokens ?? 0,
+        'turn.fragments': state.fragments.length,
+        'turn.finished': state.finished,
+      })
+      return generated
+    },
+  )
 
   if (state.failures.total >= MAX_TOTAL_FAILURES && !state.finished) {
     state.finished = true

@@ -18,6 +18,7 @@ One requirement rules out the Workers Free plan. The rest is setup.
 | Browser Rendering              | every test runs in a real browser                 | Free and Paid                                                                                                                                               |
 | Workflows, Durable Objects, D1 | orchestration, live updates, storage              | Free and Paid                                                                                                                                               |
 | KV                             | OAuth grants for the [MCP server](mcp.md)         | Free and Paid                                                                                                                                               |
+| Workers Logs and Traces        | every run, turn and model call, as a waterfall    | On by default in `wrangler.jsonc`; included on Paid up to 20 million events a month                                                                         |
 | Email Service                  | email notifications                               | Optional. Webhooks, Slack and Discord need nothing; see [docs/notifications.md](notifications.md)                                                           |
 
 ### What it costs
