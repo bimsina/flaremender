@@ -104,6 +104,7 @@ export async function persistExploration(
     summary: string | null
     turns: number
     modelId: string | null
+    usage?: { inputTokens: number; outputTokens: number }
   },
 ): Promise<PersistedExploration> {
   const db = createDb(env.DB)
@@ -146,6 +147,8 @@ export async function persistExploration(
       status: 'succeeded',
       modelId: context.modelId,
       turns: context.turns,
+      inputTokens: context.usage?.inputTokens ?? 0,
+      outputTokens: context.usage?.outputTokens ?? 0,
       stuckReason: null,
       finishedAt: new Date(),
     })
@@ -216,7 +219,12 @@ async function announceChatPlan(
 export async function abandonExploration(
   env: Cloudflare.Env,
   loaded: LoadedExploration,
-  context: { reason: string; turns: number; modelId: string | null },
+  context: {
+    reason: string
+    turns: number
+    modelId: string | null
+    usage?: { inputTokens: number; outputTokens: number }
+  },
 ): Promise<void> {
   const db = createDb(env.DB)
 
@@ -226,6 +234,8 @@ export async function abandonExploration(
       status: 'failed',
       modelId: context.modelId,
       turns: context.turns,
+      inputTokens: context.usage?.inputTokens ?? 0,
+      outputTokens: context.usage?.outputTokens ?? 0,
       stuckReason: context.reason,
       finishedAt: new Date(),
     })

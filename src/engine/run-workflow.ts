@@ -1,6 +1,7 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from 'cloudflare:workers'
 
 import type { RunStatus } from '#/db/schema/app.ts'
+import { maybeQueueAutomaticRepair } from '#/engine/repair/trigger.ts'
 import {
   EXECUTE_STEP_CONFIG,
   PERSIST_ERROR_STEP_CONFIG,
@@ -29,7 +30,22 @@ export class RunWorkflow extends WorkflowEntrypoint<Cloudflare.Env, RunWorkflowP
         executeRun(this.env, runId, loaded),
       )
 
-      return await step.do('persist', () => persistRun(this.env, runId, loaded, executed))
+      const persisted = await step.do('persist', () =>
+        persistRun(this.env, runId, loaded, executed),
+      )
+
+      if (persisted.status === 'failed') {
+        // A repair that cannot be queued must never turn a recorded failure into an error.
+        await step.do('repair', () =>
+          maybeQueueAutomaticRepair(this.env, runId).catch((error: unknown) => ({
+            queued: false,
+            jobId: null,
+            reason: error instanceof Error ? error.message : String(error),
+          })),
+        )
+      }
+
+      return persisted
     } catch (error) {
       await step.do('persist-error', PERSIST_ERROR_STEP_CONFIG, () =>
         persistRunError(this.env, runId, error),

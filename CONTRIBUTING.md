@@ -70,6 +70,13 @@ CI runs exactly these, plus `pnpm build`.
 - **Migrations are additive.** Do not run `db:push` against a database that has
   history.
 
+## Evals
+
+Prompt and agent-loop changes are measured, not eyeballed. `pnpm eval --model …`
+generates a fixed scenario set against the example apps and prints a score table;
+see [docs/evals.md](docs/evals.md). Include the before and after tables in a PR
+that touches `src/engine/*/prompts.ts`.
+
 ## Tests
 
 `tests/` covers the invariants that are expensive to get wrong: organization scoping,

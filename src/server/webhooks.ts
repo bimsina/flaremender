@@ -26,13 +26,15 @@ export class WebhookApiError extends Error {
   }
 }
 
-type WebhookPermission = 'trigger' | 'read'
+export type WebhookPermission = 'trigger' | 'read'
 
-interface WebhookPrincipal {
+export interface WebhookPrincipal {
   apiKeyId: string
   apiKeyName: string
   organizationId: string
   projectId: string
+  /** The user who created the key, from its metadata. Rows the key creates are attributed to them. */
+  userId: string | null
 }
 
 function bearerToken(request: Request): string {
@@ -45,7 +47,7 @@ function bearerToken(request: Request): string {
   return match[1]
 }
 
-async function authenticateWebhook(
+export async function authenticateWebhook(
   request: Request,
   permission: WebhookPermission,
 ): Promise<WebhookPrincipal> {
@@ -80,13 +82,17 @@ async function authenticateWebhook(
     apiKeyName: verified.key.name ?? 'Unnamed key',
     organizationId: verified.key.referenceId,
     projectId,
+    userId:
+      verified.key.metadata && typeof verified.key.metadata.createdBy === 'string'
+        ? verified.key.metadata.createdBy
+        : null,
   }
 }
 
-async function applyRateLimit(principal: WebhookPrincipal, permission: WebhookPermission) {
+export async function applyRateLimit(limiterKey: string, permission: WebhookPermission) {
   const limiter =
     permission === 'trigger' ? env.WEBHOOK_TRIGGER_RATE_LIMITER : env.WEBHOOK_READ_RATE_LIMITER
-  const result = await limiter.limit({ key: principal.apiKeyId })
+  const result = await limiter.limit({ key: limiterKey })
   if (!result.success) {
     throw new WebhookApiError('RATE_LIMITED', 'Too many webhook API requests.', 429, {
       'Retry-After': '60',
@@ -94,7 +100,7 @@ async function applyRateLimit(principal: WebhookPrincipal, permission: WebhookPe
   }
 }
 
-function assertProjectScope(principal: WebhookPrincipal, requestedProjectId: string) {
+export function assertProjectScope(principal: WebhookPrincipal, requestedProjectId: string) {
   if (principal.projectId !== requestedProjectId) {
     throw new WebhookApiError('FORBIDDEN', 'This API key belongs to a different project.', 403)
   }
@@ -337,7 +343,7 @@ async function triggerResponse(
 export async function triggerProjectWebhook(request: Request, requestedProjectId: string) {
   const principal = await authenticateWebhook(request, 'trigger')
   assertProjectScope(principal, requestedProjectId)
-  await applyRateLimit(principal, 'trigger')
+  await applyRateLimit(principal.apiKeyId, 'trigger')
   const db = getDb()
   const body = await requestBody(request)
   const target = await targetEnvironment(db, principal, body.environmentId)
@@ -429,7 +435,7 @@ export async function triggerTestWebhook(
 ) {
   const principal = await authenticateWebhook(request, 'trigger')
   assertProjectScope(principal, requestedProjectId)
-  await applyRateLimit(principal, 'trigger')
+  await applyRateLimit(principal.apiKeyId, 'trigger')
   const db = getDb()
   const body = await requestBody(request)
   const target = await targetEnvironment(db, principal, body.environmentId)
@@ -524,7 +530,7 @@ export async function triggerTestWebhook(
 
 export async function readWebhookExecution(request: Request, executionId: string) {
   const principal = await authenticateWebhook(request, 'read')
-  await applyRateLimit(principal, 'read')
+  await applyRateLimit(principal.apiKeyId, 'read')
   const db = getDb()
 
   if (executionId.startsWith('run_')) {
@@ -637,7 +643,7 @@ export async function readWebhookExecution(request: Request, executionId: string
 
 export async function readWebhookReport(request: Request, executionId: string) {
   const principal = await authenticateWebhook(request, 'read')
-  await applyRateLimit(principal, 'read')
+  await applyRateLimit(principal.apiKeyId, 'read')
   const format = new URL(request.url).searchParams.get('format') ?? 'json'
   if (format !== 'json' && format !== 'junit') {
     throw new WebhookApiError('INVALID_FORMAT', 'Use json or junit.', 400)

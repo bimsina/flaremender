@@ -11,6 +11,7 @@ export { BatchGenerateWorkflow } from '#/engine/batch-workflow.ts'
 export { ExploreWorkflow } from '#/engine/explore-workflow.ts'
 export { GenerateWorkflow } from '#/engine/generate-workflow.ts'
 export { ProjectChat } from '#/engine/project-chat.ts'
+export { RepairWorkflow } from '#/engine/repair-workflow.ts'
 export { RunChannel } from '#/engine/run-channel.ts'
 export { RunWorkflow } from '#/engine/run-workflow.ts'
 export { SuiteWorkflow } from '#/engine/suite-workflow.ts'
@@ -19,7 +20,7 @@ const LIVE_PATH = /^\/api\/runs\/([^/]+)\/live\/?$/
 
 const CHAT_PATH = /^\/api\/projects\/([^/]+)\/chat\/?$/
 
-const JOB_ID = /^(gen|exp|bat)_/
+const JOB_ID = /^(gen|exp|bat|rep)_/
 
 const RETENTION_CRON = '30 3 * * *'
 

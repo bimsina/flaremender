@@ -43,6 +43,7 @@ export interface Proposal {
 
 export interface ExploreTurnInput {
   jobId: string
+  organizationId: string
   environmentId: string
   projectModelId: string | null
   baseUrl: string
@@ -65,6 +66,7 @@ export interface ExploreTurnResult {
   refusedThinPlan: boolean
   modelId: string
   fatal: string | null
+  usage: { inputTokens: number; outputTokens: number }
 }
 
 function normaliseTitle(title: string): string {
@@ -80,7 +82,7 @@ export async function runExploreTurn(
 ): Promise<ExploreTurnResult> {
   const db = createDb(env.DB)
   const creds = await loadCredentials(env, input.environmentId)
-  const resolved = await resolveModel(db, input.projectModelId)
+  const resolved = await resolveModel(db, input.projectModelId, input.organizationId)
 
   const state = {
     sessionId: input.sessionId,
@@ -464,5 +466,9 @@ export async function runExploreTurn(
     refusedThinPlan: state.refusedThinPlan,
     modelId: resolved.modelId,
     fatal: state.fatal,
+    usage: {
+      inputTokens: result.usage?.inputTokens ?? 0,
+      outputTokens: result.usage?.outputTokens ?? 0,
+    },
   }
 }

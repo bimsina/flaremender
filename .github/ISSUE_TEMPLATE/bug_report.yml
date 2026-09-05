@@ -1,0 +1,37 @@
+name: Bug report
+description: Something did not work the way the docs say it should.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you got. Paste error text verbatim.
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where it ran
+      options:
+        - Deployed on Cloudflare (Workers Paid)
+        - Deployed on Cloudflare (Free plan)
+        - Local (pnpm dev)
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model
+      description: Only if generation, exploration or chat is involved. The id shown in the project settings, e.g. `anthropic:claude-sonnet-5`.
+  - type: input
+    id: commit
+    attributes:
+      label: Commit or version
+      description: Output of `git rev-parse --short HEAD`, or the tag you deployed.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Run logs, `wrangler tail` output, or browser console output. Remove anything secret. Environment variable values are redacted to `***` by the app, but check anyway.
+      render: text

@@ -30,6 +30,8 @@ export interface GenerationLive {
   outcome: RunOutcome | null
   errorMessage: string | null
   status: GenerationJobStatus | null
+  cost: { turns: number; inputTokens: number; outputTokens: number; modelId: string | null } | null
+  kind: 'generate' | 'explore' | 'batch' | 'repair' | null
 }
 
 export function useGenerationLive(jobId: string | null, intentId: string): GenerationLive {
@@ -80,5 +82,15 @@ export function useGenerationLive(jobId: string | null, intentId: string): Gener
       ? 'Job history is unavailable.'
       : (poll.data?.stuckReason ?? live.errorMessage),
     status: polledStatus,
+    kind: poll.data && poll.data.id === jobId ? poll.data.kind : null,
+    cost:
+      poll.data && poll.data.id === jobId
+        ? {
+            turns: poll.data.turns,
+            inputTokens: poll.data.inputTokens,
+            outputTokens: poll.data.outputTokens,
+            modelId: poll.data.modelId,
+          }
+        : null,
   }
 }

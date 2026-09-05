@@ -31,6 +31,11 @@ import { useState } from 'react'
 
 import { MenuRadioItem } from '#/components/menu-radio-item.tsx'
 import { ListToolbar } from '#/components/list.tsx'
+import { OrganizationProviderKeys } from '#/components/org-provider-keys.tsx'
+import { HealPolicySelect, describeHealPolicy } from '#/components/heal-policy-select.tsx'
+import { SettingRow } from '#/components/list.tsx'
+import { organizationSettingsQuery } from '#/lib/queries.ts'
+import { setOrganizationHealPolicy } from '#/server/repairs.ts'
 import { PageBody, PageHeader } from '#/components/page.tsx'
 import { authClient } from '#/lib/auth-client.ts'
 import { formatDate } from '#/lib/format.ts'
@@ -279,6 +284,33 @@ function OrganizationPage() {
             </Table>
           )}
         </section>
+
+        <section className="grid gap-3">
+          <div className="grid gap-1.5">
+            <Text as="h2" variant="heading">
+              Model providers
+            </Text>
+            <Text variant="secondary">
+              Keys saved here are used for every generation, exploration and chat turn in this
+              organization, ahead of anything the instance provides.
+              {canManage ? '' : ' Only owners and admins can change them.'}
+            </Text>
+          </div>
+          <OrganizationProviderKeys />
+        </section>
+
+        <section className="grid gap-3">
+          <div className="grid gap-1.5">
+            <Text as="h2" variant="heading">
+              Repairs
+            </Text>
+            <Text variant="secondary">
+              What the agent may do when a ready test fails. Projects and tests can override this.
+              {canManage ? '' : ' Only owners and admins can change it.'}
+            </Text>
+          </div>
+          <OrganizationRepairPolicy canManage={canManage} />
+        </section>
       </PageBody>
 
       <InviteMemberDialog open={inviting} onOpenChange={setInviting} />
@@ -294,6 +326,39 @@ function OrganizationPage() {
         organizationId={activeOrgId}
       />
     </>
+  )
+}
+
+function OrganizationRepairPolicy({ canManage }: { canManage: boolean }) {
+  const queryClient = useQueryClient()
+  const toast = useKumoToastManager()
+  const settings = useQuery(organizationSettingsQuery())
+
+  const save = useMutation({
+    mutationFn: (healPolicy: 'off' | 'draft' | 'auto') =>
+      setOrganizationHealPolicy({ data: { healPolicy } }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: organizationSettingsQuery().queryKey })
+      toast.add({ variant: 'success', title: 'Repair policy saved' })
+    },
+    onError: (error: Error) =>
+      toast.add({ variant: 'error', title: 'Could not save', description: error.message }),
+  })
+
+  const policy = settings.data?.healPolicy ?? 'off'
+
+  return (
+    <SettingRow label="When a ready test fails" hint={describeHealPolicy(policy)}>
+      <HealPolicySelect
+        aria-label="Repair policy"
+        value={policy}
+        loading={settings.isPending || save.isPending}
+        disabled={!canManage}
+        onChange={(next) => {
+          if (next !== 'inherit') save.mutate(next)
+        }}
+      />
+    </SettingRow>
   )
 }
 

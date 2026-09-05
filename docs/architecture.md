@@ -189,8 +189,9 @@ exploration will propose it again if it was a good idea.
 versions. Draft checks and generation verification are labeled and excluded
 from suites, schedules and regression pass rates. Authors explicitly mark a
 manual version ready; the assertion warning is only a hint about coverage.
-Complete generated tests may be ready even when they detect a real failure.
-Incomplete generated scripts stay drafts. Older runs keep their version and
+A generated script becomes ready only when its verification replay passes;
+an incomplete script, or one whose replay fails, stays a draft with the version
+saved. Older runs keep their version and
 environment snapshots and cannot certify a newly edited version.
 
 Each test keeps its own run history and duration trend.
@@ -214,6 +215,13 @@ report examples.
 See [the local reliability walkthrough](reliability-walkthrough.md) for
 repeatable fixtures, verification commands and the remaining milestone gates.
 
+**Which key a model call uses.** An organization's own provider key (Organization →
+Model providers) wins, then the Worker secret, then the key saved in the admin
+console. `src/server/provider-keys.ts` is the one place that order lives. Every
+generation, exploration and chat turn records the tokens the provider reported, on
+`generation_job` and `chat_message`, and the admin console sums them per
+organization.
+
 **`project.context`** is what the agents know about the app beyond any one
 intent: the chat writes it with `set_project_context`, an exploration appends
 what it found, and it is read into every chat turn and every generation's opening
@@ -229,6 +237,48 @@ the turn that started it ended, so the workflow posts its plan through
 `ProjectChat.announce()`, which redacts what it is given and declines to broadcast
 over a turn that is mid-answer, leaving the card in the transcript to re-read the
 history when it sees the job finish.
+
+### Repairs
+
+When a regression run fails, `maybeQueueAutomaticRepair` in
+`src/engine/repair/trigger.ts` decides whether the agent gets a go: the run must be
+a `failed` regression of the test's current ready version, the effective heal
+policy must not be `off`, nothing else may be generating for that test, and no
+repair may already have been tried for that script version. A person can start
+one from a failed run's page regardless of policy.
+
+```
+src/engine/
+  repair/statements.ts  the saved script, split back into the statements it was assembled from
+  repair/prompts.ts     the generation prompt plus "you are replacing one broken step"
+  repair/steps.ts       load, replay, prepare the verification, apply the policy
+  repair/trigger.ts     the automatic decision after a run persists
+  repair-workflow.ts    load → session → replay → turns → verify → persist
+src/server/
+  heal-policy.ts        test → project → organization, default off
+  repairs.ts            repair a run, accept or dismiss a repair, set the policies
+```
+
+A **RepairWorkflow** opens a browser session, replays the old script one statement at
+a time and stops at the first one that fails. Everything before it is the verified
+prefix, and the browser is exactly where the script broke. The same turn loop the
+generator uses then runs with a repair-specific framing: replace the failing
+statement, carry the remaining statements through, keep the assertions, change as
+little as possible, and say so if the feature is gone rather than assert around it.
+At most ten turns. The result is saved as a new agent-authored version and verified
+in a fresh session, exactly like a generation.
+
+The **heal policy** decides what happens to a repair that verified. `draft` parks it as
+the test's `pendingRepairVersionId`, which the test page shows as a banner with
+Accept and Dismiss; the failed run stays failed. `auto` makes it the current ready
+version and marks the failed run `healed`, which counts as a pass everywhere a pass
+is counted. Either way the failed run's attempt records `healApplied`: which job,
+which version, what broke, and whether it was adopted. A repair that does not verify
+is kept as a version in the history, never pointed at, and the job says why.
+
+Policy is read from the test, then the project, then the organization, and the
+organization's default is `off`. A manual repair under `off` or `draft` produces a
+pending repair; under `auto` it is adopted.
 
 ### Schedules and retention
 
@@ -280,6 +330,8 @@ pnpm lint            # oxlint
 pnpm format          # oxfmt
 pnpm typecheck       # tsc --noEmit
 pnpm test            # node --test
+pnpm eval            # generate the eval scenarios against the example apps and score them
+                     # (repair is not in the eval set yet)
 pnpm generate-routes # regenerate routeTree.gen.ts
 pnpm demo:seed       # fill a local instance with demo projects, tests and runs
 pnpm screenshots     # regenerate the images in this README

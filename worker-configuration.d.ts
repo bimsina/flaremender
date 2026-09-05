@@ -23,6 +23,7 @@ interface __BaseEnv_Env {
 	GENERATE_WORKFLOW: Workflow<Parameters<import("./src/server").GenerateWorkflow['run']>[0]['payload']>;
 	EXPLORE_WORKFLOW: Workflow<Parameters<import("./src/server").ExploreWorkflow['run']>[0]['payload']>;
 	BATCH_WORKFLOW: Workflow<Parameters<import("./src/server").BatchGenerateWorkflow['run']>[0]['payload']>;
+	REPAIR_WORKFLOW: Workflow<Parameters<import("./src/server").RepairWorkflow['run']>[0]['payload']>;
 }
 declare namespace Cloudflare {
 	interface GlobalProps {

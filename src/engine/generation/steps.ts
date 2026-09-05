@@ -29,6 +29,11 @@ export interface LoadedGeneration {
   previousStatus: IntentStatus
 }
 
+export interface TokenUsage {
+  inputTokens: number
+  outputTokens: number
+}
+
 export interface PreparedVerification {
   versionId: string
   version: number
@@ -190,6 +195,7 @@ export async function persistGeneration(
     executed: ExecutedRun
     modelId: string | null
     turns: number
+    usage: TokenUsage
     stuckReason: string | null
   },
 ): Promise<{ outcome: RunOutcome; versionId: string; runId: string }> {
@@ -202,17 +208,16 @@ export async function persistGeneration(
 
   const keepNewVersion = context.stuckReason === null || loaded.previousVersionId === null
 
+  // Only a script that replayed green in a fresh session is ready. Every fragment ran
+  // live while it was written, so a failed replay means the assembled script is not a
+  // faithful reproduction, not that the app is broken.
   await db
     .update(intent)
     .set({
       currentVersionId: keepNewVersion ? context.prepared.versionId : loaded.previousVersionId,
-      readiness: keepNewVersion ? (context.stuckReason === null ? 'ready' : 'draft') : undefined,
+      readiness: keepNewVersion ? (green ? 'ready' : 'draft') : undefined,
       lastRunId: keepNewVersion ? null : undefined,
-      status: keepNewVersion
-        ? context.stuckReason === null
-          ? 'ready'
-          : 'draft'
-        : loaded.previousStatus,
+      status: keepNewVersion ? (green ? 'ready' : 'draft') : loaded.previousStatus,
     })
     .where(
       and(
@@ -240,6 +245,8 @@ export async function persistGeneration(
       scriptVersionId: context.prepared.versionId,
       runId: context.prepared.runId,
       turns: context.turns,
+      inputTokens: context.usage.inputTokens,
+      outputTokens: context.usage.outputTokens,
       stuckReason: reason,
       finishedAt: new Date(),
     })
@@ -268,7 +275,7 @@ export async function persistGeneration(
 export async function abandonGeneration(
   env: Cloudflare.Env,
   loaded: LoadedGeneration,
-  context: { reason: string; turns: number; modelId: string | null },
+  context: { reason: string; turns: number; modelId: string | null; usage?: TokenUsage },
 ): Promise<void> {
   const db = createDb(env.DB)
 
@@ -280,6 +287,8 @@ export async function abandonGeneration(
         status: 'failed',
         modelId: context.modelId,
         turns: context.turns,
+        inputTokens: context.usage?.inputTokens ?? 0,
+        outputTokens: context.usage?.outputTokens ?? 0,
         stuckReason: context.reason,
         finishedAt: new Date(),
       })

@@ -7,7 +7,7 @@ import { Fragment, useState } from 'react'
 
 import { PageBody } from '#/components/page.tsx'
 import { ListToolbar } from '#/components/list.tsx'
-import { formatDate } from '#/lib/format.ts'
+import { formatCount, formatDate } from '#/lib/format.ts'
 import { adminMembershipsQuery, adminOrganizationsQuery } from '#/lib/queries.ts'
 
 export const Route = createFileRoute('/_app/admin/organizations')({
@@ -72,6 +72,7 @@ function AdminOrganizations() {
               <Table.Head>Slug</Table.Head>
               <Table.Head className="text-right">Members</Table.Head>
               <Table.Head className="text-right">Projects</Table.Head>
+              <Table.Head className="text-right">Tokens</Table.Head>
               <Table.Head>Created</Table.Head>
             </Table.Row>
           </Table.Header>
@@ -104,6 +105,12 @@ function AdminOrganizations() {
                   </Table.Cell>
                   <Table.Cell className="text-right tabular-nums">{org.members}</Table.Cell>
                   <Table.Cell className="text-right tabular-nums">{org.projects}</Table.Cell>
+                  <Table.Cell
+                    className="text-right tabular-nums"
+                    title={`${org.tokens.toLocaleString()} model tokens across generation, exploration and chat`}
+                  >
+                    {formatCount(org.tokens)}
+                  </Table.Cell>
                   <Table.Cell className="whitespace-nowrap text-kumo-subtle">
                     {formatDate(org.createdAt)}
                   </Table.Cell>
@@ -112,7 +119,7 @@ function AdminOrganizations() {
                   <Table.Row>
                     <Table.Cell
                       id={`organization-members-${org.id}`}
-                      colSpan={6}
+                      colSpan={7}
                       className="bg-kumo-recessed"
                     >
                       <MemberList organizationId={org.id} />

@@ -2,6 +2,7 @@ import { Badge, Banner, LayerCard, Loader, Text } from '@cloudflare/kumo'
 import { SparkleIcon, WarningCircleIcon } from '@phosphor-icons/react'
 
 import { StepList } from '#/components/step-list.tsx'
+import { formatCount } from '#/lib/format.ts'
 import type { LiveTransport } from '#/lib/use-channel-feed.ts'
 import { useGenerationLive } from '#/lib/use-generation-live.ts'
 
@@ -14,6 +15,7 @@ const TRANSPORT_LABEL: Record<LiveTransport, string> = {
 export function GenerationLivePanel({ jobId, intentId }: { jobId: string; intentId: string }) {
   const live = useGenerationLive(jobId, intentId)
   const succeeded = live.outcome === 'passed'
+  const repairing = live.kind === 'repair'
 
   return (
     <LayerCard className="px-5 py-4">
@@ -24,9 +26,15 @@ export function GenerationLivePanel({ jobId, intentId }: { jobId: string; intent
             <Text as="h3" variant="heading">
               {live.finished
                 ? succeeded
-                  ? 'Script generated and verified'
-                  : 'Generation needs attention'
-                : 'Writing the script'}
+                  ? repairing
+                    ? 'Repair verified'
+                    : 'Script generated and verified'
+                  : repairing
+                    ? 'Repair needs attention'
+                    : 'Generation needs attention'
+                : repairing
+                  ? 'Repairing the script'
+                  : 'Writing the script'}
             </Text>
           </div>
 
@@ -53,6 +61,12 @@ export function GenerationLivePanel({ jobId, intentId }: { jobId: string; intent
             title="Where it got to"
             description={live.errorMessage.split('\n')[0]}
           />
+        ) : null}
+
+        {live.finished && live.cost ? (
+          <Text as="p" variant="secondary" size="base">
+            <UsageLine {...live.cost} />
+          </Text>
         ) : null}
 
         {live.logs.length > 0 ? (
@@ -87,4 +101,24 @@ export function GenerationLivePanel({ jobId, intentId }: { jobId: string; intent
       </div>
     </LayerCard>
   )
+}
+
+/** "4 turns · 38.2k tokens in, 1.1k out · anthropic:claude-sonnet-5" */
+export function UsageLine({
+  turns,
+  inputTokens,
+  outputTokens,
+  modelId,
+}: {
+  turns: number
+  inputTokens: number
+  outputTokens: number
+  modelId: string | null
+}) {
+  const parts = [`${turns} turn${turns === 1 ? '' : 's'}`]
+  if (inputTokens > 0 || outputTokens > 0) {
+    parts.push(`${formatCount(inputTokens)} tokens in, ${formatCount(outputTokens)} out`)
+  }
+  if (modelId) parts.push(modelId)
+  return <>{parts.join(' · ')}</>
 }

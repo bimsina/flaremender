@@ -19,3 +19,6 @@ public/pw-trace
 
 # Screenshot captures are converted to WebP; stray PNGs are intermediates.
 docs/screenshots/*.png
+
+# Eval runs are local measurements, not source.
+evals/results

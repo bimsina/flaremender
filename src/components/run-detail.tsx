@@ -22,6 +22,7 @@ import type { ArtifactKeys, RunPurpose, RunStatus, RunTrigger } from '#/db/schem
 import { runQuery } from '#/lib/queries.ts'
 import type { RunResult } from '#/engine/contract.ts'
 import { readTranscript } from '#/lib/transcript.ts'
+import { describePurpose } from '#/lib/format.ts'
 
 const RouterLinkButton = createLink(LinkButton)
 
@@ -58,6 +59,7 @@ const TRIGGER_LABEL: Record<RunTrigger, string> = {
   regenerate: 'Regenerated',
   schedule: 'Schedule',
   webhook: 'Webhook',
+  repair: 'Repair',
 }
 
 export function RunDetailPanel({ runId, projectId }: { runId: string; projectId: string }) {
@@ -116,11 +118,9 @@ export function RunDetail({
     <div className="grid gap-6">
       <div className="flex flex-wrap items-center gap-3">
         <Text variant="secondary">
-          {data.run.purpose === 'draft-check'
-            ? 'Draft check · excluded from regression results'
-            : data.run.purpose === 'generation-verification'
-              ? 'Generation verification · excluded from regression results'
-              : 'Regression execution'}
+          {data.run.purpose === 'regression'
+            ? 'Regression execution'
+            : `${describePurpose(data.run.purpose)} · excluded from regression results`}
         </Text>
       </div>
       {variant === 'page' ? (

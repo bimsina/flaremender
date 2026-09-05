@@ -11,6 +11,8 @@ import {
   getInstanceSetupStatus,
   listAllowedModels,
 } from '#/server/instance.ts'
+import { getOrganizationProviderKeys } from '#/server/org-providers.ts'
+import { getOrganizationSettings, getPendingRepair } from '#/server/repairs.ts'
 import {
   getJob,
   getIntent,
@@ -216,6 +218,24 @@ export const adminMembershipsQuery = (organizationId: string) =>
     queryKey: ['admin', 'memberships', organizationId] as const,
     queryFn: () => listAllMemberships({ data: { organizationId } }),
     enabled: organizationId.length > 0,
+  })
+
+export const organizationSettingsQuery = () =>
+  queryOptions({
+    queryKey: ['organization', 'settings'] as const,
+    queryFn: () => getOrganizationSettings(),
+  })
+
+export const pendingRepairQuery = (intentId: string) =>
+  queryOptions({
+    queryKey: ['intent', intentId, 'pending-repair'] as const,
+    queryFn: () => getPendingRepair({ data: { intentId } }),
+  })
+
+export const organizationProviderKeysQuery = () =>
+  queryOptions({
+    queryKey: ['organization', 'provider-keys'] as const,
+    queryFn: () => getOrganizationProviderKeys(),
   })
 
 export const jobQuery = (jobId: string) =>

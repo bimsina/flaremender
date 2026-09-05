@@ -1,0 +1,19 @@
+name: Feature request
+description: Something Flaremender should do and does not.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you are trying to do
+      description: The situation, not the solution. What are you testing, and what gets in the way?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like to happen
+  - type: textarea
+    id: workaround
+    attributes:
+      label: What you do today instead

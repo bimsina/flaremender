@@ -11,8 +11,9 @@ does not.
 - **Tenancy.** Every organization-scoped server function goes through `orgMiddleware`,
   which reads the organization id from the session, never from the client, and
   re-checks membership on every call. Resources load through an org-joined query.
-- **Secrets at rest.** Environment variables and provider API keys are encrypted with
-  AES-256-GCM under `ENCRYPTION_KEY`.
+- **Secrets at rest.** Environment variables and provider API keys, both the
+  instance's and each organization's own, are encrypted with AES-256-GCM under
+  `ENCRYPTION_KEY`.
 - **Secrets in flight.** `secret()` values become `***` in logs, step labels and
   error messages before anything is written down.
 - **Script isolation.** Scripts run in a Dynamic Worker with `globalOutbound: null` and
@@ -47,6 +48,7 @@ reply.
   from inside it that the sandbox is not supposed to hold.
 - Bypassing the webhook API key check, or using one project's key against another.
 - Privilege escalation to instance admin.
+- Making a repaired script current without the `auto` policy or a person accepting it.
 
 ## Known and documented
 

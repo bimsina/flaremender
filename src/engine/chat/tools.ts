@@ -33,6 +33,7 @@ import {
   queueExploration,
   queueGeneration,
   queueIntentRun,
+  queueRepair,
   queueSuiteRun,
   resolveTargetEnvironment,
   setEnvironmentVariableRecord,
@@ -597,6 +598,77 @@ export function buildChatTools(context: ChatToolContext, bus: ChatToolBus) {
     },
   })
 
+  const repairTest = define<{ runId: string }>({
+    name: 'repair_test',
+    description:
+      "Start the agent that fixes a failed run's script: it replays the script in a real browser to find the broken step, replaces it, carries the rest of the flow through and verifies the result. What happens to a verified repair depends on the repair policy: it is adopted automatically or left for a person to accept. Takes minutes. Returns immediately with a job whose card streams progress.",
+    schema: {
+      type: 'object',
+      properties: {
+        runId: {
+          type: 'string',
+          description: 'The failed regression run to repair, from list_runs or get_run.',
+        },
+      },
+      required: ['runId'],
+      additionalProperties: false,
+    },
+    summary: () => 'Starting a repair',
+    async run(input) {
+      const [row] = await db
+        .select({ run, intent })
+        .from(run)
+        .innerJoin(intent, eq(intent.id, run.intentId))
+        .where(and(eq(run.id, input.runId), eq(run.projectId, projectId)))
+        .limit(1)
+      if (!row) throw new ValidationError(`No run with id "${input.runId}" in this project.`)
+      if (row.run.status !== 'failed') {
+        throw new ValidationError(
+          `Run ${input.runId} is ${row.run.status}; only a failed run can be repaired.`,
+        )
+      }
+      if (row.intent.currentVersionId !== row.run.scriptVersionId) {
+        throw new ValidationError(
+          'That run used an older version of the script. Run the current version first, then repair that.',
+        )
+      }
+
+      const [target] = await db
+        .select()
+        .from(environment)
+        .where(eq(environment.id, row.run.environmentId))
+        .limit(1)
+
+      const queued = await queueRepair(db, {
+        runId: row.run.id,
+        intentId: row.intent.id,
+        projectId,
+        environmentId: row.run.environmentId,
+        organizationId: context.organizationId,
+        createdBy: context.userId,
+      })
+
+      const card: GenerationCard = {
+        kind: 'generation',
+        job: 'repair',
+        jobId: queued.jobId,
+        intentId: row.intent.id,
+        intentTitle: row.intent.title,
+        environmentName: target?.name ?? row.run.environmentName ?? 'environment',
+      }
+
+      return {
+        result: {
+          jobId: queued.jobId,
+          intentId: row.intent.id,
+          status: 'queued',
+          note: 'The card streams progress. Do not poll or ask about it again.',
+        },
+        cards: [card],
+      }
+    },
+  })
+
   const runAll = define<{ environmentId?: string | null }>({
     name: 'run_all',
     description:
@@ -967,6 +1039,7 @@ export function buildChatTools(context: ChatToolContext, bus: ChatToolBus) {
     set_project_context: setProjectContext,
     generate_test: generateTest,
     run_test: runTest,
+    repair_test: repairTest,
     run_all: runAll,
     list_runs: listRuns,
     get_run: getRun,

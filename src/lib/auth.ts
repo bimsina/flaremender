@@ -87,7 +87,9 @@ export function createAuth(d1: D1Database, env: Cloudflare.Env) {
   return betterAuth({
     database: drizzleAdapter(db, { provider: 'sqlite', schema }),
     secret: env.BETTER_AUTH_SECRET,
-    baseURL: env.BETTER_AUTH_URL,
+    // Optional. When unset, Better Auth infers the origin from each request, which
+    // is what a fresh deploy needs before its workers.dev hostname is known.
+    baseURL: env.BETTER_AUTH_URL || undefined,
     emailAndPassword: { enabled: true },
     databaseHooks: {
       user: {

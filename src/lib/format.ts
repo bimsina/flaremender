@@ -73,3 +73,23 @@ export function formatDate(value: Date | string | number | null | undefined): st
     timeZone: 'UTC',
   })
 }
+
+/** 1234 → "1.2k", 1234567 → "1.2M". For token counts and other rough totals. */
+export function formatCount(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—'
+  const abs = Math.abs(value)
+  if (abs < 1000) return String(Math.round(value))
+  if (abs < 1_000_000) return `${(value / 1000).toFixed(abs < 10_000 ? 1 : 0)}k`
+  return `${(value / 1_000_000).toFixed(1)}M`
+}
+
+export const PURPOSE_LABEL = {
+  regression: 'Regression',
+  'draft-check': 'Draft check',
+  'generation-verification': 'Verification',
+  'repair-verification': 'Repair check',
+} as const
+
+export function describePurpose(purpose: keyof typeof PURPOSE_LABEL): string {
+  return PURPOSE_LABEL[purpose] ?? 'Regression'
+}

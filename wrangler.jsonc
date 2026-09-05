@@ -65,6 +65,11 @@
       "binding": "BATCH_WORKFLOW",
       "class_name": "BatchGenerateWorkflow",
     },
+    {
+      "name": "flaremender-repair",
+      "binding": "REPAIR_WORKFLOW",
+      "class_name": "RepairWorkflow",
+    },
   ],
   "triggers": { "crons": ["* * * * *", "30 3 * * *"] },
   "durable_objects": {

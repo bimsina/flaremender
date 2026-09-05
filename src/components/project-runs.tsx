@@ -22,6 +22,7 @@ import type {
 } from '#/db/schema/app.ts'
 import { shortId } from '#/lib/ids.ts'
 import { projectRunsQuery, runTrendQuery, suiteRunQuery, suiteRunsQuery } from '#/lib/queries.ts'
+import { describePurpose } from '#/lib/format.ts'
 
 const STATUS_FILTERS = {
   all: 'Any status',
@@ -329,13 +330,7 @@ function RunEntry({
         <Table.Cell>
           <div className="grid gap-1">
             <RunStatusBadge status={run.status} />
-            <Text variant="secondary">
-              {run.purpose === 'draft-check'
-                ? 'Draft check'
-                : run.purpose === 'generation-verification'
-                  ? 'Verification'
-                  : 'Regression'}
-            </Text>
+            <Text variant="secondary">{describePurpose(run.purpose)}</Text>
           </div>
         </Table.Cell>
         <Table.Cell className="whitespace-nowrap text-kumo-subtle">

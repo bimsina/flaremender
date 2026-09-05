@@ -1,7 +1,16 @@
 import { createServerFn } from '@tanstack/react-start'
 import { count, desc, eq, sql } from 'drizzle-orm'
 
-import { intent, member, organization, project, run, user } from '#/db/schema/index.ts'
+import {
+  chatMessage,
+  generationJob,
+  intent,
+  member,
+  organization,
+  project,
+  run,
+  user,
+} from '#/db/schema/index.ts'
 import { adminMiddleware } from './auth.ts'
 
 export const getAdminStats = createServerFn({ method: 'GET' })
@@ -46,10 +55,36 @@ export const listAllOrganizations = createServerFn({ method: 'GET' })
       .groupBy(organization.id)
       .orderBy(desc(organization.createdAt))
 
+    const jobTokens = await context.db
+      .select({
+        organizationId: generationJob.organizationId,
+        tokens: sql<number>`sum(${generationJob.inputTokens} + ${generationJob.outputTokens})`,
+      })
+      .from(generationJob)
+      .groupBy(generationJob.organizationId)
+
+    const chatTokens = await context.db
+      .select({
+        organizationId: project.organizationId,
+        tokens: sql<number>`sum(${chatMessage.inputTokens} + ${chatMessage.outputTokens})`,
+      })
+      .from(chatMessage)
+      .innerJoin(project, eq(project.id, chatMessage.projectId))
+      .groupBy(project.organizationId)
+
+    const tokens = new Map<string, number>()
+    for (const row of [...jobTokens, ...chatTokens]) {
+      tokens.set(
+        row.organizationId,
+        (tokens.get(row.organizationId) ?? 0) + Number(row.tokens ?? 0),
+      )
+    }
+
     return rows.map((row) => ({
       ...row,
       members: Number(row.members),
       projects: Number(row.projects),
+      tokens: tokens.get(row.id) ?? 0,
     }))
   })
 

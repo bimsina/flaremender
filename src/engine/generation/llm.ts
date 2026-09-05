@@ -25,7 +25,7 @@ export interface ResolvedModel {
   provider: Provider
   slug: string
   origin: ModelOrigin
-  keySource: 'secret' | 'database'
+  keySource: 'organization' | 'secret' | 'database'
 }
 
 export class ModelResolutionError extends Error {
@@ -52,7 +52,11 @@ export async function resolveModelId(
   return { modelId: DEFAULT_MODEL_ID, origin: 'fallback' }
 }
 
-export async function resolveModel(db: Db, projectModelId: string | null): Promise<ResolvedModel> {
+export async function resolveModel(
+  db: Db,
+  projectModelId: string | null,
+  organizationId: string | null = null,
+): Promise<ResolvedModel> {
   const { modelId, origin } = await resolveModelId(db, projectModelId)
 
   const parsed = parseModelId(modelId)
@@ -71,10 +75,10 @@ export async function resolveModel(db: Db, projectModelId: string | null): Promi
     return { model: workersai(slug), modelId, provider, slug, origin, keySource: 'secret' }
   }
 
-  const resolved = await resolveProviderKey(db, provider)
+  const resolved = await resolveProviderKey(db, provider, organizationId)
   if (resolved.source === 'none' || !resolved.key) {
     throw new ModelResolutionError(
-      `${PROVIDER_LABELS[provider]} has no API key on this instance, so "${modelId}" cannot run. Add one in Administration → Settings, or set the ${PROVIDER_SECRET_VARS[provider]} Worker secret.`,
+      `${PROVIDER_LABELS[provider]} has no API key, so "${modelId}" cannot run. Add one under Organization → Model providers, or ask an administrator to add one in Administration → Settings or set the ${PROVIDER_SECRET_VARS[provider]} Worker secret.`,
     )
   }
 

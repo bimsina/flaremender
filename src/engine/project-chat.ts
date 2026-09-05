@@ -400,9 +400,16 @@ export class ProjectChat extends DurableObject<Cloudflare.Env> {
     }
 
     let failure: string | null = null
+    let modelId: string | null = null
+    const usage = { inputTokens: 0, outputTokens: 0 }
 
     try {
-      const resolved = await resolveModel(session.db, session.projectModelId)
+      const resolved = await resolveModel(
+        session.db,
+        session.projectModelId,
+        session.request.organizationId,
+      )
+      modelId = resolved.modelId
       const history = await this.#loadHistory(session)
 
       const result = streamText({
@@ -435,6 +442,12 @@ export class ProjectChat extends DurableObject<Cloudflare.Env> {
           failure = part.error instanceof Error ? part.error.message : String(part.error)
         }
       }
+
+      try {
+        const total = await result.totalUsage
+        usage.inputTokens = total.inputTokens ?? 0
+        usage.outputTokens = total.outputTokens ?? 0
+      } catch {}
     } catch (error) {
       failure = error instanceof Error ? error.message : String(error)
     }
@@ -447,7 +460,10 @@ export class ProjectChat extends DurableObject<Cloudflare.Env> {
       }
     }
 
-    const message = await this.#persistAssistantMessage(session, failure ? 'error' : 'complete')
+    const message = await this.#persistAssistantMessage(session, failure ? 'error' : 'complete', {
+      modelId,
+      usage,
+    })
 
     if (failure) {
       await this.#emit({ type: 'error', messageId, message: failure, at: Date.now() }, session)
@@ -486,6 +502,7 @@ export class ProjectChat extends DurableObject<Cloudflare.Env> {
   async #persistAssistantMessage(
     session: TurnSession,
     status: 'complete' | 'error',
+    cost: { modelId: string | null; usage: { inputTokens: number; outputTokens: number } },
   ): Promise<ChatMessageWire> {
     const parts = scrubParts(tidyParts(session.parts), session.scrubber)
     const createdAt = Date.now()
@@ -496,6 +513,9 @@ export class ProjectChat extends DurableObject<Cloudflare.Env> {
       role: 'assistant',
       parts,
       status,
+      modelId: cost.modelId,
+      inputTokens: cost.usage.inputTokens,
+      outputTokens: cost.usage.outputTokens,
       createdBy: null,
       createdAt: new Date(createdAt),
     })

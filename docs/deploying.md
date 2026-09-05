@@ -9,13 +9,13 @@ For what it is and why, see the [README](../README.md).
 
 One requirement rules out the Workers Free plan. The rest is setup.
 
-| Requirement                    | Why                                              | Plan                                                                                                      |
-| ------------------------------ | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
-| **Workers Paid** ($5/month)    | Dynamic Workers, which sandbox every test script | **Required.** A Free-plan instance installs, deploys and signs you in, then cannot run a single test      |
-| **R2 enabled**                 | screenshots, traces and logs                     | Enable once in the dashboard under R2                                                                     |
-| **An LLM provider**            | generation, exploration and chat                 | Workers AI is the default and needs no key; Anthropic, OpenAI or Google produce noticeably better scripts |
-| Browser Rendering              | every test runs in a real browser                | Free and Paid                                                                                             |
-| Workflows, Durable Objects, D1 | orchestration, live updates, storage             | Free and Paid                                                                                             |
+| Requirement                    | Why                                              | Plan                                                                                                                                                        |
+| ------------------------------ | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Workers Paid** ($5/month)    | Dynamic Workers, which sandbox every test script | **Required.** A Free-plan instance installs, deploys and signs you in, then cannot run a single test                                                        |
+| **R2 enabled**                 | screenshots, traces and logs                     | Enable once in the dashboard under R2                                                                                                                       |
+| **An LLM provider**            | generation, exploration and chat                 | Workers AI is the default and needs no key; Anthropic, OpenAI or Google produce noticeably better scripts. Keys can be set per instance or per organization |
+| Browser Rendering              | every test runs in a real browser                | Free and Paid                                                                                                                                               |
+| Workflows, Durable Objects, D1 | orchestration, live updates, storage             | Free and Paid                                                                                                                                               |
 
 ### What it costs
 
@@ -30,7 +30,8 @@ Everything runs on your account and bills to you.
 | Bring your own LLM key | nothing                                  | billed directly by Anthropic, OpenAI or Google    |
 
 Generation and exploration are the expensive parts. Each drives a real browser for
-minutes and makes up to 24 model calls. Watch the first few runs before you put
+minutes and can make up to 96 model calls (24 turns of up to 4 tool steps each).
+Watch the first few runs before you put
 anything on a schedule.
 
 ### One click
@@ -47,17 +48,12 @@ You will be asked for:
 | --------------------------------------------------------- | -------- | ----------------------------------------------------------------------------------------- |
 | `BETTER_AUTH_SECRET`                                      | yes      | `openssl rand -hex 32`                                                                    |
 | `ENCRYPTION_KEY`                                          | yes      | `openssl rand -hex 32`. **Set it once.** Changing it makes every stored secret unreadable |
-| `BETTER_AUTH_URL`                                         | yes      | the deployment's own origin, no trailing slash                                            |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY` | no       | can be added from the admin console later                                                 |
 | `DISABLE_SIGNUP`                                          | no       | `true` closes public registration. Set it once you have created your account              |
 
-`BETTER_AUTH_URL` has to match the URL you actually visit or sign-in fails. The
-`workers.dev` hostname is not known until the first deploy finishes, so set it
-afterwards and redeploy.
-
-```bash
-wrangler secret put BETTER_AUTH_URL
-```
+The deployment works out its own origin from each request, so there is nothing
+to set after the first deploy. If you later put it behind a proxy that rewrites
+the `Host` header, pin the public origin with `wrangler secret put BETTER_AUTH_URL`.
 
 ### By hand
 
@@ -74,13 +70,10 @@ wrangler secret put BETTER_AUTH_SECRET   # openssl rand -hex 32
 wrangler secret put ENCRYPTION_KEY       # openssl rand -hex 32
 
 pnpm deploy                              # builds, applies remote migrations, deploys
-wrangler secret put BETTER_AUTH_URL      # the URL the deploy just printed
-pnpm deploy                              # again, so the Worker picks it up
 ```
 
-The second deploy is not a typo. `BETTER_AUTH_URL` has to match the origin you
-actually visit, and you cannot know your `workers.dev` hostname until the first
-deploy finishes.
+Open the URL the deploy printed and sign up. The Worker reads its origin from
+the request, so no URL needs to be configured.
 
 ### Environments and credentials
 

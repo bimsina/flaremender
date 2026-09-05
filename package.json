@@ -51,7 +51,8 @@
     "demo:seed": "node --import tsx --env-file=.env.local scripts/seed-demo.ts",
     "manual:fixtures": "node --import tsx scripts/seed-manual-fixtures.ts",
     "manual:app": "node examples/reliability/serve.mjs",
-    "manual:verify": "node --import tsx scripts/verify-manual-fixtures.ts"
+    "manual:verify": "node --import tsx scripts/verify-manual-fixtures.ts",
+    "eval": "node --import tsx --env-file=.env.local evals/run.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.45",
@@ -128,9 +129,6 @@
     "bindings": {
       "BETTER_AUTH_SECRET": {
         "description": "Signing key for session cookies. Generate one with `openssl rand -hex 32`. Changing it signs everyone out."
-      },
-      "BETTER_AUTH_URL": {
-        "description": "The public origin of this deployment, with no trailing slash — for example `https://flaremender.your-subdomain.workers.dev`. Sign-in breaks if it does not match the URL you actually visit."
       },
       "ENCRYPTION_KEY": {
         "description": "Passphrase used to encrypt environment variables and provider API keys at rest (AES-256-GCM). Generate one with `openssl rand -hex 32`. **Set it once** — changing it makes every stored secret permanently unreadable."

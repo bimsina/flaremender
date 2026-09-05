@@ -20,6 +20,8 @@ export interface GenerationCard {
   intentId: string
   intentTitle: string
   environmentName: string
+  /** A repair reuses this card; absent means a generation. */
+  job?: 'generate' | 'repair'
 }
 
 export interface RunCard {

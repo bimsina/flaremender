@@ -1,5 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
-import { asc, eq } from 'drizzle-orm'
+import { and, asc, eq, isNull, sql } from 'drizzle-orm'
 
 import { allowedModel, instanceSettings, providerKey } from '#/db/schema/app.ts'
 import { createId } from '#/lib/ids.ts'
@@ -61,7 +61,10 @@ export const getInstanceSettings = createServerFn({ method: 'GET' })
       .where(eq(instanceSettings.id, SETTINGS_ID))
       .limit(1)
 
-    const stored = await context.db.select().from(providerKey)
+    const stored = await context.db
+      .select()
+      .from(providerKey)
+      .where(isNull(providerKey.organizationId))
     const byProvider = new Map(stored.map((row) => [row.provider, row]))
 
     const providers: Array<ProviderStatus> = []
@@ -119,12 +122,14 @@ export const setProviderKey = createServerFn({ method: 'POST' })
       .insert(providerKey)
       .values({
         id: createId('pk'),
+        organizationId: null,
         provider: data.provider,
         encryptedKey,
         addedBy: context.user.id,
       })
       .onConflictDoUpdate({
         target: providerKey.provider,
+        targetWhere: sql`organization_id is null`,
         set: { encryptedKey, addedBy: context.user.id, updatedAt: new Date() },
       })
 
@@ -137,7 +142,9 @@ export const deleteProviderKey = createServerFn({ method: 'POST' })
   .handler(async ({ data, context }) => {
     assertKeyManageable(data.provider)
 
-    await context.db.delete(providerKey).where(eq(providerKey.provider, data.provider))
+    await context.db
+      .delete(providerKey)
+      .where(and(eq(providerKey.provider, data.provider), isNull(providerKey.organizationId)))
     return { ok: true as const }
   })
 

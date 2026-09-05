@@ -74,11 +74,13 @@ export class ExploreWorkflow extends WorkflowEntrypoint<Cloudflare.Env, ExploreW
       let summary: string | null = null
       let fatal: string | null = null
       let turns = 0
+      const usage = { inputTokens: 0, outputTokens: 0 }
 
       for (let turn = 0; turn < MAX_TURNS; turn += 1) {
         const result = await step.do(`turn-${turn}`, TURN_STEP_CONFIG, () =>
           runExploreTurn(this.env, {
             jobId,
+            organizationId,
             environmentId: loaded.environmentId,
             projectModelId: loaded.projectModelId,
             baseUrl: loaded.baseUrl,
@@ -104,6 +106,8 @@ export class ExploreWorkflow extends WorkflowEntrypoint<Cloudflare.Env, ExploreW
         modelId = result.modelId
         summary = result.summary ?? summary
         fatal = result.fatal
+        usage.inputTokens += result.usage.inputTokens
+        usage.outputTokens += result.usage.outputTokens
 
         if (result.finished) break
 
@@ -124,13 +128,13 @@ export class ExploreWorkflow extends WorkflowEntrypoint<Cloudflare.Env, ExploreW
           'The explorer could not find anything on this site worth proposing a test for.'
 
         await step.do('abandon', () =>
-          abandonExploration(this.env, loaded, { reason, turns, modelId }),
+          abandonExploration(this.env, loaded, { reason, turns, modelId, usage }),
         )
         return { jobId, status: 'failed', proposed: 0 }
       }
 
       const persisted = await step.do('persist', () =>
-        persistExploration(this.env, loaded, { proposals, summary, turns, modelId }),
+        persistExploration(this.env, loaded, { proposals, summary, turns, modelId, usage }),
       )
 
       return { jobId, status: 'succeeded', proposed: persisted.intentIds.length }

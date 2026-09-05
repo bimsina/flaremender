@@ -4,9 +4,10 @@ import { env } from 'cloudflare:workers'
 import { and, desc, eq } from 'drizzle-orm'
 
 import type { Db } from '#/db/index.ts'
-import { apikey, member } from '#/db/schema/auth.ts'
+import { apikey } from '#/db/schema/auth.ts'
 import { WEBHOOK_API_KEY_CONFIG, WEBHOOK_API_KEY_PREFIX, createAuth } from '#/lib/auth.ts'
 import { orgMiddleware } from './auth.ts'
+import { canManageOrganization, membershipRole } from './membership.ts'
 import { assertProject } from './scope.ts'
 import { ValidationError, has, str } from './validate.ts'
 
@@ -29,22 +30,9 @@ function metadata(value: unknown): Record<string, unknown> | null {
   }
 }
 
-function canManageWebhookKeys(role: string): boolean {
-  return role.split(',').some((value) => value === 'owner' || value === 'admin')
-}
-
-async function membershipRole(db: Db, organizationId: string, userId: string) {
-  const [row] = await db
-    .select({ role: member.role })
-    .from(member)
-    .where(and(eq(member.organizationId, organizationId), eq(member.userId, userId)))
-    .limit(1)
-  return row?.role ?? null
-}
-
 async function assertWebhookKeyManager(db: Db, organizationId: string, userId: string) {
   const role = await membershipRole(db, organizationId, userId)
-  if (!role || !canManageWebhookKeys(role)) {
+  if (!role || !canManageOrganization(role)) {
     throw new Error('Only organization owners and admins can manage API keys.')
   }
 }
@@ -75,7 +63,7 @@ export const getProjectWebhookSettings = createServerFn({ method: 'GET' })
   .handler(async ({ data, context }) => {
     await assertProject(context.db, context.organizationId, data.projectId)
     const role = await membershipRole(context.db, context.organizationId, context.user.id)
-    const canManage = role !== null && canManageWebhookKeys(role)
+    const canManage = role !== null && canManageOrganization(role)
     const origin = new URL(getRequest().url).origin
     const projectRunPath = `/api/v1/projects/${encodeURIComponent(data.projectId)}/runs`
     const testRunPath = `/api/v1/projects/${encodeURIComponent(data.projectId)}/tests/{testId}/runs`

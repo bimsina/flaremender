@@ -1,18 +1,17 @@
-/** Worker-bound credentials take precedence over keys managed through the admin console. */
+/**
+ * Which API key a model call uses, in order: the organization's own key, then the
+ * Worker secret, then the key saved in the admin console for the whole instance.
+ */
 import { env } from 'cloudflare:workers'
-import { eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 
 import type { Db } from '#/db/index.ts'
 import { providerKey } from '#/db/schema/app.ts'
 import { PROVIDER_SECRET_VARS, type Provider } from '#/lib/models.ts'
 import { decryptSecret } from './crypto.ts'
+import { type ResolvedProviderKey, pickProviderKey } from './provider-keys.ts'
 
-export type ProviderKeySource = 'secret' | 'database' | 'none'
-
-export interface ResolvedProviderKey {
-  source: ProviderKeySource
-  key: string | null
-}
+export type { ProviderKeySource, ResolvedProviderKey } from './provider-keys.ts'
 
 function readSecretVar(name: string): string | null {
   const value = (env as unknown as Record<string, unknown>)[name]
@@ -24,19 +23,30 @@ export function hasProviderSecret(provider: Provider): boolean {
   return name !== null && readSecretVar(name) !== null
 }
 
-export async function resolveProviderKey(db: Db, provider: Provider): Promise<ResolvedProviderKey> {
-  if (provider === 'workers-ai') return { source: 'secret', key: null }
+export function resolveProviderKey(
+  db: Db,
+  provider: Provider,
+  organizationId: string | null = null,
+): Promise<ResolvedProviderKey> {
+  const name = PROVIDER_SECRET_VARS[provider]
+  return pickProviderKey(db, {
+    provider,
+    organizationId,
+    secret: name === null ? null : readSecretVar(name),
+    decrypt: decryptSecret,
+  })
+}
 
-  const secret = readSecretVar(PROVIDER_SECRET_VARS[provider])
-  if (secret) return { source: 'secret', key: secret }
+/** Whether the instance can serve this provider without an organization key. */
+export async function instanceHasProviderKey(db: Db, provider: Provider): Promise<boolean> {
+  if (provider === 'workers-ai') return true
+  if (hasProviderSecret(provider)) return true
 
   const [row] = await db
-    .select({ encryptedKey: providerKey.encryptedKey })
+    .select({ id: providerKey.id })
     .from(providerKey)
-    .where(eq(providerKey.provider, provider))
+    .where(and(eq(providerKey.provider, provider), isNull(providerKey.organizationId)))
     .limit(1)
 
-  if (!row) return { source: 'none', key: null }
-
-  return { source: 'database', key: await decryptSecret(row.encryptedKey) }
+  return row !== undefined
 }

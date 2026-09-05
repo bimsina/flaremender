@@ -35,6 +35,7 @@ import {
   RunStatusBadge,
   SuiteRunStatusBadge,
 } from '#/components/status-badge.tsx'
+import { UsageLine } from '#/components/generation-live-panel.tsx'
 import { StepList } from '#/components/step-list.tsx'
 import type {
   BatchCard,
@@ -50,6 +51,7 @@ import type {
 import { describeCron } from '#/lib/cron.ts'
 import { chatMessagesQuery, intentsQuery, runQuery, suiteRunQuery } from '#/lib/queries.ts'
 import { useJobProgress } from '#/lib/use-job-progress.ts'
+import { describePurpose } from '#/lib/format.ts'
 import { approveProposedIntents, dismissProposedIntent } from '#/server/explore.ts'
 import { updateIntent } from '#/server/intents.ts'
 
@@ -150,6 +152,7 @@ function GenerationCardView({ card, projectId }: { card: GenerationCard; project
   const succeeded = live.outcome === 'passed'
   const steps = live.steps.slice(-MAX_CARD_STEPS)
   const narration = live.logs.at(-1)?.line ?? null
+  const repairing = card.job === 'repair' || job?.kind === 'repair'
 
   return (
     <CardFrame
@@ -159,9 +162,15 @@ function GenerationCardView({ card, projectId }: { card: GenerationCard; project
           <Text as="span" bold>
             {finished
               ? succeeded
-                ? 'Script generated and verified'
-                : 'Generation needs attention'
-              : 'Writing the script'}
+                ? repairing
+                  ? 'Repair verified'
+                  : 'Script generated and verified'
+                : repairing
+                  ? 'Repair needs attention'
+                  : 'Generation needs attention'
+              : repairing
+                ? 'Repairing the script'
+                : 'Writing the script'}
           </Text>
           <Text as="span" variant="secondary" size="base">
             {card.intentTitle} · {card.environmentName}
@@ -213,6 +222,17 @@ function GenerationCardView({ card, projectId }: { card: GenerationCard; project
         </Text>
       ) : null}
 
+      {finished && job ? (
+        <Text variant="secondary" size="base">
+          <UsageLine
+            turns={job.turns}
+            inputTokens={job.inputTokens}
+            outputTokens={job.outputTokens}
+            modelId={job.modelId}
+          />
+        </Text>
+      ) : null}
+
       {steps.length > 0 ? <StepList steps={steps} /> : null}
     </CardFrame>
   )
@@ -253,7 +273,7 @@ function RunCardView({ card, projectId }: { card: RunCard; projectId: string }) 
           <Text as="span" variant="secondary" size="base">
             {data?.environment.name ?? card.environmentName}
             {data
-              ? ` · v${data.scriptVersion.version} · ${data.run.purpose === 'draft-check' ? 'Draft check' : data.run.purpose === 'generation-verification' ? 'Verification' : 'Regression'}`
+              ? ` · v${data.scriptVersion.version} · ${describePurpose(data.run.purpose)}`
               : null}
             {durationMs ? ' · ' : ''}
             {durationMs ? <Duration ms={durationMs} /> : null}

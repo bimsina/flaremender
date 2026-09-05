@@ -274,6 +274,80 @@ export async function queueGeneration(
   return { jobId: row.id, environmentId: input.environment.id }
 }
 
+export async function assertNoRepairInFlight(db: Db, intentId: string): Promise<void> {
+  const [inFlight] = await db
+    .select({ id: generationJob.id, kind: generationJob.kind })
+    .from(generationJob)
+    .where(
+      and(
+        eq(generationJob.intentId, intentId),
+        inArray(generationJob.status, ['queued', 'running']),
+      ),
+    )
+    .limit(1)
+
+  if (inFlight) {
+    throw new ValidationError(
+      inFlight.kind === 'repair'
+        ? 'A repair is already running for this test.'
+        : 'A script is already being generated for this test. Wait for it to finish.',
+    )
+  }
+}
+
+/** Starts the agent that tries to fix a failed run's script. The heal policy decides what happens to the result. */
+export async function queueRepair(
+  db: Db,
+  input: {
+    runId: string
+    intentId: string
+    projectId: string
+    environmentId: string
+    organizationId: string
+    createdBy: string
+  },
+) {
+  await assertNoRepairInFlight(db, input.intentId)
+
+  const row = {
+    id: createId('rep'),
+    kind: 'repair' as GenerationJobKind,
+    intentId: input.intentId,
+    projectId: input.projectId,
+    environmentId: input.environmentId,
+    organizationId: input.organizationId,
+    sourceRunId: input.runId,
+    status: 'queued' as const,
+    createdBy: input.createdBy,
+  }
+
+  await db.insert(generationJob).values(row)
+
+  await enqueueWork(
+    () =>
+      env.REPAIR_WORKFLOW.create({
+        id: row.id,
+        params: {
+          jobId: row.id,
+          intentId: input.intentId,
+          organizationId: input.organizationId,
+        },
+      }),
+    async () => (await env.REPAIR_WORKFLOW.get(row.id)).status(),
+    () =>
+      db
+        .update(generationJob)
+        .set({
+          status: 'failed',
+          stuckReason: 'The repair could not be started. Please try again.',
+          finishedAt: new Date(),
+        })
+        .where(and(eq(generationJob.id, row.id), eq(generationJob.status, 'queued'))),
+  )
+
+  return { jobId: row.id }
+}
+
 export const MAX_PROJECT_CONTEXT_CHARS = 4000
 
 /** Callers must redact project context before persisting it. */

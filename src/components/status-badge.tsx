@@ -17,7 +17,7 @@ const RUN: Record<RunStatus, { label: string; variant: BadgeVariant }> = {
   queued: { label: 'Queued', variant: 'neutral' },
   running: { label: 'Running', variant: 'neutral' },
   passed: { label: 'Passed', variant: 'success' },
-  healed: { label: 'Passed', variant: 'success' },
+  healed: { label: 'Repaired', variant: 'success' },
   failed: { label: 'Failed', variant: 'error' },
   error: { label: 'Errored', variant: 'warning' },
 }

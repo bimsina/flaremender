@@ -28,6 +28,10 @@ and your run history stay there.
   [webhook API](docs/webhooks.md) with idempotency keys and JUnit output.
 - **Keeps the evidence.** Steps, logs, screenshots and a full Playwright trace per
   run, with the trace viewer built in.
+- **Repairs what breaks.** When a ready test fails, the agent replays the script to
+  the broken step, replaces it, carries the rest through and verifies the result. A
+  policy per organization, project or test says whether that happens at all, and
+  whether the repaired version waits for a person or is adopted on the spot.
 - **Sandboxes what it wrote.** Scripts execute in a Dynamic Worker with no database,
   no object storage and no ambient network.
 
@@ -89,15 +93,20 @@ Dynamic Workers are free locally, so a local instance runs tests without a paid 
 
 It works, and it is early. Specifically:
 
-- **Self-healing is not implemented.** The name promises it. The code does not do it
-  yet. A failing test stays failing until a person repairs it.
+- **Repairs are off by default and bounded.** The agent gets one automatic attempt
+  per script version, replaces the step that broke rather than rewriting the flow,
+  and a repaired version becomes current only when the policy says `auto` or a
+  person accepts it. Turn it on under Organization → Repairs, or per project or
+  test.
 - **The deploy path has not been exercised end to end yet.** Everything has been
   built and tested against a local Cloudflare runtime. If the button breaks for you,
   that is a bug worth an issue.
 - No email verification, no password reset, no usage caps. One organization can
   spend the whole account's budget.
-- Generated scripts need a read before you trust them, which is why they start as
-  drafts and a person has to mark them ready.
+- A generated script is marked ready only when a full replay in a fresh browser
+  passes. Anything less stays a draft until a person has read it.
+- Generation quality depends heavily on the model. `pnpm eval` measures it against
+  the example apps; see [docs/evals.md](docs/evals.md) before choosing a default.
 
 Flaremender holds the credentials to the apps it tests. Before you deploy it, read
 what protects them and what does not: **[SECURITY.md](SECURITY.md)**.
@@ -108,7 +117,8 @@ what protects them and what does not: **[SECURITY.md](SECURITY.md)**.
 | -------------------------------------------- | --------------------------------------------------------------- |
 | [docs/deploying.md](docs/deploying.md)       | Prerequisites, costs, one-click and manual deploys, local setup |
 | [docs/architecture.md](docs/architecture.md) | How the run engine, chat, explorer and scheduler fit together   |
-| [docs/webhooks.md](docs/webhooks.md)         | Triggering runs from CI, polling, idempotency, JUnit            |
+| [docs/webhooks.md](docs/webhooks.md)         | Triggering runs and generation from CI, polling, JUnit          |
+| [docs/evals.md](docs/evals.md)               | Measuring generation quality across prompts and models          |
 | [SECURITY.md](SECURITY.md)                   | Threat model, what is in scope, how to report                   |
 | [CONTRIBUTING.md](CONTRIBUTING.md)           | Setup, checks, and the things that will trip you up             |
 

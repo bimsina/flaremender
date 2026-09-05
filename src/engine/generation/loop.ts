@@ -55,6 +55,7 @@ export interface TurnFailures {
 
 export interface TurnInput {
   jobId: string
+  organizationId: string
   environmentId: string
   projectModelId: string | null
   baseUrl: string
@@ -67,6 +68,8 @@ export interface TurnInput {
   failures: TurnFailures
   refusedFinish: boolean
   observedSinceFailure: boolean
+  /** The repair loop swaps in its own framing; generation uses the default. */
+  systemPrompt?: string
 }
 
 export interface TurnResult {
@@ -146,7 +149,7 @@ function describeScript(fragments: Array<string>, goal: string): string {
 export async function runTurn(env: Cloudflare.Env, input: TurnInput): Promise<TurnResult> {
   const db = createDb(env.DB)
   const creds = await loadCredentials(env, input.environmentId)
-  const resolved = await resolveModel(db, input.projectModelId)
+  const resolved = await resolveModel(db, input.projectModelId, input.organizationId)
 
   const state = {
     sessionId: input.sessionId,
@@ -383,7 +386,7 @@ export async function runTurn(env: Cloudflare.Env, input: TurnInput): Promise<Tu
 
   const result = await generateText({
     model: resolved.model,
-    system: SYSTEM_PROMPT,
+    system: input.systemPrompt ?? SYSTEM_PROMPT,
     messages: pruneToolResults(input.messages, {
       keep: OBSERVATIONS_KEPT_IN_FULL,
       replacements: PRUNED_FIELDS,

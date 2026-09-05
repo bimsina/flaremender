@@ -1,9 +1,9 @@
 # Local reliability walkthrough
 
-Work is on `codex/polish-manual-flow`. No remote push or Cloudflare deployment
-was performed. Commands below target local state. Browser Rendering may still
-use the configured Cloudflare binding; local development is not a cloud quota
-or production deployment test.
+A repeatable way to check the run engine end to end on a laptop, without a model
+and without spending anything. Everything below targets local state. Browser
+Rendering may still go through the configured Cloudflare binding, so this is not
+a quota or production deployment test.
 
 ## Repeatable fixtures
 

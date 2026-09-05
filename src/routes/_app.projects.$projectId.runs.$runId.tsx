@@ -12,6 +12,7 @@ import {
   DotsThreeIcon,
   PencilSimpleIcon,
   PlayIcon,
+  SparkleIcon,
   WarningCircleIcon,
 } from '@phosphor-icons/react'
 import { useMutation, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
@@ -28,6 +29,7 @@ import type { RunStatus } from '#/db/schema/app.ts'
 import { shortId } from '#/lib/ids.ts'
 import { runQuery } from '#/lib/queries.ts'
 import { runIntent } from '#/server/intents.ts'
+import { repairRun } from '#/server/repairs.ts'
 
 const TERMINAL: ReadonlySet<RunStatus> = new Set(['passed', 'healed', 'failed', 'error'])
 
@@ -54,6 +56,30 @@ function RunPage() {
     recordedError,
   )
   const testProblem = /locator|expect\(|assert|timeout/i.test(recordedError)
+  const repairable = data.run.status === 'failed'
+
+  const repair = useMutation({
+    mutationFn: () => repairRun({ data: { runId: data.run.id } }),
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries()
+      toast.add({
+        variant: 'info',
+        title: 'Repair started',
+        description: 'The agent is replaying the script to find the broken step.',
+      })
+      await navigate({
+        to: '/projects/$projectId/intents/$intentId',
+        params: { projectId, intentId: result.intentId },
+        search: { tab: 'script' },
+      })
+    },
+    onError: (error: Error) =>
+      toast.add({
+        variant: 'error',
+        title: 'Could not start a repair',
+        description: error.message,
+      }),
+  })
 
   const rerun = useMutation({
     mutationFn: () =>
@@ -106,8 +132,19 @@ function RunPage() {
         }
         actions={
           <>
+            {repairable ? (
+              <Button
+                variant="primary"
+                icon={<SparkleIcon size={16} />}
+                loading={repair.isPending}
+                disabled={live}
+                onClick={() => repair.mutate()}
+              >
+                Repair with AI
+              </Button>
+            ) : null}
             <Button
-              variant="primary"
+              variant={repairable ? 'secondary' : 'primary'}
               icon={<PlayIcon size={16} />}
               loading={rerun.isPending}
               disabled={live}

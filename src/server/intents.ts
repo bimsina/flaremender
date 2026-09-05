@@ -16,6 +16,7 @@ import {
   updateIntentRecord,
 } from './actions.ts'
 import { orgMiddleware } from './auth.ts'
+import { resolveHealPolicy } from './heal-policy.ts'
 import { assertProject, loadEnvironment, loadIntent, loadScriptVersion } from './scope.ts'
 import { ValidationError, cron, has, optionalStr, str } from './validate.ts'
 
@@ -70,6 +71,7 @@ export const getIntent = createServerFn({ method: 'GET' })
   .handler(async ({ data, context }) => {
     const row = await loadIntent(context.db, context.organizationId, data.intentId)
     const version = await loadCurrentVersion(context.db, row.intent.currentVersionId)
+    const healPolicy = await resolveHealPolicy(context.db, row.intent.id)
 
     return {
       intent: {
@@ -81,9 +83,12 @@ export const getIntent = createServerFn({ method: 'GET' })
         readiness: row.intent.readiness,
         schedule: row.intent.schedule,
         lastRunId: row.intent.lastRunId,
+        healPolicy: row.intent.healPolicy,
+        pendingRepairVersionId: row.intent.pendingRepairVersionId,
         createdAt: row.intent.createdAt,
         updatedAt: row.intent.updatedAt,
       },
+      healPolicy,
       currentVersion: version
         ? { id: version.id, version: version.version, code: version.code, author: version.author }
         : null,
@@ -300,6 +305,8 @@ export const getIntentGeneration = createServerFn({ method: 'GET' })
         scriptVersionId: generationJob.scriptVersionId,
         runId: generationJob.runId,
         turns: generationJob.turns,
+        inputTokens: generationJob.inputTokens,
+        outputTokens: generationJob.outputTokens,
         stuckReason: generationJob.stuckReason,
         startedAt: generationJob.startedAt,
         finishedAt: generationJob.finishedAt,

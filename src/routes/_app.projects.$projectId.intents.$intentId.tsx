@@ -55,11 +55,13 @@ import {
   environmentsQuery,
   intentGenerationQuery,
   intentQuery,
+  pendingRepairQuery,
   runsQuery,
   scriptVersionQuery,
   scriptVersionsQuery,
 } from '#/lib/queries.ts'
 import { DEFAULT_SCRIPT_TEMPLATE } from '#/lib/script-template.ts'
+import { describePurpose } from '#/lib/format.ts'
 import {
   deleteIntent,
   generateIntentScript,
@@ -69,6 +71,13 @@ import {
   setTestReadiness,
   updateIntent,
 } from '#/server/intents.ts'
+import { acceptRepair, dismissRepair, setIntentHealPolicy } from '#/server/repairs.ts'
+import type { HealPolicy, HealPolicyChoice } from '#/db/schema/app.ts'
+import {
+  HEAL_POLICY_LABEL,
+  HealPolicySelect,
+  describeHealPolicy,
+} from '#/components/heal-policy-select.tsx'
 
 const TABS = ['script', 'runs', 'history'] as const
 type Tab = (typeof TABS)[number]
@@ -106,6 +115,10 @@ export const Route = createFileRoute('/_app/projects/$projectId/intents/$intentI
         ...intentGenerationQuery(params.intentId),
         revalidateIfStale: true,
       }),
+      context.queryClient.ensureQueryData({
+        ...pendingRepairQuery(params.intentId),
+        revalidateIfStale: true,
+      }),
     ])
   },
   component: IntentDetail,
@@ -122,11 +135,12 @@ function IntentDetail() {
   const { data: versions } = useSuspenseQuery(scriptVersionsQuery(intentId))
   const { data: environments } = useSuspenseQuery(environmentsQuery(projectId))
   const { data: generation } = useSuspenseQuery(intentGenerationQuery(intentId))
+  const { data: pendingRepair } = useSuspenseQuery(pendingRepairQuery(intentId))
 
   const queryClient = useQueryClient()
   const toast = useKumoToastManager()
 
-  const { intent, currentVersion, project } = data
+  const { intent, currentVersion, project, healPolicy } = data
 
   const [dirty, setDirty] = useState(false)
   const guard = useDiscardGuard(dirty)
@@ -246,6 +260,11 @@ function IntentDetail() {
             {intent.schedule ? (
               <ScheduleBadge schedule={intent.schedule} paused={intent.readiness === 'draft'} />
             ) : null}
+            {pendingRepair ? (
+              <Badge variant="warning" icon={SparkleIcon}>
+                Repair waiting for review
+              </Badge>
+            ) : null}
             <Text as="span" variant="secondary" size="base">
               {currentVersion ? `Version ${currentVersion.version}` : 'No script saved yet'}
             </Text>
@@ -326,8 +345,21 @@ function IntentDetail() {
           />
         ) : null}
 
+        {pendingRepair ? (
+          <PendingRepairBanner
+            projectId={projectId}
+            intentId={intentId}
+            repair={pendingRepair}
+            onDone={() => {
+              setEditorKey((key) => key + 1)
+              setDirty(false)
+            }}
+          />
+        ) : null}
+
         <div hidden={tab !== 'script'}>
           <ScriptTab
+            healPolicy={healPolicy}
             key={`${currentVersion?.id ?? 'unsaved'}-${editorKey}`}
             manual={search.mode === 'manual'}
             readiness={intent.readiness}
@@ -413,6 +445,7 @@ function ScriptTab({
   draftCheckPassed,
   onGenerate,
   onEditDescription,
+  healPolicy,
 }: {
   manual: boolean
   readiness: 'draft' | 'ready'
@@ -433,6 +466,7 @@ function ScriptTab({
   draftCheckPassed: boolean
   onGenerate: () => void
   onEditDescription: () => void
+  healPolicy: ResolvedHealPolicy
 }) {
   const queryClient = useQueryClient()
   const toast = useKumoToastManager()
@@ -777,9 +811,13 @@ function ScriptTab({
         </div>
       ) : null}
 
+      {currentVersion ? (
+        <RepairPolicySection key={healPolicy.test} intentId={intentId} healPolicy={healPolicy} />
+      ) : null}
+
       {liveGenerationId ? (
         <Section
-          title="Generation"
+          title={liveGenerationId.startsWith('rep_') ? 'Repair' : 'Generation'}
           description="What the agent is doing, and what the browser did about it."
         >
           <GenerationLivePanel
@@ -910,6 +948,178 @@ function ScheduleSection({ intentId, schedule }: { intentId: string; schedule: s
   )
 }
 
+type ResolvedHealPolicy = {
+  effective: HealPolicy
+  source: 'test' | 'project' | 'organization'
+  test: HealPolicyChoice
+  project: HealPolicyChoice
+  organization: HealPolicy
+}
+
+function RepairPolicySection({
+  intentId,
+  healPolicy,
+}: {
+  intentId: string
+  healPolicy: ResolvedHealPolicy
+}) {
+  const queryClient = useQueryClient()
+  const toast = useKumoToastManager()
+
+  const inheritedFrom =
+    healPolicy.project === 'inherit'
+      ? `organization (${HEAL_POLICY_LABEL[healPolicy.organization]})`
+      : `project (${HEAL_POLICY_LABEL[healPolicy.project as HealPolicy]})`
+
+  const save = useMutation({
+    mutationFn: (next: HealPolicyChoice) =>
+      setIntentHealPolicy({ data: { intentId, healPolicy: next } }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries()
+      toast.add({ variant: 'success', title: 'Repair policy saved' })
+    },
+    onError: (error: Error) =>
+      toast.add({ variant: 'error', title: 'Could not save', description: error.message }),
+  })
+
+  return (
+    <Section
+      title="Repairs"
+      description="What the agent may do when a regression run of this test fails. A failed run can always be repaired by hand from its page."
+    >
+      <LayerCard className="px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="max-w-xl">
+            <Text as="span" variant="secondary" size="base">
+              {healPolicy.test === 'inherit'
+                ? `Inherited from the ${inheritedFrom}. ${describeHealPolicy(healPolicy.effective)}`
+                : describeHealPolicy(healPolicy.effective)}
+            </Text>
+          </div>
+          <HealPolicySelect
+            aria-label="Repair policy for this test"
+            value={healPolicy.test}
+            inheritLabel={`Inherit (${HEAL_POLICY_LABEL[healPolicy.project === 'inherit' ? healPolicy.organization : (healPolicy.project as HealPolicy)]})`}
+            loading={save.isPending}
+            onChange={(next) => save.mutate(next)}
+          />
+        </div>
+      </LayerCard>
+    </Section>
+  )
+}
+
+function PendingRepairBanner({
+  projectId,
+  intentId,
+  repair,
+  onDone,
+}: {
+  projectId: string
+  intentId: string
+  repair: {
+    versionId: string
+    version: number
+    note: string | null
+    verificationRunId: string | null
+    sourceRunId: string | null
+  }
+  onDone: () => void
+}) {
+  const queryClient = useQueryClient()
+  const toast = useKumoToastManager()
+  const navigate = useNavigate({ from: Route.fullPath })
+
+  const accept = useMutation({
+    mutationFn: () => acceptRepair({ data: { intentId, versionId: repair.versionId } }),
+    onSuccess: async () => {
+      onDone()
+      await queryClient.invalidateQueries()
+      toast.add({
+        variant: 'success',
+        title: `Version ${repair.version} is now current and ready`,
+      })
+    },
+    onError: (error: Error) =>
+      toast.add({
+        variant: 'error',
+        title: 'Could not accept the repair',
+        description: error.message,
+      }),
+  })
+
+  const dismiss = useMutation({
+    mutationFn: () => dismissRepair({ data: { intentId, versionId: repair.versionId } }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries()
+      toast.add({
+        variant: 'info',
+        title: 'Repair dismissed',
+        description: `Version ${repair.version} stays in the history.`,
+      })
+    },
+    onError: (error: Error) =>
+      toast.add({
+        variant: 'error',
+        title: 'Could not dismiss the repair',
+        description: error.message,
+      }),
+  })
+
+  return (
+    <Banner
+      variant="default"
+      icon={<SparkleIcon weight="fill" />}
+      title={`The agent repaired this test and version ${repair.version} verified`}
+      description={
+        repair.note ??
+        'Review the new version, then accept it to make it current and ready, or dismiss it.'
+      }
+      action={
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="primary"
+            size="sm"
+            loading={accept.isPending}
+            onClick={() => accept.mutate()}
+          >
+            Accept version {repair.version}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => void navigate({ search: { tab: 'history' } })}
+          >
+            Compare in history
+          </Button>
+          {repair.verificationRunId ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                void navigate({
+                  to: '/projects/$projectId/runs/$runId',
+                  params: { projectId, runId: repair.verificationRunId! },
+                })
+              }
+            >
+              View verification
+            </Button>
+          ) : null}
+          <Button
+            variant="ghost"
+            size="sm"
+            loading={dismiss.isPending}
+            onClick={() => dismiss.mutate()}
+          >
+            Dismiss
+          </Button>
+        </div>
+      }
+    />
+  )
+}
+
 type RunRowData = {
   purpose: RunPurpose
   id: string
@@ -1016,13 +1226,7 @@ function RunsTab({ projectId, runs }: { projectId: string; runs: Array<RunRowDat
                     <Table.Cell>
                       <div className="grid gap-1">
                         <RunStatusBadge status={row.status} />
-                        <Text variant="secondary">
-                          {row.purpose === 'draft-check'
-                            ? 'Draft check'
-                            : row.purpose === 'generation-verification'
-                              ? 'Verification'
-                              : 'Regression'}
-                        </Text>
+                        <Text variant="secondary">{describePurpose(row.purpose)}</Text>
                       </div>
                     </Table.Cell>
                     <Table.Cell className="whitespace-nowrap text-kumo-subtle">

@@ -23,14 +23,20 @@ export const UNADOPTED_INTENT_STATUSES = ['proposed'] as const
 export const GENERATION_JOB_STATUSES = ['queued', 'running', 'succeeded', 'failed'] as const
 export type GenerationJobStatus = (typeof GENERATION_JOB_STATUSES)[number]
 
-export const GENERATION_JOB_KINDS = ['generate', 'explore', 'batch'] as const
+export const GENERATION_JOB_KINDS = ['generate', 'explore', 'batch', 'repair'] as const
 export type GenerationJobKind = (typeof GENERATION_JOB_KINDS)[number]
 
+/** `healed` is reserved for the repair loop and is not written by anything yet. */
 export const RUN_STATUSES = ['queued', 'running', 'passed', 'healed', 'failed', 'error'] as const
 export type RunStatus = (typeof RUN_STATUSES)[number]
 
-export const RUN_TRIGGERS = ['manual', 'regenerate', 'schedule', 'webhook'] as const
-export const RUN_PURPOSES = ['regression', 'draft-check', 'generation-verification'] as const
+export const RUN_TRIGGERS = ['manual', 'regenerate', 'schedule', 'webhook', 'repair'] as const
+export const RUN_PURPOSES = [
+  'regression',
+  'draft-check',
+  'generation-verification',
+  'repair-verification',
+] as const
 export type RunPurpose = (typeof RUN_PURPOSES)[number]
 
 export type RunTrigger = (typeof RUN_TRIGGERS)[number]
@@ -56,11 +62,27 @@ export type FailureDiagnosis = (typeof FAILURE_DIAGNOSES)[number]
 export const SCRIPT_AUTHORS = ['user', 'agent'] as const
 export type ScriptAuthor = (typeof SCRIPT_AUTHORS)[number]
 
+/**
+ * What to do when a ready test fails a regression run. `off` leaves it failing,
+ * `draft` has the agent propose a repaired version for a person to accept, `auto`
+ * adopts a repair that verifies and marks the run `healed`. Tests and projects can
+ * also say `inherit`, so the organization's setting is the default for everything.
+ */
+export const HEAL_POLICIES = ['off', 'draft', 'auto'] as const
+export type HealPolicy = (typeof HEAL_POLICIES)[number]
+export const HEAL_POLICY_CHOICES = ['inherit', ...HEAL_POLICIES] as const
+export type HealPolicyChoice = (typeof HEAL_POLICY_CHOICES)[number]
+
+/** Recorded on the failing run's attempt once a repair has verified. */
 export interface HealApplied {
+  jobId: string
+  versionId: string
+  version: number
+  /** The statement that failed, and what the run said about it. */
   whatFailed: string
-  proposed: string
-  matched: boolean
-  asserts: Array<string>
+  /** Whether the repaired version was adopted as the current one. */
+  adopted: boolean
+  policy: HealPolicy | 'manual'
 }
 
 export interface ArtifactKeys {
@@ -82,6 +104,7 @@ export const project = sqliteTable(
     description: text('description'),
     context: text('context'),
     modelId: text('model_id'),
+    healPolicy: text('heal_policy').$type<HealPolicyChoice>().default('inherit').notNull(),
     createdBy: text('created_by')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
@@ -157,6 +180,9 @@ export const intent = sqliteTable(
     currentVersionId: text('current_version_id'),
     schedule: text('schedule'),
     lastRunId: text('last_run_id'),
+    healPolicy: text('heal_policy').$type<HealPolicyChoice>().default('inherit').notNull(),
+    /** A repaired version that verified and is waiting for a person to accept it. */
+    pendingRepairVersionId: text('pending_repair_version_id'),
     createdBy: text('created_by')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
@@ -333,7 +359,11 @@ export const generationJob = sqliteTable(
     modelId: text('model_id'),
     scriptVersionId: text('script_version_id'),
     runId: text('run_id'),
+    /** For a repair: the failed run it set out to fix. */
+    sourceRunId: text('source_run_id'),
     turns: integer('turns').default(0).notNull(),
+    inputTokens: integer('input_tokens').default(0).notNull(),
+    outputTokens: integer('output_tokens').default(0).notNull(),
     stuckReason: text('stuck_reason'),
     createdBy: text('created_by')
       .notNull()
@@ -344,6 +374,7 @@ export const generationJob = sqliteTable(
   (table) => [
     index('generation_job_intentId_idx').on(table.intentId),
     index('generation_job_projectId_idx').on(table.projectId),
+    index('generation_job_organizationId_idx').on(table.organizationId),
   ],
 )
 
@@ -357,16 +388,26 @@ export const chatMessage = sqliteTable(
     role: text('role').$type<ChatRole>().notNull(),
     parts: text('parts', { mode: 'json' }).$type<Array<ChatPart>>().notNull(),
     status: text('status').$type<ChatMessageStatus>().default('complete').notNull(),
+    modelId: text('model_id'),
+    inputTokens: integer('input_tokens').default(0).notNull(),
+    outputTokens: integer('output_tokens').default(0).notNull(),
     createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).default(now).notNull(),
   },
   (table) => [index('chat_message_project_created_idx').on(table.projectId, table.createdAt)],
 )
 
+/**
+ * A row with `organizationId` null is the instance's key. An organization's own row
+ * wins over both the instance row and the Worker secret for that provider.
+ */
 export const providerKey = sqliteTable(
   'provider_key',
   {
     id: text('id').primaryKey(),
+    organizationId: text('organization_id').references(() => organization.id, {
+      onDelete: 'cascade',
+    }),
     provider: text('provider').$type<Provider>().notNull(),
     encryptedKey: text('encrypted_key').notNull(),
     addedBy: text('added_by')
@@ -378,7 +419,13 @@ export const providerKey = sqliteTable(
       .$onUpdate(() => new Date())
       .notNull(),
   },
-  (table) => [uniqueIndex('provider_key_provider_uidx').on(table.provider)],
+  (table) => [
+    uniqueIndex('provider_key_org_provider_uidx').on(table.organizationId, table.provider),
+    uniqueIndex('provider_key_instance_provider_uidx')
+      .on(table.provider)
+      .where(sql`organization_id is null`),
+    index('provider_key_organizationId_idx').on(table.organizationId),
+  ],
 )
 
 export const allowedModel = sqliteTable(
@@ -398,6 +445,18 @@ export const allowedModel = sqliteTable(
     index('allowed_model_provider_idx').on(table.provider),
   ],
 )
+
+export const organizationSettings = sqliteTable('organization_settings', {
+  organizationId: text('organization_id')
+    .primaryKey()
+    .references(() => organization.id, { onDelete: 'cascade' }),
+  healPolicy: text('heal_policy').$type<HealPolicy>().default('off').notNull(),
+  updatedBy: text('updated_by').references(() => user.id, { onDelete: 'set null' }),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+    .default(now)
+    .$onUpdate(() => new Date())
+    .notNull(),
+})
 
 export const instanceSettings = sqliteTable('instance_settings', {
   id: text('id').primaryKey().default('default'),

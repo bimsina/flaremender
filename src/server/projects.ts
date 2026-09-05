@@ -2,10 +2,19 @@ import { createServerFn } from '@tanstack/react-start'
 import { and, desc, eq, sql } from 'drizzle-orm'
 
 import type { Db } from '#/db/index.ts'
-import { allowedModel, environment, instanceSettings, intent, project } from '#/db/schema/app.ts'
+import {
+  allowedModel,
+  chatMessage,
+  environment,
+  generationJob,
+  instanceSettings,
+  intent,
+  project,
+} from '#/db/schema/app.ts'
 import { createId, slugify } from '#/lib/ids.ts'
 import { DEFAULT_MODEL_ID, parseModelId } from '#/lib/models.ts'
 import { AuthError, orgMiddleware } from './auth.ts'
+import { resolveProjectHealPolicy } from './heal-policy.ts'
 import { ValidationError, optionalStr, str, url } from './validate.ts'
 
 const defaultEnvironment = and(
@@ -102,10 +111,35 @@ export const getProject = createServerFn({ method: 'GET' })
 
     if (!row) throw new AuthError('Project not found.', 404)
 
+    const [jobs] = await context.db
+      .select({
+        count: sql<number>`count(*)`,
+        inputTokens: sql<number>`coalesce(sum(${generationJob.inputTokens}), 0)`,
+        outputTokens: sql<number>`coalesce(sum(${generationJob.outputTokens}), 0)`,
+      })
+      .from(generationJob)
+      .where(eq(generationJob.projectId, data.projectId))
+
+    const [chat] = await context.db
+      .select({
+        count: sql<number>`count(*)`,
+        inputTokens: sql<number>`coalesce(sum(${chatMessage.inputTokens}), 0)`,
+        outputTokens: sql<number>`coalesce(sum(${chatMessage.outputTokens}), 0)`,
+      })
+      .from(chatMessage)
+      .where(and(eq(chatMessage.projectId, data.projectId), eq(chatMessage.role, 'assistant')))
+
     return {
       ...row.project,
       defaultEnvironment: toDefaultEnvironment(row),
       effectiveModel: await resolveEffectiveModel(context.db, row.project.modelId),
+      healPolicy: await resolveProjectHealPolicy(context.db, row.project.id),
+      usage: {
+        jobs: Number(jobs?.count ?? 0),
+        chatTurns: Number(chat?.count ?? 0),
+        inputTokens: Number(jobs?.inputTokens ?? 0) + Number(chat?.inputTokens ?? 0),
+        outputTokens: Number(jobs?.outputTokens ?? 0) + Number(chat?.outputTokens ?? 0),
+      },
     }
   })
 

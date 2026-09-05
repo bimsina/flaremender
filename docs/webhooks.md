@@ -1,7 +1,8 @@
 # Webhook API
 
-The webhook API starts Flaremender runs from CI or another server. Create a project API
-key under Project Settings, Webhooks. The complete key is shown once.
+The webhook API starts Flaremender runs from CI or another server, and can create tests
+and generate their scripts. Create a project API key under Project Settings, Webhooks.
+The complete key is shown once.
 
 Set the host and key in your CI secret store:
 
@@ -56,7 +57,9 @@ curl --url "$FLAREMENDER_URL/api/v1/executions/run_123" \
   --header "Authorization: Bearer $FLAREMENDER_API_KEY"
 ```
 
-Terminal test statuses are `passed`, `healed`, `failed`, and `error`. Terminal
+Terminal test statuses are `passed`, `healed`, `failed`, and `error`; `healed` is a
+failed run whose script the agent repaired and, under an `auto` repair policy, adopted.
+Terminal
 suite statuses are `passed`, `failed`, and `error`.
 
 ## Download reports
@@ -85,3 +88,50 @@ per minute. A limited response returns `429` with `Retry-After: 60`.
 
 For rotation, create the replacement key, update the calling system, verify one
 request, then revoke the old key. Revoked keys cannot be restored.
+
+## Creating and generating tests
+
+These two endpoints, and the job endpoint they hand you, also accept a signed-in
+browser session instead of a key, so a script on a developer's machine can use the
+cookie the dashboard uses. Cookie-authenticated `POST`s must carry an `Origin` header
+matching the instance.
+
+Create a test from a plain-English description. It starts as a draft with no script:
+
+```bash
+curl --request POST \
+  --url "$FLAREMENDER_URL/api/v1/projects/prj_123/tests" \
+  --header "Authorization: Bearer $FLAREMENDER_API_KEY" \
+  --header "Content-Type: application/json" \
+  --data '{"title":"Visitor can sign in","description":"Sign in with APP_EMAIL and APP_PASSWORD. The Dashboard heading should be visible."}'
+```
+
+The response is `201 Created` with the test id and its dashboard link.
+
+Start the agent that writes the script. It opens a real browser on the environment,
+performs the flow and saves a version only if a full replay passes:
+
+```bash
+curl --request POST \
+  --url "$FLAREMENDER_URL/api/v1/projects/prj_123/tests/int_123/generate" \
+  --header "Authorization: Bearer $FLAREMENDER_API_KEY" \
+  --header "Content-Type: application/json" \
+  --data '{}'
+```
+
+The response is `202 Accepted` with a job id and `statusUrl`. A test with a generation
+already in flight answers `409 GENERATION_IN_FLIGHT`. Keys created before this endpoint
+existed answer `403`; create a new key.
+
+Poll the job. Queued and running responses include `Retry-After: 5` and
+`pollAfterMs: 5000`:
+
+```bash
+curl --url "$FLAREMENDER_URL/api/v1/jobs/gen_123" \
+  --header "Authorization: Bearer $FLAREMENDER_API_KEY"
+```
+
+Terminal job statuses are `succeeded` and `failed`. A finished job reports the model,
+the number of turns, input and output tokens, the reason it stopped if it did, the
+verification run's status, and whether the saved script ends in an assertion. It
+never includes the script source; open the dashboard link for that.

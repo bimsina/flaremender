@@ -5,6 +5,7 @@ import { NonRetryableError } from 'cloudflare:workflows'
 import { createDb } from '#/db/index.ts'
 import type { SuiteRunStatus } from '#/db/schema/app.ts'
 import { environment, intent, project, run, suiteRun } from '#/db/schema/app.ts'
+import { maybeQueueAutomaticRepair } from '#/engine/repair/trigger.ts'
 import {
   EXECUTE_STEP_CONFIG,
   PERSIST_ERROR_STEP_CONFIG,
@@ -191,7 +192,19 @@ export class SuiteWorkflow extends WorkflowEntrypoint<Cloudflare.Env, SuiteWorkf
 
       sessionId = executed.sessionId
 
-      await step.do(`${label}-persist`, () => persistRun(this.env, runId, loaded, executed))
+      const persisted = await step.do(`${label}-persist`, () =>
+        persistRun(this.env, runId, loaded, executed),
+      )
+
+      if (persisted.status === 'failed') {
+        await step.do(`${label}-repair`, () =>
+          maybeQueueAutomaticRepair(this.env, runId).catch((error: unknown) => ({
+            queued: false,
+            jobId: null,
+            reason: error instanceof Error ? error.message : String(error),
+          })),
+        )
+      }
     } catch (error) {
       sessionId = null
 

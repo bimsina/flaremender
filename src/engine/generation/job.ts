@@ -86,11 +86,13 @@ export async function runGenerationJob(
     let notes: string | null = null
     let fatal: string | null = null
     let turns = 0
+    const usage = { inputTokens: 0, outputTokens: 0 }
 
     for (let turn = 0; turn < MAX_TURNS; turn += 1) {
       const result = await step.do(at(`turn-${turn}`), TURN_STEP_CONFIG, () =>
         runTurn(env, {
           jobId,
+          organizationId,
           environmentId: loaded.environmentId,
           projectModelId: loaded.projectModelId,
           baseUrl: loaded.baseUrl,
@@ -120,6 +122,8 @@ export async function runGenerationJob(
       modelId = result.modelId
       notes = result.notes ?? notes
       fatal = result.fatal
+      usage.inputTokens += result.usage.inputTokens
+      usage.outputTokens += result.usage.outputTokens
 
       if (result.finished) break
 
@@ -137,7 +141,9 @@ export async function runGenerationJob(
       const reason =
         fatal ?? notes ?? 'The generator could not perform any step of this flow against the site.'
 
-      await step.do(at('abandon'), () => abandonGeneration(env, loaded, { reason, turns, modelId }))
+      await step.do(at('abandon'), () =>
+        abandonGeneration(env, loaded, { reason, turns, modelId, usage }),
+      )
       return { jobId, status: 'failed' }
     }
 
@@ -172,6 +178,7 @@ export async function runGenerationJob(
         executed,
         modelId,
         turns,
+        usage,
         stuckReason,
       }),
     )

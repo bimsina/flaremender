@@ -44,6 +44,14 @@ import { IntentStatusBadge } from '#/components/status-badge.tsx'
 import { SuiteProgress } from '#/components/suite-progress.tsx'
 import type { IntentStatus, RunStatus } from '#/db/schema/app.ts'
 import { describeCron } from '#/lib/cron.ts'
+import { formatCount } from '#/lib/format.ts'
+import {
+  HEAL_POLICY_LABEL,
+  HealPolicySelect,
+  describeHealPolicy,
+} from '#/components/heal-policy-select.tsx'
+import type { HealPolicy, HealPolicyChoice } from '#/db/schema/app.ts'
+import { setProjectHealPolicy } from '#/server/repairs.ts'
 import {
   allowedModelsQuery,
   chatMessagesQuery,
@@ -772,6 +780,8 @@ type ProjectRow = {
   modelId: string | null
   effectiveModel: { modelId: string; displayName: string; origin: string }
   defaultEnvironment: { id: string; name: string; baseUrl: string } | null
+  usage: { jobs: number; chatTurns: number; inputTokens: number; outputTokens: number }
+  healPolicy: { effective: HealPolicy; project: HealPolicyChoice; organization: HealPolicy }
 }
 
 function SettingsTab({ project }: { project: ProjectRow }) {
@@ -790,6 +800,14 @@ function SettingsTab({ project }: { project: ProjectRow }) {
 
       <Section title="Model" description="Which model generates scripts in this project.">
         <ProjectModelCard project={project} />
+        <ProjectUsageRow project={project} />
+      </Section>
+
+      <Section
+        title="Repairs"
+        description="What the agent may do when a ready test in this project fails. Tests can override it."
+      >
+        <ProjectRepairPolicyRow project={project} />
       </Section>
 
       <Section
@@ -1280,6 +1298,65 @@ function ProjectModelCard({ project }: { project: ProjectRow }) {
           mutation.mutate(!value || value === INSTANCE_DEFAULT ? null : value)
         }
       />
+    </SettingRow>
+  )
+}
+
+function ProjectRepairPolicyRow({ project }: { project: ProjectRow }) {
+  const queryClient = useQueryClient()
+  const toast = useKumoToastManager()
+
+  const save = useMutation({
+    mutationFn: (healPolicy: HealPolicyChoice) =>
+      setProjectHealPolicy({ data: { projectId: project.id, healPolicy } }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries()
+      toast.add({ variant: 'success', title: 'Repair policy saved' })
+    },
+    onError: (error: Error) =>
+      toast.add({ variant: 'error', title: 'Could not save', description: error.message }),
+  })
+
+  const { effective, project: own, organization } = project.healPolicy
+
+  return (
+    <SettingRow
+      label="When a ready test fails"
+      hint={
+        own === 'inherit'
+          ? `Inherited from the organization (${HEAL_POLICY_LABEL[organization].toLowerCase()}). ${describeHealPolicy(effective)}`
+          : describeHealPolicy(effective)
+      }
+    >
+      <HealPolicySelect
+        aria-label="Repair policy"
+        value={own}
+        inheritLabel={`Inherit from organization (${HEAL_POLICY_LABEL[organization]})`}
+        loading={save.isPending}
+        onChange={(next) => save.mutate(next)}
+      />
+    </SettingRow>
+  )
+}
+
+function ProjectUsageRow({ project }: { project: ProjectRow }) {
+  const { usage } = project
+  const idle = usage.jobs === 0 && usage.chatTurns === 0
+
+  return (
+    <SettingRow
+      label="Model usage"
+      hint={
+        idle
+          ? 'Nothing has used a model in this project yet.'
+          : `${usage.jobs} generation${usage.jobs === 1 ? '' : 's'} and ${usage.chatTurns} chat turn${
+              usage.chatTurns === 1 ? '' : 's'
+            } so far. Tokens are billed by the provider whose key was used.`
+      }
+    >
+      <Text as="span" variant="mono-secondary">
+        {formatCount(usage.inputTokens)} in · {formatCount(usage.outputTokens)} out
+      </Text>
     </SettingRow>
   )
 }

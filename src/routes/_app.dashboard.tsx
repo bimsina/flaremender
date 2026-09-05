@@ -15,6 +15,7 @@ import { RunTrend } from '#/components/run-trend.tsx'
 import { RunStatusBadge } from '#/components/status-badge.tsx'
 import { RelativeTime } from '#/components/relative-time.tsx'
 import { overviewQuery, runTrendQuery } from '#/lib/queries.ts'
+import { describePurpose } from '#/lib/format.ts'
 
 export const Route = createFileRoute('/_app/dashboard')({
   loader: async ({ context }) => {
@@ -198,12 +199,7 @@ function Dashboard() {
                         {run.intentTitle}
                       </Link>
                       <Text variant="secondary" DANGEROUS_className="mt-1">
-                        {run.purpose === 'draft-check'
-                          ? 'Draft check'
-                          : run.purpose === 'generation-verification'
-                            ? 'Verification'
-                            : 'Regression'}{' '}
-                        · v{run.version}
+                        {describePurpose(run.purpose)} · v{run.version}
                       </Text>
                     </Table.Cell>
                     <Table.Cell className="min-w-40">

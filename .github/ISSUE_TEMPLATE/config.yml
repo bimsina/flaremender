@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/bimsina/flaremender/security/advisories/new
+    about: Report privately. Do not open a public issue for anything in SECURITY.md's scope.
+  - name: Cloudflare account and billing questions
+    url: https://developers.cloudflare.com/workers/platform/pricing/
+    about: Flaremender runs on your own account. Plan and pricing questions belong with Cloudflare.
