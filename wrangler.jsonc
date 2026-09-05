@@ -17,7 +17,14 @@
   ],
   // Set to "true" to close public registration. The first account (which becomes the
   // instance admin) and anyone holding a pending invitation can still sign up.
-  "vars": { "DISABLE_SIGNUP": "false" },
+  "vars": {
+    "DISABLE_SIGNUP": "false",
+    // Sender for email notifications. Only used once `send_email` below is enabled.
+    "NOTIFY_FROM_ADDRESS": "",
+  },
+  // Email notifications go through Cloudflare Email Service. Off by default because the
+  // binding needs Email Service set up on the account; see docs/notifications.md.
+  // "send_email": [{ "name": "EMAIL", "remote": true }],
   "browser": { "binding": "BROWSER" },
   "ai": { "binding": "AI", "remote": true },
   "ratelimits": [

@@ -5,6 +5,7 @@ import { NonRetryableError } from 'cloudflare:workflows'
 import { createDb } from '#/db/index.ts'
 import type { SuiteRunStatus } from '#/db/schema/app.ts'
 import { environment, intent, project, run, suiteRun } from '#/db/schema/app.ts'
+import { notifyQuietly, notifySuite } from '#/engine/notifications/dispatch.ts'
 import { maybeQueueAutomaticRepair } from '#/engine/repair/trigger.ts'
 import {
   EXECUTE_STEP_CONFIG,
@@ -98,7 +99,13 @@ export class SuiteWorkflow extends WorkflowEntrypoint<Cloudflare.Env, SuiteWorkf
         })
       }
 
-      return await step.do('finish', () => this.finish(suiteRunId, sessionId))
+      const finished = await step.do('finish', () => this.finish(suiteRunId, sessionId))
+
+      await step.do('notify', () =>
+        notifyQuietly(suiteRunId, () => notifySuite(this.env, suiteRunId)),
+      )
+
+      return finished
     } catch (error) {
       await step.do('finish-error', PERSIST_ERROR_STEP_CONFIG, () =>
         this.finishError(suiteRunId, sessionId, error),

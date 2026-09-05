@@ -43,6 +43,13 @@
       "when": 1788578274411,
       "tag": "0005_repair_policy",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1788580563400,
+      "tag": "0006_notifications",
+      "breakpoints": true
     }
   ]
 }

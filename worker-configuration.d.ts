@@ -24,6 +24,9 @@ interface __BaseEnv_Env {
 	EXPLORE_WORKFLOW: Workflow<Parameters<import("./src/server").ExploreWorkflow['run']>[0]['payload']>;
 	BATCH_WORKFLOW: Workflow<Parameters<import("./src/server").BatchGenerateWorkflow['run']>[0]['payload']>;
 	REPAIR_WORKFLOW: Workflow<Parameters<import("./src/server").RepairWorkflow['run']>[0]['payload']>;
+	/** Present only when the send_email binding in wrangler.jsonc is enabled. */
+	EMAIL?: SendEmail;
+	NOTIFY_FROM_ADDRESS?: string;
 }
 declare namespace Cloudflare {
 	interface GlobalProps {

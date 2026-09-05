@@ -2,6 +2,7 @@ import type { ModelMessage } from 'ai'
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from 'cloudflare:workers'
 
 import type { GenerationJobStatus } from '#/db/schema/app.ts'
+import { notifyQuietly, notifyRepair } from '#/engine/notifications/dispatch.ts'
 import { loadCredentials, runTurn } from '#/engine/generation/loop.ts'
 import { assembleScript, hasAssertions } from '#/engine/generation/script.ts'
 import { REPAIR_SYSTEM_PROMPT, buildRepairPrompt } from '#/engine/repair/prompts.ts'
@@ -180,6 +181,7 @@ export class RepairWorkflow extends WorkflowEntrypoint<Cloudflare.Env, RepairWor
             usage,
           }),
         )
+        await step.do('notify', () => notifyQuietly(jobId, () => notifyRepair(this.env, jobId)))
         return { jobId, status: 'failed' }
       }
 
@@ -219,6 +221,8 @@ export class RepairWorkflow extends WorkflowEntrypoint<Cloudflare.Env, RepairWor
           stuckReason,
         }),
       )
+
+      await step.do('notify', () => notifyQuietly(jobId, () => notifyRepair(this.env, jobId)))
 
       return { jobId, status: verdict.outcome === 'passed' ? 'succeeded' : 'failed' }
     } catch (error) {

@@ -292,6 +292,31 @@ Policy is read from the test, then the project, then the organization, and the
 organization's default is `off`. A manual repair under `off` or `draft` produces a
 pending repair; under `auto` it is adopted.
 
+### Notifications
+
+Every run, suite and repair workflow ends with a `notify` step that never throws:
+`src/engine/notifications/dispatch.ts` loads the project's enabled destinations
+that subscribe to the event, builds the event once per dashboard origin (each
+destination remembers the origin it was created from, because a Workflow has no
+request to read one off), delivers, and writes a `notification_delivery` row with
+the response or the error. Standalone runs fire `run.*`; runs inside a suite are
+reported once by `suite.*` with the failures listed; draft checks and the
+verification runs behind generation and repair never notify.
+
+```
+src/engine/notifications/
+  events.ts    the event types and the payload shape every channel shares
+  format.ts    one event rendered for Slack, Discord and email
+  sign.ts      HMAC signature for plain webhooks
+  dispatch.ts  fan-out, retries, the delivery log
+src/server/notifications.ts   destinations, deliveries, Send test
+```
+
+Plain webhooks are signed with a per-destination secret shown once. Email goes
+through Cloudflare Email Service behind an opt-in `send_email` binding; without
+it, email deliveries are logged as failed with the reason. See
+[docs/notifications.md](notifications.md).
+
 ### Schedules and retention
 
 Two cron triggers reach `scheduled` in `src/server.ts`, told apart by the

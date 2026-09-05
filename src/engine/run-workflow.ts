@@ -1,6 +1,7 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from 'cloudflare:workers'
 
 import type { RunStatus } from '#/db/schema/app.ts'
+import { notifyQuietly, notifyRun } from '#/engine/notifications/dispatch.ts'
 import { maybeQueueAutomaticRepair } from '#/engine/repair/trigger.ts'
 import {
   EXECUTE_STEP_CONFIG,
@@ -44,6 +45,8 @@ export class RunWorkflow extends WorkflowEntrypoint<Cloudflare.Env, RunWorkflowP
           })),
         )
       }
+
+      await step.do('notify', () => notifyQuietly(runId, () => notifyRun(this.env, runId)))
 
       return persisted
     } catch (error) {

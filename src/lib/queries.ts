@@ -13,6 +13,7 @@ import {
 } from '#/server/instance.ts'
 import { getOrganizationProviderKeys } from '#/server/org-providers.ts'
 import { getOrganizationSettings, getPendingRepair } from '#/server/repairs.ts'
+import { listNotificationDeliveries, listNotificationDestinations } from '#/server/notifications.ts'
 import {
   getJob,
   getIntent,
@@ -218,6 +219,18 @@ export const adminMembershipsQuery = (organizationId: string) =>
     queryKey: ['admin', 'memberships', organizationId] as const,
     queryFn: () => listAllMemberships({ data: { organizationId } }),
     enabled: organizationId.length > 0,
+  })
+
+export const notificationDestinationsQuery = (projectId: string) =>
+  queryOptions({
+    queryKey: ['project', projectId, 'notifications'] as const,
+    queryFn: () => listNotificationDestinations({ data: { projectId } }),
+  })
+
+export const notificationDeliveriesQuery = (projectId: string, destinationId: string) =>
+  queryOptions({
+    queryKey: ['project', projectId, 'notifications', destinationId, 'deliveries'] as const,
+    queryFn: () => listNotificationDeliveries({ data: { projectId, destinationId } }),
   })
 
 export const organizationSettingsQuery = () =>

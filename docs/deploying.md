@@ -16,6 +16,7 @@ One requirement rules out the Workers Free plan. The rest is setup.
 | **An LLM provider**            | generation, exploration and chat                 | Workers AI is the default and needs no key; Anthropic, OpenAI or Google produce noticeably better scripts. Keys can be set per instance or per organization |
 | Browser Rendering              | every test runs in a real browser                | Free and Paid                                                                                                                                               |
 | Workflows, Durable Objects, D1 | orchestration, live updates, storage             | Free and Paid                                                                                                                                               |
+| Email Service                  | email notifications                              | Optional. Webhooks, Slack and Discord need nothing; see [docs/notifications.md](notifications.md)                                                           |
 
 ### What it costs
 

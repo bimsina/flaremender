@@ -446,6 +446,61 @@ export const allowedModel = sqliteTable(
   ],
 )
 
+export const NOTIFICATION_KINDS = ['webhook', 'slack', 'discord', 'email'] as const
+export type NotificationKind = (typeof NOTIFICATION_KINDS)[number]
+
+/** Where a project's results are sent. `events` holds NotificationEventType names. */
+export const notificationDestination = sqliteTable(
+  'notification_destination',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => project.id, { onDelete: 'cascade' }),
+    kind: text('kind').$type<NotificationKind>().notNull(),
+    name: text('name').notNull(),
+    /** A URL, or an email address for `email`. */
+    target: text('target').notNull(),
+    /** Webhook signing secret, encrypted like every other secret. Null for other kinds. */
+    encryptedSecret: text('encrypted_secret'),
+    events: text('events', { mode: 'json' }).$type<Array<string>>().notNull(),
+    enabled: integer('enabled', { mode: 'boolean' }).default(true).notNull(),
+    /** The origin the dashboard was reached at when this was created; links point here. */
+    dashboardOrigin: text('dashboard_origin').notNull(),
+    lastDeliveryAt: integer('last_delivery_at', { mode: 'timestamp_ms' }),
+    lastDeliveryStatus: text('last_delivery_status').$type<'delivered' | 'failed'>(),
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).default(now).notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(now)
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [index('notification_destination_projectId_idx').on(table.projectId)],
+)
+
+export const notificationDelivery = sqliteTable(
+  'notification_delivery',
+  {
+    id: text('id').primaryKey(),
+    destinationId: text('destination_id')
+      .notNull()
+      .references(() => notificationDestination.id, { onDelete: 'cascade' }),
+    event: text('event').notNull(),
+    /** The run, suite or job the event was about. */
+    subjectId: text('subject_id').notNull(),
+    status: text('status').$type<'delivered' | 'failed'>().notNull(),
+    responseStatus: integer('response_status'),
+    error: text('error'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).default(now).notNull(),
+  },
+  (table) => [
+    index('notification_delivery_destination_created_idx').on(table.destinationId, table.createdAt),
+  ],
+)
+
 export const organizationSettings = sqliteTable('organization_settings', {
   organizationId: text('organization_id')
     .primaryKey()

@@ -35,6 +35,7 @@ import { EnvironmentsPanel } from '#/components/environments-panel.tsx'
 import { InlineEmpty, ListRow, ListToolbar, Section, SettingRow } from '#/components/list.tsx'
 import { PageBody, PageHeader } from '#/components/page.tsx'
 import { NewTestMenu } from '#/components/new-test-menu.tsx'
+import { NotificationsPanel } from '#/components/notifications-panel.tsx'
 import { MonoPanel } from '#/components/mono-panel.tsx'
 import { ProjectOverview } from '#/components/project-overview.tsx'
 import { ProjectChatTab } from '#/components/project-chat.tsx'
@@ -58,6 +59,7 @@ import {
   environmentsQuery,
   intentsQuery,
   projectQuery,
+  notificationDestinationsQuery,
   projectWebhookSettingsQuery,
   projectRunsQuery,
   runTrendQuery,
@@ -160,6 +162,10 @@ export const Route = createFileRoute('/_app/projects/$projectId/')({
         revalidateIfStale: true,
       }),
       context.queryClient.ensureQueryData({ ...allowedModelsQuery(), revalidateIfStale: true }),
+      context.queryClient.ensureQueryData({
+        ...notificationDestinationsQuery(params.projectId),
+        revalidateIfStale: true,
+      }),
       context.queryClient.ensureQueryData({
         ...projectWebhookSettingsQuery(params.projectId),
         revalidateIfStale: true,
@@ -815,6 +821,13 @@ function SettingsTab({ project }: { project: ProjectRow }) {
         description="Trigger this project or one ready test from CI and other external systems."
       >
         <ProjectWebhooksCard projectId={project.id} />
+      </Section>
+
+      <Section
+        title="Notifications"
+        description="Where failures, suite results and repairs are sent: Slack, Discord, a signed webhook or email."
+      >
+        <NotificationsPanel projectId={project.id} />
       </Section>
 
       <Section
