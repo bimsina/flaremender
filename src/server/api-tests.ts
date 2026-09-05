@@ -30,7 +30,7 @@ import {
   authenticateWebhook,
 } from './webhooks.ts'
 
-interface ApiPrincipal {
+export interface ApiPrincipal {
   via: 'api-key' | 'session'
   organizationId: string
   /** Null for a session, which may reach any project in its organization. */
@@ -49,7 +49,7 @@ function sameOrigin(request: Request): boolean {
   }
 }
 
-async function sessionPrincipal(request: Request, db: Db): Promise<ApiPrincipal> {
+export async function sessionPrincipal(request: Request, db: Db): Promise<ApiPrincipal> {
   const session = await createAuth(env.DB, env).api.getSession({ headers: request.headers })
   if (!session?.user) {
     throw new WebhookApiError(

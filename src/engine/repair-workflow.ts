@@ -2,6 +2,7 @@ import type { ModelMessage } from 'ai'
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from 'cloudflare:workers'
 
 import type { GenerationJobStatus } from '#/db/schema/app.ts'
+import { formatDocuments, loadProjectKnowledge } from '#/engine/knowledge.ts'
 import { notifyQuietly, notifyRepair } from '#/engine/notifications/dispatch.ts'
 import { loadCredentials, runTurn } from '#/engine/generation/loop.ts'
 import { assembleScript, hasAssertions } from '#/engine/generation/script.ts'
@@ -100,7 +101,10 @@ export class RepairWorkflow extends WorkflowEntrypoint<Cloudflare.Env, RepairWor
         return { jobId, status: 'failed' }
       }
 
-      const prompt = this.buildPrompt(loaded, replay)
+      const knowledge = await step.do('knowledge', () =>
+        loadProjectKnowledge(this.env, loaded.projectId, { images: false }),
+      )
+      const prompt = this.buildPrompt(loaded, replay, formatDocuments(knowledge.documents))
 
       await announceRun(this.env, jobId, {
         type: 'log',
@@ -248,6 +252,8 @@ export class RepairWorkflow extends WorkflowEntrypoint<Cloudflare.Env, RepairWor
       browser: this.env.BROWSER,
       baseUrl: loaded.baseUrl,
       creds: await loadCredentials(this.env, loaded.environmentId),
+      channel: this.env.RUN_CHANNEL.getByName(loaded.jobId),
+      jobId: loaded.jobId,
     })
 
     if (started.sessionId) {
@@ -262,8 +268,13 @@ export class RepairWorkflow extends WorkflowEntrypoint<Cloudflare.Env, RepairWor
     return { sessionId: started.sessionId, errorMessage: started.errorMessage }
   }
 
-  private buildPrompt(loaded: LoadedRepair, replay: ReplayResult): string {
+  private buildPrompt(
+    loaded: LoadedRepair,
+    replay: ReplayResult,
+    documents: string | null,
+  ): string {
     return buildRepairPrompt({
+      documents,
       intentTitle: loaded.intentTitle,
       intentDescription: loaded.intentDescription,
       projectName: loaded.projectName,

@@ -1,6 +1,7 @@
 import { Badge, Banner, LayerCard, Loader, Text } from '@cloudflare/kumo'
 import { WarningCircleIcon } from '@phosphor-icons/react'
 
+import { LiveBrowser } from '#/components/live-browser.tsx'
 import { StepList } from '#/components/step-list.tsx'
 import { type LiveTransport, useRunLive } from '#/lib/use-run-live.ts'
 
@@ -57,6 +58,14 @@ export function RunLivePanel({ runId, intentId }: { runId: string; intentId: str
             icon={<WarningCircleIcon weight="fill" />}
             title="The run did not pass"
             description={live.errorMessage.split('\n')[0]}
+          />
+        ) : null}
+
+        {live.frame || !live.finished ? (
+          <LiveBrowser
+            frame={live.frame}
+            active={!live.finished}
+            caption={live.steps.at(-1)?.label ?? null}
           />
         ) : null}
 

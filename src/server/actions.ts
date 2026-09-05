@@ -410,6 +410,7 @@ export async function queueExploration(
     environment: TargetEnvironment
     createdBy: string
     focus: string | null
+    autoGenerate?: boolean
   },
 ) {
   await assertNoExplorationInFlight(db, input.projectId)
@@ -437,6 +438,7 @@ export async function queueExploration(
           organizationId: input.organizationId,
           userId: input.createdBy,
           focus: input.focus,
+          autoGenerate: input.autoGenerate === true,
         },
       }),
     async () => (await env.EXPLORE_WORKFLOW.get(row.id)).status(),

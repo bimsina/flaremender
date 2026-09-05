@@ -58,6 +58,7 @@ export interface RepairContext {
   originalError: string | null
   remaining: Array<string>
   pageAtFailure: string | null
+  documents?: string | null
 }
 
 function numbered(statements: Array<string>, offset = 0): string {
@@ -96,6 +97,7 @@ ${context.credentialNames.map((name) => `- \`${name}\``).join('\n')}`
       : `# Credentials available
 
 None. Do not call \`secret()\`.`,
+    context.documents ?? null,
     `# The script that failed (version ${context.version})
 
 \`\`\`js

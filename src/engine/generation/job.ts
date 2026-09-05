@@ -4,6 +4,10 @@ import type { WorkflowStep } from 'cloudflare:workers'
 import type { GenerationJobStatus } from '#/db/schema/app.ts'
 import { loadCredentials, runTurn } from '#/engine/generation/loop.ts'
 import { buildTaskPrompt, formatObservation } from '#/engine/generation/prompts.ts'
+import { resolveModelId } from '#/engine/generation/llm.ts'
+import { formatDocuments, loadProjectKnowledge, modelCanSee } from '#/engine/knowledge.ts'
+import { createDb } from '#/db/index.ts'
+import { type OpeningContent, asUserContent, openingContent } from '#/engine/opening.ts'
 import { assembleScript, hasAssertions } from '#/engine/generation/script.ts'
 import {
   type LoadedGeneration,
@@ -100,7 +104,7 @@ export async function runGenerationJob(
           intentDescription: loaded.intentDescription,
           sessionId: sessionId!,
           messages: [
-            { role: 'user', content: opening.prompt },
+            { role: 'user', content: asUserContent(opening.content) },
             ...transcript.flatMap((json) => JSON.parse(json) as Array<ModelMessage>),
           ],
           verified: fragments,
@@ -202,12 +206,23 @@ export async function runGenerationJob(
 async function openSession(
   env: Cloudflare.Env,
   loaded: LoadedGeneration,
-): Promise<{ sessionId: string | null; prompt: string; errorMessage: string | null }> {
+): Promise<{
+  sessionId: string | null
+  content: OpeningContent
+  errorMessage: string | null
+}> {
+  const { modelId } = await resolveModelId(createDb(env.DB), loaded.projectModelId)
+  const knowledge = await loadProjectKnowledge(env, loaded.projectId, {
+    images: modelCanSee(modelId),
+  })
+
   const started = await startGenerationSession({
     loader: env.LOADER,
     browser: env.BROWSER,
     baseUrl: loaded.baseUrl,
     creds: await loadCredentials(env, loaded.environmentId),
+    channel: env.RUN_CHANNEL.getByName(loaded.jobId),
+    jobId: loaded.jobId,
   })
 
   const task = buildTaskPrompt({
@@ -219,6 +234,7 @@ async function openSession(
     baseUrl: loaded.baseUrl,
     credentialNames: loaded.credentialNames,
     currentScript: loaded.currentScript,
+    documents: formatDocuments(knowledge.documents),
   })
 
   const prompt = started.observation
@@ -234,7 +250,11 @@ async function openSession(
     })
   }
 
-  return { sessionId: started.sessionId, prompt, errorMessage: started.errorMessage }
+  return {
+    sessionId: started.sessionId,
+    content: openingContent(prompt, knowledge.images),
+    errorMessage: started.errorMessage,
+  }
 }
 
 function isIncomplete(notes: string | null): boolean {

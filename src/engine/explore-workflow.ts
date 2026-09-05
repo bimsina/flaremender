@@ -11,8 +11,12 @@ import {
   loadExploration,
   persistExploration,
 } from '#/engine/explore/steps.ts'
+import { resolveModelId } from '#/engine/generation/llm.ts'
 import { loadCredentials } from '#/engine/generation/loop.ts'
 import { formatObservation } from '#/engine/generation/prompts.ts'
+import { formatDocuments, loadProjectKnowledge, modelCanSee } from '#/engine/knowledge.ts'
+import { type OpeningContent, asUserContent, openingContent } from '#/engine/opening.ts'
+import { createDb } from '#/db/index.ts'
 import { PERSIST_ERROR_STEP_CONFIG, announceRun, releaseRunSession } from '#/engine/run-steps.ts'
 import { startGenerationSession } from '#/engine/runner/loader.ts'
 
@@ -23,6 +27,8 @@ export interface ExploreWorkflowParams {
   organizationId: string
   userId: string
   focus?: string | null
+  /** Generate every proposal as soon as the plan is ready, instead of waiting for approval. */
+  autoGenerate?: boolean
 }
 
 const MAX_TURNS = 20
@@ -42,7 +48,7 @@ export class ExploreWorkflow extends WorkflowEntrypoint<Cloudflare.Env, ExploreW
     event: Readonly<WorkflowEvent<ExploreWorkflowParams>>,
     step: WorkflowStep,
   ): Promise<{ jobId: string; status: GenerationJobStatus; proposed: number }> {
-    const { jobId, organizationId, focus } = event.payload
+    const { jobId, organizationId, focus, autoGenerate } = event.payload
 
     let sessionId: string | null = null
 
@@ -86,7 +92,7 @@ export class ExploreWorkflow extends WorkflowEntrypoint<Cloudflare.Env, ExploreW
             baseUrl: loaded.baseUrl,
             sessionId: sessionId!,
             messages: [
-              { role: 'user', content: opening.prompt },
+              { role: 'user', content: asUserContent(opening.content) },
               ...transcript.flatMap((json) => JSON.parse(json) as Array<ModelMessage>),
             ],
             knownTitles: [...loaded.existingTitles, ...proposals.map((proposal) => proposal.title)],
@@ -134,7 +140,14 @@ export class ExploreWorkflow extends WorkflowEntrypoint<Cloudflare.Env, ExploreW
       }
 
       const persisted = await step.do('persist', () =>
-        persistExploration(this.env, loaded, { proposals, summary, turns, modelId, usage }),
+        persistExploration(this.env, loaded, {
+          proposals,
+          summary,
+          turns,
+          modelId,
+          usage,
+          autoGenerate: autoGenerate === true,
+        }),
       )
 
       return { jobId, status: 'succeeded', proposed: persisted.intentIds.length }
@@ -153,14 +166,23 @@ export class ExploreWorkflow extends WorkflowEntrypoint<Cloudflare.Env, ExploreW
     }
   }
 
-  private async openSession(
-    loaded: LoadedExploration,
-  ): Promise<{ sessionId: string | null; prompt: string; errorMessage: string | null }> {
+  private async openSession(loaded: LoadedExploration): Promise<{
+    sessionId: string | null
+    content: OpeningContent
+    errorMessage: string | null
+  }> {
+    const { modelId } = await resolveModelId(createDb(this.env.DB), loaded.projectModelId)
+    const knowledge = await loadProjectKnowledge(this.env, loaded.projectId, {
+      images: modelCanSee(modelId),
+    })
+
     const started = await startGenerationSession({
       loader: this.env.LOADER,
       browser: this.env.BROWSER,
       baseUrl: loaded.baseUrl,
       creds: await loadCredentials(this.env, loaded.environmentId),
+      channel: this.env.RUN_CHANNEL.getByName(loaded.jobId),
+      jobId: loaded.jobId,
     })
 
     const task = buildExplorePrompt({
@@ -172,6 +194,7 @@ export class ExploreWorkflow extends WorkflowEntrypoint<Cloudflare.Env, ExploreW
       projectContext: loaded.projectContext,
       existingTitles: loaded.existingTitles,
       focus: loaded.focus,
+      documents: formatDocuments(knowledge.documents),
     })
 
     const prompt = started.observation
@@ -187,6 +210,10 @@ export class ExploreWorkflow extends WorkflowEntrypoint<Cloudflare.Env, ExploreW
       })
     }
 
-    return { sessionId: started.sessionId, prompt, errorMessage: started.errorMessage }
+    return {
+      sessionId: started.sessionId,
+      content: openingContent(prompt, knowledge.images),
+      errorMessage: started.errorMessage,
+    }
   }
 }

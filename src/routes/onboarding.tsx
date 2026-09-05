@@ -210,8 +210,11 @@ function InstanceSetupStep() {
             Set up this instance
           </Text>
           <Text variant="secondary">
-            Generation runs on the model a project picks. Without one it uses Workers AI (
-            <span className="font-mono text-[0.9em]">{FALLBACK_SLUG}</span>), which needs no key.
+            The agents write and repair tests by driving a real browser and talking to a model. Add
+            an OpenAI key and GPT-5.6 Luna becomes the default; it wrote every test in our evals
+            correctly. Anthropic works too. Without a key it falls back to Workers AI (
+            <span className="font-mono text-[0.9em]">{FALLBACK_SLUG}</span>), which needs no key but
+            writes noticeably weaker tests.
           </Text>
         </div>
 

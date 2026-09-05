@@ -8,6 +8,7 @@ import {
   PROVIDER_LABELS,
   PROVIDER_SECRET_VARS,
   type Provider,
+  RECOMMENDED_MODELS,
   parseModelId,
 } from '#/lib/models.ts'
 import { adminMiddleware, authMiddleware } from './auth.ts'
@@ -133,7 +134,48 @@ export const setProviderKey = createServerFn({ method: 'POST' })
         set: { encryptedKey, addedBy: context.user.id, updatedAt: new Date() },
       })
 
-    return { provider: data.provider, dbKeyHint: maskSecret(data.key) }
+    // A key with no model to use it is a dead end, so the first key also picks a model.
+    const recommended = RECOMMENDED_MODELS[data.provider]
+    let adoptedModelId: string | null = null
+    if (recommended) {
+      await context.db
+        .insert(allowedModel)
+        .values({
+          id: createId('mdl'),
+          modelId: recommended.modelId,
+          provider: data.provider,
+          displayName: recommended.displayName,
+          addedBy: context.user.id,
+        })
+        .onConflictDoNothing()
+
+      const [settings] = await context.db
+        .select({ defaultModelId: instanceSettings.defaultModelId })
+        .from(instanceSettings)
+        .where(eq(instanceSettings.id, SETTINGS_ID))
+        .limit(1)
+
+      if (!settings?.defaultModelId) {
+        await context.db
+          .insert(instanceSettings)
+          .values({
+            id: SETTINGS_ID,
+            defaultModelId: recommended.modelId,
+            updatedBy: context.user.id,
+          })
+          .onConflictDoUpdate({
+            target: instanceSettings.id,
+            set: {
+              defaultModelId: recommended.modelId,
+              updatedBy: context.user.id,
+              updatedAt: new Date(),
+            },
+          })
+        adoptedModelId = recommended.modelId
+      }
+    }
+
+    return { provider: data.provider, dbKeyHint: maskSecret(data.key), adoptedModelId }
   })
 
 export const deleteProviderKey = createServerFn({ method: 'POST' })

@@ -138,6 +138,8 @@ export async function runExploreTurn(
     const response = await observeInDynamicWorker({
       ...browserOptions,
       sessionId: state.sessionId,
+      channel: env.RUN_CHANNEL.getByName(input.jobId),
+      jobId: input.jobId,
     })
 
     if (response.sessionLost) {
@@ -146,6 +148,8 @@ export async function runExploreTurn(
       const retry = await observeInDynamicWorker({
         ...browserOptions,
         sessionId: state.sessionId,
+        channel: env.RUN_CHANNEL.getByName(input.jobId),
+        jobId: input.jobId,
       })
 
       return retry.observation

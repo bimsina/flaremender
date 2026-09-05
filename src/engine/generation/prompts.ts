@@ -7,6 +7,8 @@ export interface GenerationContext {
   baseUrl: string
   credentialNames: Array<string>
   currentScript: string | null
+  /** Pre-rendered by `formatDocuments`; null when nothing was uploaded. */
+  documents?: string | null
 }
 
 export const SYSTEM_PROMPT = `You are Flaremender's test author. You build an end-to-end Playwright test by actually performing the flow in a real browser, one small step at a time, and keeping only the code that worked.
@@ -110,6 +112,7 @@ ${context.credentialNames.map((name) => `- \`${name}\``).join('\n')}`
       : `# Credentials available
 
 None. This environment has no environment variables, so do not call \`secret()\`.`,
+    context.documents ?? null,
   ]
 
   if (context.currentScript) {

@@ -57,6 +57,9 @@ export const exploreProject = createServerFn({ method: 'POST' })
     projectId: str(data, 'projectId'),
     environmentId: has(data, 'environmentId') ? str(data, 'environmentId') : null,
     focus: optionalStr(data, 'focus', 500),
+    autoGenerate: has(data, 'autoGenerate')
+      ? Boolean((data as Record<string, unknown>).autoGenerate)
+      : false,
   }))
   .handler(async ({ data, context }) => {
     await assertProject(context.db, context.organizationId, data.projectId)
@@ -73,12 +76,15 @@ export const exploreProject = createServerFn({ method: 'POST' })
       environment: target,
       createdBy: context.user.id,
       focus: data.focus,
+      autoGenerate: data.autoGenerate,
     })
 
     await announce(data.projectId, context.organizationId, [
       {
         type: 'text',
-        text: 'Looking round the app now. I will post a plan here when I am done.',
+        text: data.autoGenerate
+          ? 'Looking round the app now. When I know what it does, I will propose the tests worth having and start writing them straight away.'
+          : 'Looking round the app now. I will post a plan here when I am done.',
       },
       {
         type: 'card',

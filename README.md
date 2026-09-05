@@ -1,11 +1,13 @@
 # Flaremender
 
-**Write a test in English. Get a Playwright script that runs in a real browser.**
+**Give it a URL. Watch it write your test suite.**
 
-Type what the test should do. "Sign in, add a task, check it appears in the list."
-An agent opens your app in a real browser, tries each step, and keeps the code only
-once it has watched the step work. What you get back is an ordinary Playwright
-script. Read it, edit it, delete half of it. It is yours.
+Point Flaremender at your app, give it a sign-in and whatever you know, and an agent
+opens the app in a real browser, works out what it does, proposes the tests worth
+having and writes them, one verified step at a time, while you watch the browser it
+is driving. Or type what a test should prove, "Sign in, add a task, check it appears
+in the list", and it writes that one. What you get back is ordinary Playwright.
+Read it, edit it, delete half of it. It is yours.
 
 Flaremender runs on your own Cloudflare account. Your app's passwords, your scripts
 and your run history stay there.
@@ -20,10 +22,14 @@ and your run history stay there.
 
 ## What it does
 
-- **Writes tests from a sentence.** The agent drives a live browser and verifies
-  every fragment before it keeps it.
-- **Finds its own work.** Point it at your app and it explores, then hands you a
-  checklist of proposed tests to approve, edit or throw away.
+- **Starts from a URL.** Create a project with the app's address, credentials, docs
+  links and any files you have, a README, an API spec, a PDF, screenshots. The agent
+  reads them, explores the app in a real browser and writes the first suite on its
+  own. Every test is verified in a fresh browser before it is kept.
+- **Writes tests from a sentence.** Say what the app should be able to do; the agent
+  drives a live browser and keeps only the steps it has watched work.
+- **Shows you the browser.** Exploration, generation and repair stream what the
+  agent's browser is showing, frame by frame, next to what it is saying.
 - **Runs them.** On demand, on a cron schedule, or from CI through a
   [webhook API](docs/webhooks.md) with idempotency keys and JUnit output.
 - **Keeps the evidence.** Steps, logs, screenshots and a full Playwright trace per

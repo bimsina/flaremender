@@ -1,6 +1,7 @@
 import { Badge, Banner, LayerCard, Loader, Text } from '@cloudflare/kumo'
 import { SparkleIcon, WarningCircleIcon } from '@phosphor-icons/react'
 
+import { LiveBrowser } from '#/components/live-browser.tsx'
 import { StepList } from '#/components/step-list.tsx'
 import { formatCount } from '#/lib/format.ts'
 import type { LiveTransport } from '#/lib/use-channel-feed.ts'
@@ -67,6 +68,14 @@ export function GenerationLivePanel({ jobId, intentId }: { jobId: string; intent
           <Text as="p" variant="secondary" size="base">
             <UsageLine {...live.cost} />
           </Text>
+        ) : null}
+
+        {live.frame || !live.finished ? (
+          <LiveBrowser
+            frame={live.frame}
+            active={!live.finished}
+            caption={live.logs.at(-1)?.line ?? null}
+          />
         ) : null}
 
         {live.logs.length > 0 ? (

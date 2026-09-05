@@ -27,7 +27,9 @@ import { Route as AppProjectsIndexRouteImport } from './routes/_app.projects.ind
 import { Route as AppProjectsNewRouteImport } from './routes/_app.projects.new'
 import { Route as ApiArtifactsSplatRouteImport } from './routes/api/artifacts.$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiFilesFileIdRouteImport } from './routes/api.files.$fileId'
 import { Route as AppProjectsProjectIdIndexRouteImport } from './routes/_app.projects.$projectId.index'
+import { Route as ApiProjectsProjectIdFilesRouteImport } from './routes/api.projects.$projectId.files'
 import { Route as ApiReportsKindIdRouteImport } from './routes/api/reports.$kind.$id'
 import { Route as ApiV1ExecutionsExecutionIdRouteImport } from './routes/api.v1.executions.$executionId'
 import { Route as ApiV1JobsJobIdRouteImport } from './routes/api.v1.jobs.$jobId'
@@ -129,11 +131,22 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiFilesFileIdRoute = ApiFilesFileIdRouteImport.update({
+  id: '/api/files/$fileId',
+  path: '/api/files/$fileId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppProjectsProjectIdIndexRoute =
   AppProjectsProjectIdIndexRouteImport.update({
     id: '/projects/$projectId/',
     path: '/projects/$projectId/',
     getParentRoute: () => AppRoute,
+  } as any)
+const ApiProjectsProjectIdFilesRoute =
+  ApiProjectsProjectIdFilesRouteImport.update({
+    id: '/api/projects/$projectId/files',
+    path: '/api/projects/$projectId/files',
+    getParentRoute: () => rootRouteImport,
   } as any)
 const ApiReportsKindIdRoute = ApiReportsKindIdRouteImport.update({
   id: '/api/reports/$kind/$id',
@@ -215,8 +228,10 @@ export interface FileRoutesByFullPath {
   '/projects/new': typeof AppProjectsNewRoute
   '/api/artifacts/$': typeof ApiArtifactsSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/files/$fileId': typeof ApiFilesFileIdRoute
   '/admin/': typeof AppAdminIndexRoute
   '/projects/': typeof AppProjectsIndexRoute
+  '/api/projects/$projectId/files': typeof ApiProjectsProjectIdFilesRoute
   '/api/reports/$kind/$id': typeof ApiReportsKindIdRoute
   '/api/v1/executions/$executionId': typeof ApiV1ExecutionsExecutionIdRouteWithChildren
   '/api/v1/jobs/$jobId': typeof ApiV1JobsJobIdRoute
@@ -244,8 +259,10 @@ export interface FileRoutesByTo {
   '/projects/new': typeof AppProjectsNewRoute
   '/api/artifacts/$': typeof ApiArtifactsSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/files/$fileId': typeof ApiFilesFileIdRoute
   '/admin': typeof AppAdminIndexRoute
   '/projects': typeof AppProjectsIndexRoute
+  '/api/projects/$projectId/files': typeof ApiProjectsProjectIdFilesRoute
   '/api/reports/$kind/$id': typeof ApiReportsKindIdRoute
   '/api/v1/executions/$executionId': typeof ApiV1ExecutionsExecutionIdRouteWithChildren
   '/api/v1/jobs/$jobId': typeof ApiV1JobsJobIdRoute
@@ -277,8 +294,10 @@ export interface FileRoutesById {
   '/_app/projects/new': typeof AppProjectsNewRoute
   '/api/artifacts/$': typeof ApiArtifactsSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/files/$fileId': typeof ApiFilesFileIdRoute
   '/_app/admin/': typeof AppAdminIndexRoute
   '/_app/projects/': typeof AppProjectsIndexRoute
+  '/api/projects/$projectId/files': typeof ApiProjectsProjectIdFilesRoute
   '/api/reports/$kind/$id': typeof ApiReportsKindIdRoute
   '/api/v1/executions/$executionId': typeof ApiV1ExecutionsExecutionIdRouteWithChildren
   '/api/v1/jobs/$jobId': typeof ApiV1JobsJobIdRoute
@@ -309,8 +328,10 @@ export interface FileRouteTypes {
     | '/projects/new'
     | '/api/artifacts/$'
     | '/api/auth/$'
+    | '/api/files/$fileId'
     | '/admin/'
     | '/projects/'
+    | '/api/projects/$projectId/files'
     | '/api/reports/$kind/$id'
     | '/api/v1/executions/$executionId'
     | '/api/v1/jobs/$jobId'
@@ -338,8 +359,10 @@ export interface FileRouteTypes {
     | '/projects/new'
     | '/api/artifacts/$'
     | '/api/auth/$'
+    | '/api/files/$fileId'
     | '/admin'
     | '/projects'
+    | '/api/projects/$projectId/files'
     | '/api/reports/$kind/$id'
     | '/api/v1/executions/$executionId'
     | '/api/v1/jobs/$jobId'
@@ -370,8 +393,10 @@ export interface FileRouteTypes {
     | '/_app/projects/new'
     | '/api/artifacts/$'
     | '/api/auth/$'
+    | '/api/files/$fileId'
     | '/_app/admin/'
     | '/_app/projects/'
+    | '/api/projects/$projectId/files'
     | '/api/reports/$kind/$id'
     | '/api/v1/executions/$executionId'
     | '/api/v1/jobs/$jobId'
@@ -394,6 +419,8 @@ export interface RootRouteChildren {
   AcceptInvitationInvitationIdRoute: typeof AcceptInvitationInvitationIdRoute
   ApiArtifactsSplatRoute: typeof ApiArtifactsSplatRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiFilesFileIdRoute: typeof ApiFilesFileIdRoute
+  ApiProjectsProjectIdFilesRoute: typeof ApiProjectsProjectIdFilesRoute
   ApiReportsKindIdRoute: typeof ApiReportsKindIdRoute
   ApiV1ExecutionsExecutionIdRoute: typeof ApiV1ExecutionsExecutionIdRouteWithChildren
   ApiV1JobsJobIdRoute: typeof ApiV1JobsJobIdRoute
@@ -529,12 +556,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/files/$fileId': {
+      id: '/api/files/$fileId'
+      path: '/api/files/$fileId'
+      fullPath: '/api/files/$fileId'
+      preLoaderRoute: typeof ApiFilesFileIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_app/projects/$projectId/': {
       id: '/_app/projects/$projectId/'
       path: '/projects/$projectId'
       fullPath: '/projects/$projectId/'
       preLoaderRoute: typeof AppProjectsProjectIdIndexRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/api/projects/$projectId/files': {
+      id: '/api/projects/$projectId/files'
+      path: '/api/projects/$projectId/files'
+      fullPath: '/api/projects/$projectId/files'
+      preLoaderRoute: typeof ApiProjectsProjectIdFilesRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/reports/$kind/$id': {
       id: '/api/reports/$kind/$id'
@@ -715,6 +756,8 @@ const rootRouteChildren: RootRouteChildren = {
   AcceptInvitationInvitationIdRoute: AcceptInvitationInvitationIdRoute,
   ApiArtifactsSplatRoute: ApiArtifactsSplatRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiFilesFileIdRoute: ApiFilesFileIdRoute,
+  ApiProjectsProjectIdFilesRoute: ApiProjectsProjectIdFilesRoute,
   ApiReportsKindIdRoute: ApiReportsKindIdRoute,
   ApiV1ExecutionsExecutionIdRoute: ApiV1ExecutionsExecutionIdRouteWithChildren,
   ApiV1JobsJobIdRoute: ApiV1JobsJobIdRoute,

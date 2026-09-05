@@ -68,6 +68,8 @@ export interface ExploreContext {
   projectContext: string | null
   existingTitles: Array<string>
   focus: string | null
+  /** Pre-rendered by `formatDocuments`; null when nothing was uploaded. */
+  documents?: string | null
 }
 
 export function buildExplorePrompt(context: ExploreContext): string {
@@ -92,8 +94,16 @@ Cover the core of the app regardless, but weight your proposals towards this.`)
   if (context.projectContext) {
     sections.push(`# What is already known about this app
 
-${context.projectContext}`)
+${context.projectContext}
+
+If it lists documentation or marketing URLs, read them with \`read_docs\` early: they say what the app claims to do, which is where the high-value tests are.`)
   }
+
+  if (context.documents) sections.push(context.documents)
+
+  sections.push(`# Pictures
+
+If screenshots or diagrams are attached to this message, they were uploaded by the owner to show what the app or a flow looks like. Use them to know what to look for; trust the live page over them when they differ.`)
 
   sections.push(
     context.credentialNames.length > 0

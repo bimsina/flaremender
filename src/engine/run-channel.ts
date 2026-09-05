@@ -4,6 +4,10 @@ import type { RunChannelSink, RunEvent, RunEventEnvelope } from '#/engine/contra
 
 const EVENT_PREFIX = 'evt:'
 const SEQ_KEY = 'seq'
+const FRAME_KEY = 'frame'
+
+/** Durable Object values are capped at 128 KiB; a frame that will not fit is only broadcast. */
+const MAX_STORED_FRAME_BYTES = 120_000
 
 const SEQ_DIGITS = 12
 
@@ -29,6 +33,14 @@ export class RunChannel extends DurableObject<Cloudflare.Env> implements RunChan
   async push(event: RunEvent): Promise<void> {
     const seq = await this.#nextSeq()
     const envelope: RunEventEnvelope = { seq, event }
+
+    if (event.type === 'screenshot') {
+      const stored: Record<string, unknown> = { [SEQ_KEY]: seq }
+      if (event.jpeg.length <= MAX_STORED_FRAME_BYTES) stored[FRAME_KEY] = envelope
+      await this.ctx.storage.put(stored)
+      this.#broadcast(envelope)
+      return
+    }
 
     await this.ctx.storage.put(
       seq <= MAX_BUFFERED ? { [SEQ_KEY]: seq, [eventKey(seq)]: envelope } : { [SEQ_KEY]: seq },
@@ -69,7 +81,8 @@ export class RunChannel extends DurableObject<Cloudflare.Env> implements RunChan
     this.ctx.acceptWebSocket(server)
 
     const buffered = await this.ctx.storage.list<RunEventEnvelope>({ prefix: EVENT_PREFIX })
-    for (const envelope of buffered.values()) {
+    const frame = await this.ctx.storage.get<RunEventEnvelope>(FRAME_KEY)
+    for (const envelope of [...buffered.values(), ...(frame ? [frame] : [])]) {
       try {
         server.send(JSON.stringify(envelope))
       } catch {

@@ -11,6 +11,7 @@ import {
   scriptVersionsQuery,
 } from '#/lib/queries.ts'
 import {
+  type LiveFrame,
   type LiveStep,
   type LiveTransport,
   reduceFeed,
@@ -30,6 +31,7 @@ export interface GenerationLive {
   outcome: RunOutcome | null
   errorMessage: string | null
   status: GenerationJobStatus | null
+  frame: LiveFrame | null
   cost: { turns: number; inputTokens: number; outputTokens: number; modelId: string | null } | null
   kind: 'generate' | 'explore' | 'batch' | 'repair' | null
 }
@@ -82,6 +84,7 @@ export function useGenerationLive(jobId: string | null, intentId: string): Gener
       ? 'Job history is unavailable.'
       : (poll.data?.stuckReason ?? live.errorMessage),
     status: polledStatus,
+    frame: live.frame,
     kind: poll.data && poll.data.id === jobId ? poll.data.kind : null,
     cost:
       poll.data && poll.data.id === jobId

@@ -140,15 +140,41 @@ else sees the redacted row when the turn ends. The residual risk is inherent and
 documented: the value reached the configured model provider once, in that message
 and in the tool call that stored it.
 
+### The live browser
+
+Every job that drives a browser, a run, a generation, an exploration, a repair,
+streams what the browser is showing. The harness captures a small JPEG after each
+statement it executes and after each observation, and pushes it as a `screenshot`
+event on the job's run channel. The channel keeps only the newest frame, since a
+frame is worth nothing once the next one exists, and replays it to a socket that
+connects late. `LiveBrowser` paints it inside a browser-shaped frame with the
+agent's current narration as the caption. Frames are quality-40 JPEGs of the
+viewport, typically 15 to 60 KB, throttled to one a second during runs.
+
+### What the agents are told
+
+`src/engine/knowledge.ts` gathers what a person handed over about the app: the
+project context, and the files uploaded at creation or under Settings. Text-like
+files (Markdown, JSON, YAML, OpenAPI, plain text) are extracted as they are; PDFs
+go through `unpdf`; images are kept whole. Every generation, exploration and
+repair prompt carries a "Documents the owner uploaded" section capped at 16k
+characters, and explorations and generations on hosted models also receive up to
+three uploaded pictures as image parts. Files live in R2 beside the run artifacts,
+under `files/{organizationId}/{projectId}/`.
+
 ### Explore, propose, generate
 
-The chat's other half. Rather than being told what to test, the assistant can go
-and find out: `explore_project` starts an **ExploreWorkflow** that drives a real
-browser round the app, signing in with the stored credentials and reading any docs
-URL it is given, then ends by proposing tests. Those proposals are **real intent
-rows** in a new `'proposed'` status, rendered in the conversation as a checklist
-you tick, edit and approve; approving starts a **BatchGenerateWorkflow** that
-writes each script with the same turn loop a single Generate does.
+The chat's other half, and the first thing a new project does. Rather than being
+told what to test, the assistant can go and find out: `explore_project` starts an
+**ExploreWorkflow** that drives a real browser round the app, signing in with the
+stored credentials and reading any docs URL it is given, then ends by proposing
+tests. Those proposals are **real intent rows** in a new `'proposed'` status.
+Creating a project with "Let the agent explore" runs the exploration with
+`autoGenerate`, so the plan is announced together with a
+**BatchGenerateWorkflow** that is already writing every proposal; the
+person reviews finished tests rather than approving a list. The chat's Explore
+button does the same. Without `autoGenerate` the plan is a checklist to tick,
+edit and approve, which starts the batch.
 
 ```
 src/engine/

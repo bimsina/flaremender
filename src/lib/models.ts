@@ -49,3 +49,14 @@ export const WORKERS_AI_FALLBACK_MODELS = [
 ] as const
 
 export const DEFAULT_MODEL_ID = 'workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast'
+
+/**
+ * What to put on the allowlist and make the default the moment a provider key
+ * arrives. Measured with `pnpm eval` on 2026-09-05: luna 100%, sonnet 92%.
+ */
+export const RECOMMENDED_MODELS: Partial<
+  Record<Provider, { modelId: string; displayName: string }>
+> = {
+  openai: { modelId: 'openai:gpt-5.6-luna', displayName: 'GPT-5.6 Luna' },
+  anthropic: { modelId: 'anthropic:claude-sonnet-5', displayName: 'Claude Sonnet 5' },
+}

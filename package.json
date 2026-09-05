@@ -85,6 +85,7 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "tailwindcss": "4.3.3",
+    "unpdf": "^1.8.1",
     "workers-ai-provider": "^4.0.0"
   },
   "devDependencies": {

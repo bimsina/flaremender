@@ -1,9 +1,10 @@
 import { Button, LayerCard, LinkButton, Select, Text } from '@cloudflare/kumo'
-import { CheckCircleIcon, CircleIcon, PlayIcon } from '@phosphor-icons/react'
+import { PlayIcon } from '@phosphor-icons/react'
 import { useQuery } from '@tanstack/react-query'
 
 import { Section } from './list.tsx'
 import { NewTestMenu } from './new-test-menu.tsx'
+import { QuickTestBox } from './quick-test-box.tsx'
 import { StatTile } from './page.tsx'
 import { RelativeTime } from './relative-time.tsx'
 import { RunStatusBadge } from './status-badge.tsx'
@@ -49,85 +50,93 @@ export function ProjectOverview({
   const scripted = adopted.find((test) => test.currentVersion > 0)
   const readyTest = adopted.find((test) => test.readiness === 'ready' && test.currentVersion > 0)
   const setupComplete = data?.hasCompletedRegression === true
-  const setupSteps = [
-    {
-      label: 'Confirm an environment',
-      done: environments.length > 0,
-      href: `/projects/${projectId}?tab=environments`,
-    },
-    {
-      label: 'Create a test',
-      done: adopted.length > 0,
-      href: `/projects/${projectId}?tab=chat`,
-    },
-    {
-      label: 'Save or generate its script',
-      done: scripted !== undefined,
-      href: scripted
-        ? `/projects/${projectId}/intents/${scripted.id}`
-        : `/projects/${projectId}?tab=intents`,
-    },
-    {
-      label: 'Mark a test ready',
-      done: readyTest !== undefined,
-      href: readyTest
-        ? `/projects/${projectId}/intents/${readyTest.id}`
-        : scripted
-          ? `/projects/${projectId}/intents/${scripted.id}`
-          : `/projects/${projectId}?tab=intents`,
-    },
-    { label: 'Run the suite', done: setupComplete === true, href: null },
-  ]
+
+  // One next step at a time, in plain words, instead of a checklist of chores.
+  const nextStep =
+    environments.length === 0
+      ? {
+          title: 'Point this project at your app',
+          description: 'Add an environment with the URL a tester would open first.',
+          action: (
+            <div>
+              <LinkButton
+                href={`/projects/${projectId}?tab=environments`}
+                variant="primary"
+                size="sm"
+              >
+                Add an environment
+              </LinkButton>
+            </div>
+          ),
+        }
+      : adopted.length === 0
+        ? {
+            title: 'What should this app be able to do?',
+            description:
+              'Say it in a sentence and the agent writes the test in a real browser. Or send it round the app first and let it propose a suite.',
+            action: (
+              <div className="grid gap-3">
+                <QuickTestBox projectId={projectId} />
+                <div>
+                  <LinkButton href={`/projects/${projectId}?tab=intents`} variant="ghost" size="sm">
+                    Or explore the app and write a suite
+                  </LinkButton>
+                </div>
+              </div>
+            ),
+          }
+        : readyTest === undefined
+          ? {
+              title: scripted
+                ? 'Check the first script and mark it ready'
+                : 'The first script is on its way',
+              description: scripted
+                ? 'Ready tests run in suites and on schedules. A generated script that verified is already ready; a hand-written one waits for you.'
+                : 'Generated scripts arrive ready once they verify in a fresh browser.',
+              action: scripted ? (
+                <div>
+                  <LinkButton
+                    href={`/projects/${projectId}/intents/${scripted.id}`}
+                    variant="primary"
+                    size="sm"
+                  >
+                    Open the test
+                  </LinkButton>
+                </div>
+              ) : null,
+            }
+          : {
+              title: 'Run the suite once',
+              description: `${ready} ready test${ready === 1 ? '' : 's'} against ${
+                target?.name ?? 'the default environment'
+              }. After that this card goes away.`,
+              action: (
+                <div>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    icon={<PlayIcon size={16} />}
+                    loading={running}
+                    disabled={!ready || !environmentId}
+                    onClick={onRun}
+                  >
+                    Run {ready} test{ready === 1 ? '' : 's'}
+                  </Button>
+                </div>
+              ),
+            }
   return (
     <div className="grid gap-6">
       {data && !setupComplete ? (
         <LayerCard className="px-5 py-4">
-          <div className="grid gap-4">
+          <div className="grid gap-3">
             <div className="grid gap-1">
               <Text as="h2" variant="heading">
-                Set up your first regression
+                {nextStep.title}
               </Text>
-              <Text variant="secondary">
-                Complete these steps once; this guide disappears after the first regression
-                finishes.
-              </Text>
+              <Text variant="secondary">{nextStep.description}</Text>
             </div>
-            <ol className="grid gap-2">
-              {setupSteps.map((step) => (
-                <li key={step.label} className="flex items-center justify-between gap-3">
-                  <span className="flex min-w-0 items-center gap-2.5">
-                    {step.done ? (
-                      <CheckCircleIcon
-                        size={18}
-                        weight="fill"
-                        className="shrink-0 text-kumo-success"
-                      />
-                    ) : (
-                      <CircleIcon size={18} className="shrink-0 text-kumo-inactive" />
-                    )}
-                    <Text as="span" variant={step.done ? 'secondary' : 'body'}>
-                      {step.label}
-                    </Text>
-                  </span>
-                  {!step.done && step.href ? (
-                    <LinkButton href={step.href} variant="ghost" size="sm">
-                      Continue
-                    </LinkButton>
-                  ) : null}
-                  {!step.done && step.href === null ? (
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      loading={running}
-                      disabled={!ready || !environmentId}
-                      onClick={onRun}
-                    >
-                      Run {ready} test{ready === 1 ? '' : 's'}
-                    </Button>
-                  ) : null}
-                </li>
-              ))}
-            </ol>
+            {nextStep.action}
           </div>
         </LayerCard>
       ) : null}
@@ -138,7 +147,8 @@ export function ProjectOverview({
               Build confidence in your next release
             </Text>
             <Text variant="secondary">
-              Describe a flow to create tests with AI, or write the code yourself.
+              Say what the app should be able to do and the agent writes the test. Or write the
+              Playwright yourself.
             </Text>
             <div className="mt-2 flex flex-wrap gap-2">
               <NewTestMenu projectId={projectId} onCreateManual={onCreateManual} />

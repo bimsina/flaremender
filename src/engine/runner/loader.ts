@@ -123,13 +123,14 @@ export interface GenerationSessionOptions {
 }
 
 export async function startGenerationSession(
-  options: GenerationSessionOptions,
+  options: GenerationSessionOptions & { channel?: RunChannelStub | null; jobId?: string },
 ): Promise<SessionStartResponse> {
   const harness = loadHarness(options.loader, NO_SCRIPT, {
     browser: options.browser,
     creds: options.creds,
     baseUrl: options.baseUrl,
-    runId: '',
+    runId: options.jobId ?? '',
+    channel: options.channel,
   })
 
   return harness.startSession({
@@ -139,13 +140,18 @@ export async function startGenerationSession(
 }
 
 export async function observeInDynamicWorker(
-  options: GenerationSessionOptions & { sessionId: string },
+  options: GenerationSessionOptions & {
+    sessionId: string
+    channel?: RunChannelStub | null
+    jobId?: string
+  },
 ): Promise<ObserveResponse> {
   const harness = loadHarness(options.loader, NO_SCRIPT, {
     browser: options.browser,
     creds: options.creds,
     baseUrl: options.baseUrl,
-    runId: '',
+    runId: options.jobId ?? '',
+    channel: options.channel,
   })
 
   return harness.observe({

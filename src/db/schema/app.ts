@@ -446,6 +446,36 @@ export const allowedModel = sqliteTable(
   ],
 )
 
+export const PROJECT_FILE_KINDS = ['text', 'pdf', 'image', 'other'] as const
+export type ProjectFileKind = (typeof PROJECT_FILE_KINDS)[number]
+
+/**
+ * Something a person handed the agents about the app: a README, an API spec, a PDF of
+ * the manual, a screenshot of the flow. Text-like files are extracted into
+ * `extractedText` for prompts; images are shown to models that can see.
+ */
+export const projectFile = sqliteTable(
+  'project_file',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => project.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    kind: text('kind').$type<ProjectFileKind>().notNull(),
+    contentType: text('content_type').notNull(),
+    size: integer('size').notNull(),
+    /** R2 object key under files/{organizationId}/{projectId}/. */
+    key: text('key').notNull(),
+    extractedText: text('extracted_text'),
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).default(now).notNull(),
+  },
+  (table) => [index('project_file_projectId_idx').on(table.projectId)],
+)
+
 export const NOTIFICATION_KINDS = ['webhook', 'slack', 'discord', 'email'] as const
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number]
 

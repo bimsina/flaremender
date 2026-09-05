@@ -10,7 +10,7 @@ import { buildContextSection } from '#/engine/explore/prompts.ts'
 import { loadCredentialNames, loadCredentials } from '#/engine/generation/loop.ts'
 import { announceRun } from '#/engine/run-steps.ts'
 import { createScrubber } from '#/engine/runner/scrub.ts'
-import { appendProjectContext, createIntentRecord } from '#/server/actions.ts'
+import { appendProjectContext, createIntentRecord, queueBatchGeneration } from '#/server/actions.ts'
 
 export interface LoadedExploration {
   jobId: string
@@ -105,6 +105,7 @@ export async function persistExploration(
     turns: number
     modelId: string | null
     usage?: { inputTokens: number; outputTokens: number }
+    autoGenerate?: boolean
   },
 ): Promise<PersistedExploration> {
   const db = createDb(env.DB)
@@ -154,7 +155,29 @@ export async function persistExploration(
     })
     .where(eq(generationJob.id, loaded.jobId))
 
-  await announceChatPlan(loaded, created, summary)
+  let batch: { jobId: string; intentIds: Array<string> } | null = null
+  if (context.autoGenerate && created.length > 0) {
+    try {
+      const [environmentRow] = await db
+        .select()
+        .from(environment)
+        .where(eq(environment.id, loaded.environmentId))
+        .limit(1)
+      if (environmentRow) {
+        batch = await queueBatchGeneration(db, {
+          projectId: loaded.projectId,
+          organizationId: loaded.organizationId,
+          environment: environmentRow,
+          createdBy: loaded.userId,
+          intentIds: created.map((item) => item.id),
+        })
+      }
+    } catch (error) {
+      console.error(`[explore] ${loaded.jobId} could not start generating its plan:`, error)
+    }
+  }
+
+  await announceChatPlan(loaded, created, summary, batch)
 
   await announceRun(
     env,
@@ -180,15 +203,20 @@ async function announceChatPlan(
   loaded: LoadedExploration,
   created: Array<{ id: string; title: string; description: string }>,
   summary: string | null,
+  batch: { jobId: string; intentIds: Array<string> } | null,
 ): Promise<void> {
   const count = created.length
+  const plural = count === 1 ? '' : 's'
+
+  const intro = summary ?? `I have been round ${loaded.projectName}.`
+  const next = batch
+    ? `I have started writing all ${count} test${plural} now. Each one is built against the live site and checked in a fresh browser before it is kept, so the ones that verify will be ready to run without you touching them. Review anything below at your own pace; you can edit a test or throw it away at any time.`
+    : `Here is what I would test — review it and generate the ones you want.`
 
   const parts: Array<ChatPart> = [
     {
       type: 'text',
-      text: summary
-        ? `${summary}\n\nHere is what I would test — review it and generate the ones you want.`
-        : `I have been round ${loaded.projectName} and here is what I would test. Review it and generate the ones you want.`,
+      text: `${intro}\n\n${next}`,
     },
     {
       type: 'card',
@@ -204,6 +232,18 @@ async function announceChatPlan(
       },
     },
   ]
+
+  if (batch) {
+    parts.push({
+      type: 'card',
+      card: {
+        kind: 'batch',
+        jobId: batch.jobId,
+        environmentName: loaded.environmentName,
+        intentIds: batch.intentIds,
+      },
+    })
+  }
 
   try {
     await workerEnv.PROJECT_CHAT.getByName(loaded.projectId).announce({

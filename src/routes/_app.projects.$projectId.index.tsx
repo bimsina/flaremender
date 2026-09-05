@@ -4,7 +4,6 @@ import {
   Button,
   Dialog,
   DropdownMenu,
-  Empty,
   Input,
   InputArea,
   LayerCard,
@@ -36,6 +35,8 @@ import { InlineEmpty, ListRow, ListToolbar, Section, SettingRow } from '#/compon
 import { PageBody, PageHeader } from '#/components/page.tsx'
 import { NewTestMenu } from '#/components/new-test-menu.tsx'
 import { NotificationsPanel } from '#/components/notifications-panel.tsx'
+import { ProjectFilesCard } from '#/components/project-files-card.tsx'
+import { QuickTestBox } from '#/components/quick-test-box.tsx'
 import { MonoPanel } from '#/components/mono-panel.tsx'
 import { ProjectOverview } from '#/components/project-overview.tsx'
 import { ProjectChatTab } from '#/components/project-chat.tsx'
@@ -60,6 +61,7 @@ import {
   intentsQuery,
   projectQuery,
   notificationDestinationsQuery,
+  projectFilesQuery,
   projectWebhookSettingsQuery,
   projectRunsQuery,
   runTrendQuery,
@@ -162,6 +164,10 @@ export const Route = createFileRoute('/_app/projects/$projectId/')({
         revalidateIfStale: true,
       }),
       context.queryClient.ensureQueryData({ ...allowedModelsQuery(), revalidateIfStale: true }),
+      context.queryClient.ensureQueryData({
+        ...projectFilesQuery(params.projectId),
+        revalidateIfStale: true,
+      }),
       context.queryClient.ensureQueryData({
         ...notificationDestinationsQuery(params.projectId),
         revalidateIfStale: true,
@@ -443,17 +449,26 @@ function IntentsTab({
 
   if (intents.length === 0) {
     return (
-      <Empty
-        icon={<TestTubeIcon size={48} className="text-kumo-inactive" />}
-        title="No tests found"
-        description="Describe what a user should be able to do — or let the assistant go round your app and suggest what is worth testing."
-        contents={
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            <NewTestMenu projectId={projectId} onCreateManual={onCreate} />
-            <ExploreButton projectId={projectId} />
+      <div className="grid gap-4">
+        <LayerCard className="px-5 py-4">
+          <div className="grid gap-3">
+            <div className="grid gap-1">
+              <Text as="h2" variant="heading">
+                What should this app be able to do?
+              </Text>
+              <Text variant="secondary">
+                Say it in a sentence and the agent writes the test in a real browser. Or send it
+                round the app first and let it propose a suite.
+              </Text>
+            </div>
+            <QuickTestBox projectId={projectId} autoFocus />
           </div>
-        }
-      />
+        </LayerCard>
+        <div className="flex flex-wrap items-center gap-2">
+          <ExploreButton projectId={projectId} />
+          <NewTestMenu projectId={projectId} onCreateManual={onCreate} variant="secondary" />
+        </div>
+      </div>
     )
   }
 
@@ -461,6 +476,10 @@ function IntentsTab({
 
   return (
     <div className="grid gap-4">
+      <LayerCard className="px-5 py-3">
+        <QuickTestBox projectId={projectId} compact />
+      </LayerCard>
+
       {liveSuiteRunId ? (
         <SuiteProgress key={liveSuiteRunId} suiteRunId={liveSuiteRunId} projectId={projectId} />
       ) : null}
@@ -571,7 +590,7 @@ function ExploreButton({ projectId }: { projectId: string }) {
   const toast = useKumoToastManager()
 
   const explore = useMutation({
-    mutationFn: () => exploreProject({ data: { projectId } }),
+    mutationFn: () => exploreProject({ data: { projectId, autoGenerate: true } }),
     onSuccess: async () => {
       await queryClient.invalidateQueries()
       await navigate({
@@ -591,7 +610,7 @@ function ExploreButton({ projectId }: { projectId: string }) {
       loading={explore.isPending}
       onClick={() => explore.mutate()}
     >
-      Explore my app
+      Explore and write tests
     </Button>
   )
 }
@@ -802,6 +821,7 @@ function SettingsTab({ project }: { project: ProjectRow }) {
         description="Background about this app, read by every exploration and every generated script."
       >
         <ProjectContextCard project={project} />
+        <ProjectFilesCard projectId={project.id} />
       </Section>
 
       <Section title="Model" description="Which model generates scripts in this project.">

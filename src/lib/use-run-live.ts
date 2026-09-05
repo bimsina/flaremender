@@ -4,6 +4,7 @@ import { useEffect, useMemo } from 'react'
 import type { RunStatus } from '#/db/schema/app.ts'
 import type { RunOutcome } from '#/engine/contract.ts'
 import {
+  type LiveFrame,
   type LiveStep,
   type LiveTransport,
   reduceFeed,
@@ -26,6 +27,7 @@ export interface RunLive {
   outcome: RunOutcome | null
   errorMessage: string | null
   status: RunStatus | null
+  frame: LiveFrame | null
 }
 
 export function useRunLive(runId: string | null, intentId: string): RunLive {
@@ -73,5 +75,6 @@ export function useRunLive(runId: string | null, intentId: string): RunLive {
             : live.outcome,
     errorMessage: poll.data?.run.errorMessage ?? live.errorMessage,
     status: polledStatus,
+    frame: live.frame,
   }
 }

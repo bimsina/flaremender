@@ -82,14 +82,15 @@ export function useChannelFeed(channelId: string | null): ChannelFeed {
 
       if (envelope.event.type === 'run.finished') finished = true
 
-      update((state) =>
-        state.envelopes.some((seen) => seen.seq === envelope.seq)
-          ? state
-          : {
-              ...state,
-              envelopes: [...state.envelopes, envelope].sort((a, b) => a.seq - b.seq),
-            },
-      )
+      update((state) => {
+        if (state.envelopes.some((seen) => seen.seq === envelope.seq)) return state
+        // Frames are big and only the newest matters, so replace rather than append.
+        const kept =
+          envelope.event.type === 'screenshot'
+            ? state.envelopes.filter((seen) => seen.event.type !== 'screenshot')
+            : state.envelopes
+        return { ...state, envelopes: [...kept, envelope].sort((a, b) => a.seq - b.seq) }
+      })
     })
 
     socket.addEventListener('error', fallBack)
@@ -117,12 +118,20 @@ export interface LiveStep {
   error: string | null
 }
 
+export interface LiveFrame {
+  jpeg: string
+  width: number
+  height: number
+  at: number
+}
+
 export interface ReducedFeed {
   steps: Array<LiveStep>
   logs: Array<{ seq: number; line: string }>
   started: boolean
   outcome: 'passed' | 'failed' | 'error' | null
   errorMessage: string | null
+  frame: LiveFrame | null
 }
 
 export function reduceFeed(envelopes: Array<RunEventEnvelope>): ReducedFeed {
@@ -131,9 +140,13 @@ export function reduceFeed(envelopes: Array<RunEventEnvelope>): ReducedFeed {
   let started = false
   let outcome: ReducedFeed['outcome'] = null
   let errorMessage: string | null = null
+  let frame: LiveFrame | null = null
 
   for (const { seq, event } of envelopes) {
     switch (event.type) {
+      case 'screenshot':
+        frame = { jpeg: event.jpeg, width: event.width, height: event.height, at: event.at }
+        break
       case 'run.started':
         started = true
         break
@@ -173,5 +186,6 @@ export function reduceFeed(envelopes: Array<RunEventEnvelope>): ReducedFeed {
     started,
     outcome,
     errorMessage,
+    frame,
   }
 }

@@ -82,6 +82,8 @@ export type RunEvent =
   | { type: 'step.started'; runId: string; index: number; label: string; at: number }
   | { type: 'step.finished'; runId: string; index: number; step: RunStep; at: number }
   | { type: 'log'; runId: string; line: string; at: number }
+  /** A small JPEG of the page, base64. Broadcast live; only the newest is kept. */
+  | { type: 'screenshot'; runId: string; jpeg: string; width: number; height: number; at: number }
   | {
       type: 'run.finished'
       runId: string

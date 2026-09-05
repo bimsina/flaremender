@@ -172,10 +172,11 @@ export const createProject = createServerFn({ method: 'POST' })
       createdBy: context.user.id,
     }
 
+    const environmentId = createId('env')
     await context.db.batch([
       context.db.insert(project).values(row),
       context.db.insert(environment).values({
-        id: createId('env'),
+        id: environmentId,
         projectId: row.id,
         name: 'Production',
         baseUrl: data.baseUrl,
@@ -184,7 +185,7 @@ export const createProject = createServerFn({ method: 'POST' })
       }),
     ])
 
-    return { id: row.id, slug: row.slug }
+    return { id: row.id, slug: row.slug, environmentId }
   })
 
 export const updateProject = createServerFn({ method: 'POST' })

@@ -124,6 +124,52 @@ class ScriptTimeoutError extends Error {
 
 const SNAPSHOT_TIMEOUT_MS = 15_000
 
+const FRAME_QUALITY = 40
+const FRAME_MIN_INTERVAL_MS = 900
+
+/**
+ * A small JPEG of what the browser is showing, for the live view. Never throws: a
+ * page mid-navigation just yields no frame this time.
+ */
+async function captureFrame(
+  page: Page,
+): Promise<{ jpeg: string; width: number; height: number } | null> {
+  try {
+    const bytes = await page.screenshot({
+      type: 'jpeg',
+      quality: FRAME_QUALITY,
+      fullPage: false,
+      timeout: 4_000,
+      animations: 'disabled',
+    })
+    const viewport = page.viewportSize() ?? { width: 1280, height: 720 }
+    return { jpeg: bytes.toString('base64'), width: viewport.width, height: viewport.height }
+  } catch {
+    return null
+  }
+}
+
+function frameEmitter(
+  channel: ReturnType<typeof createEmitter>,
+  runId: string,
+): (page: Page) => Promise<void> {
+  let last = 0
+  let busy = false
+  return async (page) => {
+    if (busy || Date.now() - last < FRAME_MIN_INTERVAL_MS) return
+    busy = true
+    try {
+      const frame = await captureFrame(page)
+      if (frame) {
+        last = Date.now()
+        channel.emit({ type: 'screenshot', runId, ...frame, at: last })
+      }
+    } finally {
+      busy = false
+    }
+  }
+}
+
 const SNAPSHOT_VERBATIM_SHARE = 0.6
 
 const ACTIONABLE_ROLE =
@@ -231,15 +277,19 @@ export default class Harness extends WorkerEntrypoint<HarnessEnv> {
     const runId = this.env.RUN_ID ?? ''
     const channel = createEmitter(this.env.CHANNEL)
 
+    let session: BrowserSession | undefined
+    const frame = frameEmitter(channel, runId)
+
     const instrumentation = createInstrumentation({
       redact: scrubber.text,
       onStepStarted: (index, label) =>
         channel.emit({ type: 'step.started', runId, index, label, at: Date.now() }),
-      onStep: (index, step) =>
-        channel.emit({ type: 'step.finished', runId, index, step, at: Date.now() }),
+      onStep: (index, step) => {
+        channel.emit({ type: 'step.finished', runId, index, step, at: Date.now() })
+        if (session && this.env.CHANNEL) void frame(session.page)
+      },
     })
 
-    let session: BrowserSession | undefined
     let outcome: RunOutcome = 'passed'
     let errorKind: RunErrorKind | null = null
     let errorMessage: string | null = null
@@ -329,6 +379,11 @@ export default class Harness extends WorkerEntrypoint<HarnessEnv> {
     } finally {
       restoreConsole()
 
+      if (session && this.env.CHANNEL) {
+        const final = await captureFrame(session.page)
+        if (final) channel.emit({ type: 'screenshot', runId, ...final, at: Date.now() })
+      }
+
       if (session && tracing) {
         try {
           await session.context.tracing.stop({ path: TRACE_PATH })
@@ -387,6 +442,19 @@ export default class Harness extends WorkerEntrypoint<HarnessEnv> {
       if (baseUrl) await session.page.goto(baseUrl)
 
       const observation = await observePage(session.page, request.snapshotLimit, scrubber)
+      if (this.env.CHANNEL) {
+        const channel = createEmitter(this.env.CHANNEL)
+        const frame = await captureFrame(session.page)
+        if (frame) {
+          channel.emit({
+            type: 'screenshot',
+            runId: this.env.RUN_ID ?? '',
+            ...frame,
+            at: Date.now(),
+          })
+        }
+        await channel.drain()
+      }
       return { sessionId: session.sessionId, observation, errorMessage: null }
     } catch (error) {
       return {
@@ -410,6 +478,19 @@ export default class Harness extends WorkerEntrypoint<HarnessEnv> {
       })
 
       const observation = await observePage(session.page, request.snapshotLimit, scrubber)
+      if (this.env.CHANNEL) {
+        const channel = createEmitter(this.env.CHANNEL)
+        const frame = await captureFrame(session.page)
+        if (frame) {
+          channel.emit({
+            type: 'screenshot',
+            runId: this.env.RUN_ID ?? '',
+            ...frame,
+            at: Date.now(),
+          })
+        }
+        await channel.drain()
+      }
       return { observation, errorMessage: null, sessionLost: false }
     } catch (error) {
       return {
@@ -504,6 +585,10 @@ export default class Harness extends WorkerEntrypoint<HarnessEnv> {
           observation = await observePage(session.page, request.snapshotLimit, scrubber)
         } catch {
           observation = null
+        }
+        if (this.env.CHANNEL) {
+          const frame = await captureFrame(session.page)
+          if (frame) channel.emit({ type: 'screenshot', runId, ...frame, at: Date.now() })
         }
       }
 

@@ -36,6 +36,7 @@ import {
   SuiteRunStatusBadge,
 } from '#/components/status-badge.tsx'
 import { UsageLine } from '#/components/generation-live-panel.tsx'
+import { LiveBrowser } from '#/components/live-browser.tsx'
 import { StepList } from '#/components/step-list.tsx'
 import type {
   BatchCard,
@@ -210,11 +211,7 @@ function GenerationCardView({ card, projectId }: { card: GenerationCard; project
         </div>
       }
     >
-      {narration && !finished ? (
-        <Text variant="secondary" size="base">
-          {narration}
-        </Text>
-      ) : null}
+      {!finished ? <LiveBrowser frame={live.frame} active caption={narration} size="sm" /> : null}
 
       {live.errorMessage && finished ? (
         <Text variant="secondary" size="base">
@@ -448,11 +445,7 @@ function ExploreCardView({ card, projectId }: { card: ExploreCard; projectId: st
         )
       }
     >
-      {narration && !finished ? (
-        <Text variant="secondary" size="base">
-          {narration}
-        </Text>
-      ) : null}
+      {!finished ? <LiveBrowser frame={live.frame} active caption={narration} size="sm" /> : null}
 
       {live.errorMessage && finished ? (
         <Text variant="secondary" size="base">

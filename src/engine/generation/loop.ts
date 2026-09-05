@@ -239,12 +239,16 @@ export async function runTurn(env: Cloudflare.Env, input: TurnInput): Promise<Tu
       const response = await observeInDynamicWorker({
         ...browserOptions,
         sessionId: state.sessionId,
+        channel: env.RUN_CHANNEL.getByName(input.jobId),
+        jobId: input.jobId,
       })
 
       if (response.sessionLost && (await recoverSession())) {
         const retry = await observeInDynamicWorker({
           ...browserOptions,
           sessionId: state.sessionId,
+          channel: env.RUN_CHANNEL.getByName(input.jobId),
+          jobId: input.jobId,
         })
         state.observedSinceFailure = true
         return { page: describePage(retry.observation) }
