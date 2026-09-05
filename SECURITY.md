@@ -47,6 +47,8 @@ reply.
 - Escaping the Dynamic Worker sandbox that runs test scripts, or reaching a binding
   from inside it that the sandbox is not supposed to hold.
 - Bypassing the webhook API key check, or using one project's key against another.
+- Using an MCP OAuth token outside the organization or scopes it was granted for,
+  or getting a token issued without the consent page.
 - Privilege escalation to instance admin.
 - Making a repaired script current without the `auto` policy or a person accepting it.
 

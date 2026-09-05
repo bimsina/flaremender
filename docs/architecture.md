@@ -22,6 +22,7 @@ src/
     auth.ts       session middleware and the organization tenant boundary
     actions.ts    the shared core each of them (and the chat) calls
   engine/         the run engine. Workflow, harness, artifacts (see below)
+  mcp/            the MCP server's tools and its OAuth consent page
   components/     shared UI
   routes/         _auth.* (signed out), _app.* (signed in), api/auth/$,
                   api/artifacts/$ (org-checked R2 reads)
@@ -354,6 +355,20 @@ Plain webhooks are signed with a per-destination secret shown once. Email goes
 through Cloudflare Email Service behind an opt-in `send_email` binding; without
 it, email deliveries are logged as failed with the reason. See
 [docs/notifications.md](notifications.md).
+
+### The MCP server
+
+`/mcp` is the same product for an AI assistant: `src/mcp/server.ts` registers a
+dozen tools with the Agents SDK's stateless `createMcpHandler`, each one a thin
+wrapper over the actions in `src/server/actions.ts` and the readers in
+`reports.server.ts`, so the assistant cannot do anything the dashboard cannot.
+`@cloudflare/workers-oauth-provider` wraps the whole Worker in `src/server.ts`: it
+owns the token, registration and discovery endpoints, validates bearer tokens on
+`/mcp`, and hands the tools the props the consent page put in the token (who, which
+organization, which scopes, which origin). The consent page itself is
+`src/mcp/authorize.ts`, an HTML form behind the Better Auth session that lists the
+client and the scopes and asks which organization the connection may act in. Grants
+and tokens live in the `OAUTH_KV` namespace. See [docs/mcp.md](mcp.md).
 
 ### Schedules and retention
 

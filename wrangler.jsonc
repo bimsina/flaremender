@@ -25,6 +25,10 @@
   // Email notifications go through Cloudflare Email Service. Off by default because the
   // binding needs Email Service set up on the account; see docs/notifications.md.
   // "send_email": [{ "name": "EMAIL", "remote": true }],
+  // Grants and tokens for the MCP server's OAuth flow. Like `database_id`, this id is a
+  // placeholder that the Deploy button replaces; by hand, `wrangler kv namespace create
+  // OAUTH_KV` prints the real one. See docs/mcp.md.
+  "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "00000000000000000000000000000000" }],
   "browser": { "binding": "BROWSER" },
   "ai": { "binding": "AI", "remote": true },
   "ratelimits": [

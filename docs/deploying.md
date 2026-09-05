@@ -17,6 +17,7 @@ One requirement rules out the Workers Free plan. The rest is setup.
 | AI Gateway                     | logging, caching and credits for every model call | Optional. Set a gateway id under Administration → Settings; a provider with no key then runs on prepaid AI Gateway credits                                  |
 | Browser Rendering              | every test runs in a real browser                 | Free and Paid                                                                                                                                               |
 | Workflows, Durable Objects, D1 | orchestration, live updates, storage              | Free and Paid                                                                                                                                               |
+| KV                             | OAuth grants for the [MCP server](mcp.md)         | Free and Paid                                                                                                                                               |
 | Email Service                  | email notifications                               | Optional. Webhooks, Slack and Discord need nothing; see [docs/notifications.md](notifications.md)                                                           |
 
 ### What it costs
@@ -41,8 +42,8 @@ anything on a schedule.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/bimsina/flaremender)
 
-The button forks the repository, creates the D1 database, R2 bucket, Durable Objects
-and Workers AI binding, and asks for the secrets below. Workflows, the browser
+The button forks the repository, creates the D1 database, R2 bucket, KV namespace,
+Durable Objects and Workers AI binding, and asks for the secrets below. Workflows, the browser
 binding and the Worker Loader need no setup. They come up with the deploy.
 
 You will be asked for:

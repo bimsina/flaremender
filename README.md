@@ -32,6 +32,9 @@ and your run history stay there.
   agent's browser is showing, frame by frame, next to what it is saying.
 - **Runs them.** On demand, on a cron schedule, or from CI through a
   [webhook API](docs/webhooks.md) with idempotency keys and JUnit output.
+- **Works from your assistant.** Flaremender is an [MCP server](docs/mcp.md): connect
+  it to Claude, Cursor or Claude Code with one URL and OAuth, and ask for tests,
+  runs, failures and repairs from wherever you already are.
 - **Keeps the evidence.** Steps, logs, screenshots and a full Playwright trace per
   run, with the trace viewer built in.
 - **Tells you.** Failures, suite results and repairs go to a signed webhook, Slack,
@@ -131,6 +134,7 @@ what protects them and what does not: **[SECURITY.md](SECURITY.md)**.
 | [docs/deploying.md](docs/deploying.md)         | Prerequisites, costs, one-click and manual deploys, local setup |
 | [docs/architecture.md](docs/architecture.md)   | How the run engine, chat, explorer and scheduler fit together   |
 | [docs/webhooks.md](docs/webhooks.md)           | Triggering runs and generation from CI, polling, JUnit          |
+| [docs/mcp.md](docs/mcp.md)                     | Connecting an AI assistant over MCP with OAuth, the tools       |
 | [docs/evals.md](docs/evals.md)                 | Measuring generation quality across prompts and models          |
 | [docs/notifications.md](docs/notifications.md) | Webhooks, Slack, Discord and email for failures and repairs     |
 | [SECURITY.md](SECURITY.md)                     | Threat model, what is in scope, how to report                   |

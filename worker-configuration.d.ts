@@ -3,6 +3,7 @@
 // Runtime types generated with workerd@1.20260828.1 2026-08-01 nodejs_compat
 interface __BaseEnv_Env {
 	ARTIFACTS: R2Bucket;
+	OAUTH_KV: KVNamespace;
 	DB: D1Database;
 	WEBHOOK_TRIGGER_RATE_LIMITER: RateLimit;
 	WEBHOOK_READ_RATE_LIMITER: RateLimit;
