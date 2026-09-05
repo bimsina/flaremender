@@ -11,14 +11,14 @@ One requirement rules out the Workers Free plan. The rest is setup.
 
 | Requirement                    | Why                                               | Plan                                                                                                                                                        |
 | ------------------------------ | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Workers Paid** ($5/month)    | Dynamic Workers, which sandbox every test script  | **Required.** A Free-plan instance installs, deploys and signs you in, then cannot run a single test                                                        |
+| **Workers Paid** ($5/month)    | Dynamic Workers, which sandbox every test script  | **Required.** Dynamic Workers are Paid-only, and the Free plan's 10 ms CPU limit per request is too small for a generation turn anyway                      |
 | **R2 enabled**                 | screenshots, traces and logs                      | Enable once in the dashboard under R2                                                                                                                       |
 | **An LLM provider**            | generation, exploration and chat                  | Workers AI is the default and needs no key; Anthropic, OpenAI or Google produce noticeably better scripts. Keys can be set per instance or per organization |
 | AI Gateway                     | logging, caching and credits for every model call | Optional. Set a gateway id under Administration → Settings; a provider with no key then runs on prepaid AI Gateway credits                                  |
 | Browser Rendering              | every test runs in a real browser                 | Free and Paid                                                                                                                                               |
 | Workflows, Durable Objects, D1 | orchestration, live updates, storage              | Free and Paid                                                                                                                                               |
 | KV                             | OAuth grants for the [MCP server](mcp.md)         | Free and Paid                                                                                                                                               |
-| Workers Logs and Traces        | every run, turn and model call, as a waterfall    | On by default in `wrangler.jsonc`; included on Paid up to 20 million events a month                                                                         |
+| Workers Logs and Traces        | every run, turn and model call, as a waterfall    | On by default in `wrangler.jsonc`. Free until October 1, 2026; then spans share the logs quota, 20 million events a month on Paid                           |
 | Email Service                  | email notifications                               | Optional. Webhooks, Slack and Discord need nothing; see [docs/notifications.md](notifications.md)                                                           |
 
 ### What it costs
@@ -29,7 +29,7 @@ Everything runs on your account and bills to you.
 | ---------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | Workers Paid           | the plan itself                          | $5/month                                                                                                |
 | Browser Rendering      | 10 min/day on Free; 10 hrs/month on Paid | $0.09 per browser-hour                                                                                  |
-| Dynamic Workers        | 1,000 unique workers/month               | $0.002 each per day (waived during the open beta)                                                       |
+| Dynamic Workers        | 1,000 unique workers/month               | $0.002 per unique worker per day; a test script that changes counts as a new one                        |
 | Workers AI             | 10,000 Neurons/day                       | $0.011 per 1,000 Neurons                                                                                |
 | Bring your own LLM key | nothing                                  | billed directly by Anthropic, OpenAI or Google                                                          |
 | AI Gateway credits     | nothing                                  | prepaid; the gateway shows tokens and cost per call, and per organization when each has its own gateway |
