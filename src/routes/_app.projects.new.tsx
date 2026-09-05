@@ -13,6 +13,7 @@ import {
 import {
   BinocularsIcon,
   FileIcon,
+  FolderIcon,
   KeyIcon,
   PencilSimpleIcon,
   PlusIcon,
@@ -165,11 +166,18 @@ function NewProjectPage() {
   return (
     <>
       <PageHeader
+        compact
+        heading="section"
         title="New project"
         description="Give the agent a URL and whatever you know about the app. It will look round, propose the tests worth having and write them."
         breadcrumbs={
           <Breadcrumbs size="base">
-            <Breadcrumbs.Link href="/projects">Projects</Breadcrumbs.Link>
+            <Breadcrumbs.Link href="/projects">
+              <span className="inline-flex items-center gap-1.5">
+                <FolderIcon size={16} className="text-kumo-subtle" />
+                Projects
+              </span>
+            </Breadcrumbs.Link>
             <Breadcrumbs.Separator />
             <Breadcrumbs.Current>New project</Breadcrumbs.Current>
           </Breadcrumbs>

@@ -19,6 +19,8 @@ body,
 
 body {
   margin: 0;
+  /* The dashboard tightens Inter very slightly everywhere. */
+  letter-spacing: -0.01em;
 }
 
 a:focus-visible,
@@ -37,14 +39,7 @@ summary:focus-visible {
 
 .app-sidebar [data-sidebar='menu-button'],
 .app-sidebar [data-sidebar='menu-sub-button'] {
-  font-size: 14px;
-  font-weight: 400;
   transition: none;
-}
-
-.app-sidebar [data-sidebar='group-label'] {
-  font-size: 14px;
-  font-weight: 400;
 }
 
 @media (max-width: 639px) {

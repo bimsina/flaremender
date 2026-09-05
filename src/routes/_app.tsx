@@ -1,11 +1,16 @@
-import { Button, DropdownMenu, Sidebar, Text, useSidebar } from '@cloudflare/kumo'
+import { Button, DropdownMenu, LinkButton, Sidebar, Text, useSidebar } from '@cloudflare/kumo'
 import {
+  BookOpenTextIcon,
+  DesktopIcon,
   FolderIcon,
   FlameIcon,
   GaugeIcon,
   GearIcon,
+  GithubLogoIcon,
+  MoonIcon,
   ShieldCheckIcon,
   SignOutIcon,
+  SunIcon,
   UserIcon,
 } from '@phosphor-icons/react'
 import { useQueryClient } from '@tanstack/react-query'
@@ -19,12 +24,23 @@ import {
   useNavigate,
 } from '@tanstack/react-router'
 
+import { MenuRadioItem } from '#/components/menu-radio-item.tsx'
 import { OrgSwitcher } from '#/components/org-switcher.tsx'
 import { PageHeaderControls } from '#/components/page.tsx'
 import { QuickSearch } from '#/components/quick-search.tsx'
-import { ThemeToggle } from '#/components/theme-toggle.tsx'
 import { authClient } from '#/lib/auth-client.ts'
+import { type ThemePreference, useTheme } from '#/lib/theme.tsx'
 import type { AppSession } from '#/server/session.ts'
+
+const DOCS_URL = 'https://github.com/bimsina/flaremender#readme'
+const REPO_URL = 'https://github.com/bimsina/flaremender'
+const ISSUES_URL = 'https://github.com/bimsina/flaremender/issues/new'
+
+const THEMES: Array<{ value: ThemePreference; label: string; icon: typeof SunIcon }> = [
+  { value: 'light', label: 'Light', icon: SunIcon },
+  { value: 'dark', label: 'Dark', icon: MoonIcon },
+  { value: 'system', label: 'System', icon: DesktopIcon },
+]
 
 export const Route = createFileRoute('/_app')({
   beforeLoad: ({ context, location }) => {
@@ -47,13 +63,23 @@ function AppLayout() {
       <PageHeaderControls
         controls={
           <>
-            <ThemeToggle className="size-8" />
+            <LinkButton
+              href={DOCS_URL}
+              target="_blank"
+              rel="noreferrer"
+              variant="ghost"
+              icon={BookOpenTextIcon}
+              className="hidden sm:inline-flex"
+            >
+              Docs
+            </LinkButton>
             <UserMenu user={session.user} />
           </>
         }
       >
         <main className="flex min-w-0 flex-1 flex-col overflow-y-auto bg-kumo-canvas">
           <Outlet />
+          <AppFooter />
         </main>
       </PageHeaderControls>
     </Sidebar.Provider>
@@ -171,9 +197,38 @@ function AppSidebar({ session }: { session: AppSession }) {
   )
 }
 
+/** The dashboard's footer bar: a row of quiet links and the copyright. */
+function AppFooter() {
+  const links = [
+    { label: 'Docs', href: DOCS_URL },
+    { label: 'GitHub', href: REPO_URL },
+    { label: 'Report an issue', href: ISSUES_URL },
+    { label: 'Security', href: `${REPO_URL}/blob/main/SECURITY.md` },
+  ]
+  return (
+    <footer className="mt-auto flex min-h-12 shrink-0 flex-wrap items-center justify-center gap-y-2 border-t border-kumo-line bg-kumo-canvas px-4 py-2.5 text-sm">
+      {links.map((link, index) => (
+        <span key={link.href} className="flex items-center">
+          {index > 0 ? <span className="mx-4 h-4 w-px bg-kumo-line" aria-hidden /> : null}
+          <a
+            href={link.href}
+            target="_blank"
+            rel="noreferrer"
+            className="text-kumo-strong no-underline transition-colors hover:text-kumo-default"
+          >
+            {link.label}
+          </a>
+        </span>
+      ))}
+      <span className="ml-4 text-kumo-subtle">© {new Date().getFullYear()} Flaremender</span>
+    </footer>
+  )
+}
+
 function UserMenu({ user }: { user: AppSession['user'] }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { preference, setPreference } = useTheme()
 
   async function onSignOut() {
     await authClient.signOut()
@@ -208,6 +263,21 @@ function UserMenu({ user }: { user: AppSession['user'] }) {
         <DropdownMenu.LinkItem href="/settings" icon={GearIcon}>
           Settings
         </DropdownMenu.LinkItem>
+        <DropdownMenu.LinkItem href={REPO_URL} icon={GithubLogoIcon}>
+          GitHub
+        </DropdownMenu.LinkItem>
+        <DropdownMenu.Separator />
+        <DropdownMenu.RadioGroup
+          value={preference}
+          onValueChange={(value) => setPreference(value as ThemePreference)}
+        >
+          {THEMES.map((option) => (
+            <MenuRadioItem key={option.value} value={option.value} icon={option.icon}>
+              {option.label}
+            </MenuRadioItem>
+          ))}
+        </DropdownMenu.RadioGroup>
+        <DropdownMenu.Separator />
         <DropdownMenu.Item icon={SignOutIcon} variant="danger" onClick={() => void onSignOut()}>
           Sign out
         </DropdownMenu.Item>

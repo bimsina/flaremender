@@ -8,8 +8,9 @@ import {
   useKumoToastManager,
 } from '@cloudflare/kumo'
 import {
-  DownloadSimpleIcon,
   DotsThreeIcon,
+  DownloadSimpleIcon,
+  FolderIcon,
   PencilSimpleIcon,
   PlayIcon,
   SparkleIcon,
@@ -108,9 +109,16 @@ function RunPage() {
   return (
     <>
       <PageHeader
+        compact
+        heading="section"
         breadcrumbs={
           <Breadcrumbs size="base">
-            <Breadcrumbs.Link href="/projects">Projects</Breadcrumbs.Link>
+            <Breadcrumbs.Link href="/projects">
+              <span className="inline-flex items-center gap-1.5">
+                <FolderIcon size={16} className="text-kumo-subtle" />
+                Projects
+              </span>
+            </Breadcrumbs.Link>
             <Breadcrumbs.Separator />
             <Breadcrumbs.Link href={`/projects/${projectId}`}>{data.project.name}</Breadcrumbs.Link>
             <Breadcrumbs.Separator />

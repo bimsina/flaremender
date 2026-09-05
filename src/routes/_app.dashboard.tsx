@@ -92,6 +92,7 @@ function Dashboard() {
             : 'Suite health for this organization.'
         }
         actions={<NewProjectButton />}
+        docsHref="https://github.com/bimsina/flaremender#readme"
       />
 
       <PageBody className="grid gap-8">

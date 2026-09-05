@@ -1,5 +1,5 @@
 import { Banner, Breadcrumbs, LinkButton, Loader, Text } from '@cloudflare/kumo'
-import { DownloadSimpleIcon, WarningCircleIcon } from '@phosphor-icons/react'
+import { DownloadSimpleIcon, FolderIcon, WarningCircleIcon } from '@phosphor-icons/react'
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useRef } from 'react'
@@ -120,7 +120,12 @@ function TracePage() {
         title="Trace"
         breadcrumbs={
           <Breadcrumbs size="base">
-            <Breadcrumbs.Link href="/projects">Projects</Breadcrumbs.Link>
+            <Breadcrumbs.Link href="/projects">
+              <span className="inline-flex items-center gap-1.5">
+                <FolderIcon size={16} className="text-kumo-subtle" />
+                Projects
+              </span>
+            </Breadcrumbs.Link>
             <Breadcrumbs.Separator />
             <Breadcrumbs.Link href={`/projects/${projectId}?tab=runs`}>Runs</Breadcrumbs.Link>
             <Breadcrumbs.Separator />

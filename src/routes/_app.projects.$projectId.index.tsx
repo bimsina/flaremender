@@ -17,6 +17,7 @@ import {
   BinocularsIcon,
   ClockIcon,
   DotsThreeIcon,
+  FolderIcon,
   KeyIcon,
   ListChecksIcon,
   PlayIcon,
@@ -265,15 +266,20 @@ function ProjectDetail() {
   return (
     <>
       <PageHeader
+        compact
         breadcrumbs={
           <Breadcrumbs size="base">
-            <Breadcrumbs.Link href="/projects">Projects</Breadcrumbs.Link>
+            <Breadcrumbs.Link href="/projects">
+              <span className="inline-flex items-center gap-1.5">
+                <FolderIcon size={16} className="text-kumo-subtle" />
+                Projects
+              </span>
+            </Breadcrumbs.Link>
             <Breadcrumbs.Separator />
             <Breadcrumbs.Current>{project.name}</Breadcrumbs.Current>
           </Breadcrumbs>
         }
         title={project.name}
-        description={project.description ?? project.defaultEnvironment?.baseUrl ?? undefined}
         tabs={
           <Tabs
             labels={{ scrollStart: 'Scroll tabs left', scrollEnd: 'Scroll tabs right' }}

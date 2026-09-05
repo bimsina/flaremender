@@ -67,6 +67,7 @@ function Projects() {
         title="Projects"
         description="Each project owns its environments, its tests and their run history."
         actions={<NewProjectButton>Create project</NewProjectButton>}
+        docsHref="https://github.com/bimsina/flaremender/blob/main/docs/architecture.md"
       />
 
       <PageBody className="grid gap-6">

@@ -24,6 +24,7 @@ import {
   ClockIcon,
   DotsThreeIcon,
   FloppyDiskIcon,
+  FolderIcon,
   PencilSimpleIcon,
   PlayIcon,
   SparkleIcon,
@@ -244,9 +245,16 @@ function IntentDetail() {
   return (
     <>
       <PageHeader
+        compact
+        heading="section"
         breadcrumbs={
           <Breadcrumbs size="base">
-            <Breadcrumbs.Link href="/projects">Projects</Breadcrumbs.Link>
+            <Breadcrumbs.Link href="/projects">
+              <span className="inline-flex items-center gap-1.5">
+                <FolderIcon size={16} className="text-kumo-subtle" />
+                Projects
+              </span>
+            </Breadcrumbs.Link>
             <Breadcrumbs.Separator />
             <Breadcrumbs.Link href={`/projects/${projectId}`}>{project.name}</Breadcrumbs.Link>
             <Breadcrumbs.Separator />
