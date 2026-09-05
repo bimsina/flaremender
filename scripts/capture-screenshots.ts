@@ -179,6 +179,14 @@ async function main() {
     await open(`${storefront}/intents/int_storefront_5`)
     await shot(`test-detail${suffix}`, { fullPage: true })
 
+    // A repair waiting for review: the banner a person accepts or dismisses.
+    await open(`${storefront}/intents/int_storefront_2`)
+    await shot(`test-repair${suffix}`)
+
+    // Organization settings: provider keys and the repair policy.
+    await open('/organization')
+    await shot(`organization${suffix}`, { fullPage: true })
+
     // Environments, with the variable list open so the masked values show.
     await open(`${storefront}?tab=environments`)
     const variables = page.getByRole('button', { name: /Variables \(2\)/ }).first()

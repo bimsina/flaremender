@@ -1,8 +1,9 @@
 /**
  * Fills a local instance with a plausible amount of history: three projects, their
- * environments and tests, fourteen days of regression runs, suite runs and a chat
- * transcript. Nothing here talks to a model or a browser, so it costs nothing and is
- * repeatable.
+ * environments and tests, fourteen days of regression runs, suite runs, the
+ * generation jobs that wrote the scripts (with their token counts), one repair
+ * waiting for review, one that was adopted automatically, and a chat transcript.
+ * Nothing here talks to a model or a browser, so it costs nothing and is repeatable.
  *
  *   pnpm demo:seed [email]
  *
@@ -322,6 +323,218 @@ function stepRecords(spec: TestSpec, failAt: number | null): Array<Record<string
   })
 }
 
+const DEMO_MODEL = 'anthropic:claude-sonnet-5'
+
+interface RepairStory {
+  projectId: string
+  /** Index of the test in the project's list. */
+  testIndex: number
+  /** The run the agent set out to fix: this many days ago, suite 0. */
+  daysAgo: number
+  failingStatement: string
+  replacement: string
+  error: string
+  /** `draft` leaves the repair pending for review; `auto` adopts it and heals the run. */
+  outcome: 'draft' | 'auto'
+}
+
+const REPAIRS: Array<RepairStory> = [
+  {
+    projectId: 'prj_demo_storefront',
+    testIndex: 2,
+    daysAgo: 1,
+    failingStatement: "await page.getByRole('button', { name: 'Continue' }).click()",
+    replacement: "await page.getByRole('button', { name: 'Continue to delivery' }).click()",
+    error:
+      "locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: 'Continue' })",
+    outcome: 'draft',
+  },
+  {
+    projectId: 'prj_demo_taskbox',
+    testIndex: 5,
+    daysAgo: 3,
+    failingStatement: "await page.getByRole('button', { name: 'Continue' }).click()",
+    replacement: "await page.getByRole('button', { name: 'Active' }).click()",
+    error:
+      "locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: 'Continue' })",
+    outcome: 'auto',
+  },
+]
+
+/**
+ * Rewrites one seeded run as a failure the agent repaired: a second script version,
+ * a verification run that passed, the repair job with its token count, and either a
+ * pending repair on the test or an adopted version with the run marked healed.
+ */
+function seedRepair(
+  db: Database.Database,
+  story: RepairStory,
+  scope: {
+    projectId: string
+    slug: string
+    organizationId: string
+    userId: string
+    environmentId: string
+    environmentName: string
+    baseUrl: string
+    now: number
+  },
+): void {
+  const intentId = `int_${scope.slug}_${story.testIndex}`
+  const sourceVersionId = `sv_${scope.slug}_${story.testIndex}`
+  const sourceRunId = `run_${scope.slug}_${story.daysAgo}_0_${story.testIndex}`
+  const source = db.prepare('SELECT started_at FROM run WHERE id = ?').get(sourceRunId) as
+    | { started_at: number }
+    | undefined
+  if (!source) return
+
+  const versionId = `sv_${scope.slug}_${story.testIndex}_repair`
+  const verificationRunId = `run_${scope.slug}_${story.testIndex}_repair`
+  const jobId = `rep_${scope.slug}_${story.testIndex}`
+  const original = db
+    .prepare('SELECT code FROM script_version WHERE id = ?')
+    .get(sourceVersionId) as {
+    code: string
+  }
+  const repairedCode = original.code.includes(story.failingStatement)
+    ? original.code.replace(story.failingStatement, story.replacement)
+    : original.code.replace('\n}\n', `\n  ${story.replacement}\n}\n`)
+  const firstLine = story.error.split('\n')[0]!
+  const whatFailed = `${story.failingStatement} — ${firstLine}`
+  const failedAt = source.started_at
+  const repairedAt = failedAt + between(90_000, 240_000)
+  const adopted = story.outcome === 'auto'
+
+  // The source run failed on the statement the repair replaces.
+  const failedSteps = [
+    { label: "page.goto('/')", ok: true, durationMs: between(300, 900) },
+    {
+      label: story.failingStatement.replace(/^await\s+/, ''),
+      ok: false,
+      durationMs: 30_000,
+      error: story.error,
+    },
+  ]
+  db.prepare(
+    'UPDATE run SET status = ?, error_message = ?, script_version_id = ? WHERE id = ?',
+  ).run(adopted ? 'healed' : 'failed', story.error, sourceVersionId, sourceRunId)
+  db.prepare(
+    'UPDATE attempt SET outcome = ?, error_message = ?, result = ?, heal_applied = ? WHERE run_id = ?',
+  ).run(
+    'failed',
+    story.error,
+    JSON.stringify({
+      outcome: 'failed',
+      steps: failedSteps,
+      errorMessage: story.error,
+      logs: [],
+      durationMs: 30_600,
+    }),
+    JSON.stringify({ jobId, versionId, version: 2, whatFailed, adopted, policy: story.outcome }),
+    sourceRunId,
+  )
+
+  db.prepare(
+    `INSERT INTO script_version (id, intent_id, version, code, author, created_by, note, created_at)
+     VALUES (?, ?, 2, ?, 'agent', ?, ?, ?)`,
+  ).run(
+    versionId,
+    intentId,
+    repairedCode,
+    scope.userId,
+    `Repaired from v1: ${whatFailed}`,
+    repairedAt,
+  )
+
+  const verifySteps = [
+    { label: "page.goto('/')", ok: true, durationMs: between(300, 900) },
+    {
+      label: story.replacement.replace(/^await\s+/, ''),
+      ok: true,
+      durationMs: between(200, 1_200),
+    },
+    { label: 'expect(locator).toBeVisible()', ok: true, durationMs: between(80, 400) },
+  ]
+  const verifyDuration = verifySteps.reduce((sum, step) => sum + step.durationMs, 0)
+  db.prepare(
+    `INSERT INTO run (id, intent_id, environment_id, project_id, script_version_id, status, trigger, purpose,
+                      environment_name, base_url, model_id, started_at, finished_at)
+     VALUES (?, ?, ?, ?, ?, 'passed', 'repair', 'repair-verification', ?, ?, ?, ?, ?)`,
+  ).run(
+    verificationRunId,
+    intentId,
+    scope.environmentId,
+    scope.projectId,
+    versionId,
+    scope.environmentName,
+    scope.baseUrl,
+    DEMO_MODEL,
+    repairedAt,
+    repairedAt + verifyDuration,
+  )
+  db.prepare(
+    `INSERT INTO attempt (id, run_id, attempt_number, outcome, script_version_id, script_used, artifact_keys, logs,
+                          error_message, duration_ms, created_at, result)
+     VALUES (?, ?, 1, 'passed', ?, ?, '{}', ?, NULL, ?, ?, ?)`,
+  ).run(
+    `att_${verificationRunId}`,
+    verificationRunId,
+    versionId,
+    repairedCode,
+    JSON.stringify(['Verifying the repaired script in a fresh browser session']),
+    verifyDuration,
+    repairedAt + verifyDuration,
+    JSON.stringify({
+      outcome: 'passed',
+      steps: verifySteps,
+      errorMessage: null,
+      logs: [],
+      durationMs: verifyDuration,
+    }),
+  )
+
+  db.prepare(
+    `INSERT INTO generation_job (id, kind, intent_id, project_id, environment_id, organization_id, status, model_id,
+                                 script_version_id, run_id, source_run_id, turns, input_tokens, output_tokens,
+                                 created_by, started_at, finished_at)
+     VALUES (?, 'repair', ?, ?, ?, ?, 'succeeded', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    jobId,
+    intentId,
+    scope.projectId,
+    scope.environmentId,
+    scope.organizationId,
+    DEMO_MODEL,
+    versionId,
+    verificationRunId,
+    sourceRunId,
+    between(1, 3),
+    between(16_000, 38_000),
+    between(300, 900),
+    scope.userId,
+    failedAt + 20_000,
+    repairedAt + verifyDuration,
+  )
+
+  if (adopted) {
+    // Everything that ran after the repair ran the repaired version.
+    db.prepare(
+      'UPDATE intent SET current_version_id = ?, pending_repair_version_id = NULL WHERE id = ?',
+    ).run(versionId, intentId)
+    db.prepare(
+      "UPDATE run SET script_version_id = ? WHERE intent_id = ? AND started_at > ? AND purpose = 'regression'",
+    ).run(versionId, intentId, repairedAt)
+    db.prepare(
+      `UPDATE attempt SET script_version_id = ?, script_used = ?
+       WHERE run_id IN (SELECT id FROM run WHERE intent_id = ? AND started_at > ? AND purpose = 'regression')`,
+    ).run(versionId, repairedCode, intentId, repairedAt)
+  } else {
+    db.prepare(
+      "UPDATE intent SET pending_repair_version_id = ?, last_run_id = ?, status = 'failing' WHERE id = ?",
+    ).run(versionId, sourceRunId, intentId)
+  }
+}
+
 const ORIGIN = process.env.FLAREMENDER_URL ?? 'http://localhost:3009'
 const PASSWORD = process.env.DEMO_PASSWORD ?? 'demo-password-123'
 const ORG_NAME = process.env.DEMO_ORG ?? 'Acme Inc.'
@@ -556,6 +769,29 @@ async function main() {
         )
 
         if (status !== 'draft') runnable.push({ intentId, versionId, spec })
+
+        // The generation that wrote this script, so usage has something to add up.
+        const generatedAt = now - between(20, 38) * DAY
+        db.prepare(
+          `INSERT INTO generation_job (id, kind, intent_id, project_id, environment_id, organization_id, status,
+                                       model_id, script_version_id, turns, input_tokens, output_tokens, created_by,
+                                       started_at, finished_at)
+           VALUES (?, 'generate', ?, ?, ?, ?, 'succeeded', ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).run(
+          `gen_${project.slug}_${index}`,
+          intentId,
+          project.id,
+          defaultEnvironment,
+          author.organizationId,
+          DEMO_MODEL,
+          versionId,
+          between(1, 5),
+          between(14_000, 46_000),
+          between(400, 1_400),
+          author.id,
+          generatedAt,
+          generatedAt + between(30_000, 240_000),
+        )
       })
 
       // Fourteen days of regression history, grouped into one suite run per day.
@@ -702,7 +938,28 @@ async function main() {
            SELECT r.id FROM run r WHERE r.intent_id = intent.id ORDER BY r.started_at DESC LIMIT 1
          ) WHERE project_id = ?`,
       ).run(project.id)
+
+      for (const story of REPAIRS.filter((entry) => entry.projectId === project.id)) {
+        seedRepair(db, story, {
+          projectId: project.id,
+          slug: project.slug,
+          organizationId: author.organizationId,
+          userId: author.id,
+          environmentId: defaultEnvironment,
+          environmentName: defaultEnvironmentName,
+          baseUrl: defaultBaseUrl,
+          now,
+        })
+      }
     }
+
+    // Repairs are proposed for review in the demo organization; the walkthrough shows
+    // the banner a person accepts.
+    db.prepare(
+      `INSERT INTO organization_settings (organization_id, heal_policy, updated_by, updated_at)
+       VALUES (?, 'draft', ?, ?)
+       ON CONFLICT(organization_id) DO UPDATE SET heal_policy = 'draft', updated_at = excluded.updated_at`,
+    ).run(author.organizationId, author.id, now)
 
     // Point the run card at a run that actually failed, so the card matches the words.
     const failedRun = db
@@ -796,18 +1053,52 @@ async function main() {
             },
           ],
         },
+        {
+          role: 'user',
+          offset: 31,
+          parts: [
+            {
+              type: 'text',
+              text: 'The checkout test started failing this morning. The page did not change as far as I know. Can you repair it?',
+            },
+          ],
+        },
+        {
+          role: 'assistant',
+          offset: 30,
+          parts: [
+            {
+              type: 'text',
+              text: 'Replaying it now to find the step that broke. Repairs in this organization wait for review, so I will leave the result on the test for you to accept.',
+            },
+            {
+              type: 'card',
+              card: {
+                kind: 'generation',
+                job: 'repair',
+                jobId: 'rep_storefront_2',
+                intentId: 'int_storefront_2',
+                intentTitle: 'Checkout completes with a test card',
+                environmentName: 'Production',
+              },
+            },
+          ],
+        },
       ]
 
     db.prepare('DELETE FROM chat_message WHERE project_id = ?').run('prj_demo_storefront')
     transcript.forEach((message, index) => {
       db.prepare(
-        `INSERT INTO chat_message (id, project_id, role, parts, status, created_by, created_at)
-         VALUES (?, ?, ?, ?, 'complete', ?, ?)`,
+        `INSERT INTO chat_message (id, project_id, role, parts, status, model_id, input_tokens, output_tokens, created_by, created_at)
+         VALUES (?, ?, ?, ?, 'complete', ?, ?, ?, ?, ?)`,
       ).run(
         `msg_demo_${index}`,
         'prj_demo_storefront',
         message.role,
         JSON.stringify(message.parts),
+        message.role === 'assistant' ? DEMO_MODEL : null,
+        message.role === 'assistant' ? between(6_000, 14_000) : 0,
+        message.role === 'assistant' ? between(120, 420) : 0,
         message.role === 'user' ? author.id : null,
         now - message.offset * 60_000,
       )

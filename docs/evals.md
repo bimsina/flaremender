@@ -29,6 +29,20 @@ Every result row is also written to `evals/results/<timestamp>.json` with the jo
 id, the dashboard link and the reason a generation stopped, so a low number can be
 traced to the scripts behind it.
 
+## Where things stand
+
+Twelve scenarios, concurrency two, measured on September 5, 2026 against the
+prompts in this repository:
+
+| Model                       | Score | Verified | Asserted | Honest | Avg turns | Tokens | Minutes |
+| --------------------------- | ----- | -------- | -------- | ------ | --------- | ------ | ------- |
+| `openai:gpt-5.6-luna`       | 100%  | 100%     | 100%     | 100%   | 2.3       | 285k   | 5.1     |
+| `anthropic:claude-sonnet-5` | 92%   | 90%      | 100%     | 100%   | 2.2       | 474k   | 7.7     |
+
+Both refused the two missing-feature scenarios rather than inventing a passing
+test. Sonnet's miss was a generated script that did not replay green. Re-run
+these before trusting them for a decision; a single run has noise in it.
+
 ## Running it
 
 ```bash

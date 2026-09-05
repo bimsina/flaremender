@@ -215,6 +215,12 @@ report examples.
 See [the local reliability walkthrough](reliability-walkthrough.md) for
 repeatable fixtures, verification commands and the remaining milestone gates.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="screenshots/organization-dark.webp">
+  <source media="(prefers-color-scheme: light)" srcset="screenshots/organization.webp">
+  <img alt="The organization page: members, model provider keys per provider, and the repair policy" src="screenshots/organization.webp">
+</picture>
+
 **Which key a model call uses.** An organization's own provider key (Organization →
 Model providers) wins, then the Worker secret, then the key saved in the admin
 console. `src/server/provider-keys.ts` is the one place that order lives. Every
@@ -267,6 +273,12 @@ statement, carry the remaining statements through, keep the assertions, change a
 little as possible, and say so if the feature is gone rather than assert around it.
 At most ten turns. The result is saved as a new agent-authored version and verified
 in a fresh session, exactly like a generation.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="screenshots/test-repair-dark.webp">
+  <source media="(prefers-color-scheme: light)" srcset="screenshots/test-repair.webp">
+  <img alt="A test page with a banner saying the agent repaired the test and version 2 verified, with Accept, Compare in history and Dismiss buttons" src="screenshots/test-repair.webp">
+</picture>
 
 The **heal policy** decides what happens to a repair that verified. `draft` parks it as
 the test's `pendingRepairVersionId`, which the test page shows as a banner with
