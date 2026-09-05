@@ -249,7 +249,19 @@ repeatable fixtures, verification commands and the remaining milestone gates.
 
 **Which key a model call uses.** An organization's own provider key (Organization →
 Model providers) wins, then the Worker secret, then the key saved in the admin
-console. `src/server/provider-keys.ts` is the one place that order lives. Every
+console. `src/server/provider-keys.ts` is the one place that order lives.
+
+**AI Gateway.** With a gateway id set (Administration → Settings, or an
+organization's own override), `resolveModel` in `src/engine/generation/llm.ts`
+sends every call through it over the AI binding: Workers AI via the binding's
+`gateway` option, a provider with a key by forwarding that key in the request
+(`workers-ai-provider` BYOK with the OpenAI and Anthropic plugins), and a provider
+with no key at all through the unified catalog on the account's prepaid credits.
+Each call carries metadata with the organization, the job and the kind of work, so
+spend can be broken down in the gateway dashboard. The gateway's OpenAI route is
+chat-completions, which cannot combine tool calls with reasoning, so reasoning is
+turned off there; `docs/evals.md` records what that costs. The first log line of
+every generation says which route it took. Every
 generation, exploration and chat turn records the tokens the provider reported, on
 `generation_job` and `chat_message`, and the admin console sums them per
 organization.

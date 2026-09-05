@@ -536,6 +536,8 @@ export const organizationSettings = sqliteTable('organization_settings', {
     .primaryKey()
     .references(() => organization.id, { onDelete: 'cascade' }),
   healPolicy: text('heal_policy').$type<HealPolicy>().default('off').notNull(),
+  /** Routes this organization's model calls through its own AI Gateway, for per-tenant analytics. */
+  aiGatewayId: text('ai_gateway_id'),
   updatedBy: text('updated_by').references(() => user.id, { onDelete: 'set null' }),
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
     .default(now)
@@ -546,6 +548,8 @@ export const organizationSettings = sqliteTable('organization_settings', {
 export const instanceSettings = sqliteTable('instance_settings', {
   id: text('id').primaryKey().default('default'),
   defaultModelId: text('default_model_id'),
+  /** When set, every model call goes through this AI Gateway: logging, caching, and credits for keyless providers. */
+  aiGatewayId: text('ai_gateway_id'),
   retentionRunsPerIntent: integer('retention_runs_per_intent'),
   setupCompletedAt: integer('setup_completed_at', { mode: 'timestamp_ms' }),
   updatedBy: text('updated_by').references(() => user.id, { onDelete: 'set null' }),

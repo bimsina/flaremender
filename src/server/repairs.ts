@@ -20,7 +20,7 @@ import { orgMiddleware } from './auth.ts'
 import { resolveHealPolicy, resolveProjectHealPolicy } from './heal-policy.ts'
 import { assertOrganizationManager } from './membership.ts'
 import { assertProject, loadIntent, loadRun } from './scope.ts'
-import { ValidationError, oneOf, str } from './validate.ts'
+import { ValidationError, oneOf, optionalStr, str } from './validate.ts'
 
 export const repairRun = createServerFn({ method: 'POST' })
   .middleware([orgMiddleware])
@@ -176,12 +176,45 @@ export const getOrganizationSettings = createServerFn({ method: 'GET' })
   .middleware([orgMiddleware])
   .handler(async ({ context }) => {
     const [row] = await context.db
-      .select({ healPolicy: organizationSettings.healPolicy })
+      .select({
+        healPolicy: organizationSettings.healPolicy,
+        aiGatewayId: organizationSettings.aiGatewayId,
+      })
       .from(organizationSettings)
       .where(eq(organizationSettings.organizationId, context.organizationId))
       .limit(1)
 
-    return { healPolicy: row?.healPolicy ?? ('off' as const) }
+    return {
+      healPolicy: row?.healPolicy ?? ('off' as const),
+      aiGatewayId: row?.aiGatewayId ?? null,
+    }
+  })
+
+export const setOrganizationAiGateway = createServerFn({ method: 'POST' })
+  .middleware([orgMiddleware])
+  .validator((data: unknown) => {
+    const aiGatewayId = optionalStr(data, 'aiGatewayId', 64)
+    if (aiGatewayId !== null && !/^[a-z0-9][a-z0-9_-]{0,63}$/i.test(aiGatewayId)) {
+      throw new ValidationError('A gateway id is letters, numbers, dashes and underscores.')
+    }
+    return { aiGatewayId }
+  })
+  .handler(async ({ data, context }) => {
+    await assertOrganizationManager(context.db, context.organizationId, context.user.id)
+
+    await context.db
+      .insert(organizationSettings)
+      .values({
+        organizationId: context.organizationId,
+        aiGatewayId: data.aiGatewayId,
+        updatedBy: context.user.id,
+      })
+      .onConflictDoUpdate({
+        target: organizationSettings.organizationId,
+        set: { aiGatewayId: data.aiGatewayId, updatedBy: context.user.id, updatedAt: new Date() },
+      })
+
+    return { aiGatewayId: data.aiGatewayId }
   })
 
 export const setOrganizationHealPolicy = createServerFn({ method: 'POST' })

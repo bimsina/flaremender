@@ -36,6 +36,9 @@ and your run history stay there.
   run, with the trace viewer built in.
 - **Tells you.** Failures, suite results and repairs go to a signed webhook, Slack,
   Discord or email, per project.
+- **Runs on Cloudflare credits if you want.** Turn on AI Gateway and every model call
+  is logged and cached; a provider with no key runs on prepaid credits, so a fresh
+  instance needs no API key from anyone.
 - **Repairs what breaks.** When a ready test fails, the agent replays the script to
   the broken step, replaces it, carries the rest through and verifies the result. A
   policy per organization, project or test says whether that happens at all, and

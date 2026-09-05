@@ -43,6 +43,14 @@ Both refused the two missing-feature scenarios rather than inventing a passing
 test. Sonnet's miss was a generated script that did not replay green. Re-run
 these before trusting them for a decision; a single run has noise in it.
 
+**Through AI Gateway.** The same day, the five Guestbook scenarios with the OpenAI
+key forwarded over the gateway (`--tag gateway`) scored 80% against 100% direct:
+one generated script did not replay green. The gateway's OpenAI route uses the
+chat-completions API, which refuses tool calls with reasoning enabled, so
+Flaremender sends `reasoning_effort: none` there. That is the likely cost. Five
+scenarios is a small sample; treat it as a hint that the direct route is worth a
+few cents more when a key is available, not as a verdict.
+
 ## Running it
 
 ```bash

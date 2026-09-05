@@ -102,6 +102,7 @@ export const getInstanceSettings = createServerFn({ method: 'GET' })
 
     return {
       defaultModelId: settings?.defaultModelId ?? null,
+      aiGatewayId: settings?.aiGatewayId ?? null,
       setupCompletedAt: settings?.setupCompletedAt ?? null,
       retentionRunsPerIntent: settings?.retentionRunsPerIntent ?? null,
       providers,
@@ -188,6 +189,31 @@ export const deleteProviderKey = createServerFn({ method: 'POST' })
       .delete(providerKey)
       .where(and(eq(providerKey.provider, data.provider), isNull(providerKey.organizationId)))
     return { ok: true as const }
+  })
+
+const GATEWAY_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/i
+
+export const setAiGateway = createServerFn({ method: 'POST' })
+  .middleware([adminMiddleware])
+  .validator((data: unknown) => {
+    const aiGatewayId = optionalStr(data, 'aiGatewayId', 64)
+    if (aiGatewayId !== null && !GATEWAY_ID.test(aiGatewayId)) {
+      throw new ValidationError(
+        'A gateway id is letters, numbers, dashes and underscores, like "default" or "flaremender-prod".',
+      )
+    }
+    return { aiGatewayId }
+  })
+  .handler(async ({ data, context }) => {
+    await context.db
+      .insert(instanceSettings)
+      .values({ id: SETTINGS_ID, aiGatewayId: data.aiGatewayId, updatedBy: context.user.id })
+      .onConflictDoUpdate({
+        target: instanceSettings.id,
+        set: { aiGatewayId: data.aiGatewayId, updatedBy: context.user.id, updatedAt: new Date() },
+      })
+
+    return { aiGatewayId: data.aiGatewayId }
   })
 
 export const updateInstanceSettings = createServerFn({ method: 'POST' })

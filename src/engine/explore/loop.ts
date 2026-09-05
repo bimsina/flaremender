@@ -82,7 +82,9 @@ export async function runExploreTurn(
 ): Promise<ExploreTurnResult> {
   const db = createDb(env.DB)
   const creds = await loadCredentials(env, input.environmentId)
-  const resolved = await resolveModel(db, input.projectModelId, input.organizationId)
+  const resolved = await resolveModel(db, input.projectModelId, input.organizationId, {
+    metadata: { organizationId: input.organizationId, jobId: input.jobId, kind: 'exploration' },
+  })
 
   const state = {
     sessionId: input.sessionId,
@@ -443,6 +445,7 @@ export async function runExploreTurn(
 
   const result = await generateText({
     model: resolved.model,
+    ...(resolved.providerOptions ? { providerOptions: resolved.providerOptions } : {}),
     system: EXPLORE_SYSTEM_PROMPT,
     messages: pruneToolResults(input.messages, {
       keep: RESULTS_KEPT_IN_FULL,

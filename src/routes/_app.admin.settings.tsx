@@ -16,6 +16,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 
 import { InlineEmpty, ListToolbar, Section, SettingRow } from '#/components/list.tsx'
+import { AiGatewayRow } from '#/components/ai-gateway-row.tsx'
 import { PageBody } from '#/components/page.tsx'
 import {
   DEFAULT_MODEL_ID,
@@ -31,6 +32,7 @@ import {
   addAllowedModel,
   deleteProviderKey,
   removeAllowedModel,
+  setAiGateway,
   setProviderKey,
   updateInstanceSettings,
 } from '#/server/instance.ts'
@@ -100,6 +102,18 @@ function AdminSettings() {
           description="What a project uses when it has no model of its own."
         >
           <DefaultModelRow allowed={allowed} defaultModelId={settings.defaultModelId} />
+        </Section>
+
+        <Section
+          title="AI Gateway"
+          description="Cloudflare's control plane for model traffic: every call logged with tokens and cost, cached, rate limited, and billable to prepaid credits when a provider has no key. Create or find gateways under AI → AI Gateway in the Cloudflare dashboard."
+        >
+          <AiGatewayRow
+            scope="instance"
+            value={settings.aiGatewayId}
+            canManage
+            save={(aiGatewayId) => setAiGateway({ data: { aiGatewayId } })}
+          />
         </Section>
       </div>
     </PageBody>

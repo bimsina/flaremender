@@ -408,12 +408,20 @@ export class ProjectChat extends DurableObject<Cloudflare.Env> {
         session.db,
         session.projectModelId,
         session.request.organizationId,
+        {
+          metadata: {
+            organizationId: session.request.organizationId,
+            projectId: session.request.projectId,
+            kind: 'chat',
+          },
+        },
       )
       modelId = resolved.modelId
       const history = await this.#loadHistory(session)
 
       const result = streamText({
         model: resolved.model,
+        ...(resolved.providerOptions ? { providerOptions: resolved.providerOptions } : {}),
         system: session.systemPrompt,
         messages: history,
         tools: buildChatTools(

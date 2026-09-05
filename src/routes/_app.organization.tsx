@@ -34,8 +34,9 @@ import { ListToolbar } from '#/components/list.tsx'
 import { OrganizationProviderKeys } from '#/components/org-provider-keys.tsx'
 import { HealPolicySelect, describeHealPolicy } from '#/components/heal-policy-select.tsx'
 import { SettingRow } from '#/components/list.tsx'
-import { organizationSettingsQuery } from '#/lib/queries.ts'
-import { setOrganizationHealPolicy } from '#/server/repairs.ts'
+import { instanceSettingsQuery, organizationSettingsQuery } from '#/lib/queries.ts'
+import { setOrganizationAiGateway, setOrganizationHealPolicy } from '#/server/repairs.ts'
+import { AiGatewayRow } from '#/components/ai-gateway-row.tsx'
 import { PageBody, PageHeader } from '#/components/page.tsx'
 import { authClient } from '#/lib/auth-client.ts'
 import { formatDate } from '#/lib/format.ts'
@@ -311,6 +312,20 @@ function OrganizationPage() {
           </div>
           <OrganizationRepairPolicy canManage={canManage} />
         </section>
+
+        <section className="grid gap-3">
+          <div className="grid gap-1.5">
+            <Text as="h2" variant="heading">
+              AI Gateway
+            </Text>
+            <Text variant="secondary">
+              Route this organization's model calls through a gateway of its own to see its usage
+              and spend separately in the Cloudflare dashboard.
+              {canManage ? '' : ' Only owners and admins can change it.'}
+            </Text>
+          </div>
+          <OrganizationAiGateway canManage={canManage} isAdmin={session.user.role === 'admin'} />
+        </section>
       </PageBody>
 
       <InviteMemberDialog open={inviting} onOpenChange={setInviting} />
@@ -326,6 +341,21 @@ function OrganizationPage() {
         organizationId={activeOrgId}
       />
     </>
+  )
+}
+
+function OrganizationAiGateway({ canManage, isAdmin }: { canManage: boolean; isAdmin: boolean }) {
+  const settings = useQuery(organizationSettingsQuery())
+  const instance = useQuery({ ...instanceSettingsQuery(), enabled: isAdmin })
+
+  return (
+    <AiGatewayRow
+      scope="organization"
+      value={settings.data?.aiGatewayId ?? null}
+      inherited={instance.data?.aiGatewayId ?? null}
+      canManage={canManage}
+      save={(aiGatewayId) => setOrganizationAiGateway({ data: { aiGatewayId } })}
+    />
   )
 }
 

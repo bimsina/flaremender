@@ -149,7 +149,9 @@ function describeScript(fragments: Array<string>, goal: string): string {
 export async function runTurn(env: Cloudflare.Env, input: TurnInput): Promise<TurnResult> {
   const db = createDb(env.DB)
   const creds = await loadCredentials(env, input.environmentId)
-  const resolved = await resolveModel(db, input.projectModelId, input.organizationId)
+  const resolved = await resolveModel(db, input.projectModelId, input.organizationId, {
+    metadata: { organizationId: input.organizationId, jobId: input.jobId, kind: 'generation' },
+  })
 
   const state = {
     sessionId: input.sessionId,
@@ -172,6 +174,8 @@ export async function runTurn(env: Cloudflare.Env, input: TurnInput): Promise<Tu
       line,
       at: Date.now(),
     })
+
+  if (input.messages.length <= 1) await narrate(describeModel(resolved))
 
   const browserOptions = {
     loader: env.LOADER,
@@ -390,6 +394,7 @@ export async function runTurn(env: Cloudflare.Env, input: TurnInput): Promise<Tu
 
   const result = await generateText({
     model: resolved.model,
+    ...(resolved.providerOptions ? { providerOptions: resolved.providerOptions } : {}),
     system: input.systemPrompt ?? SYSTEM_PROMPT,
     messages: pruneToolResults(input.messages, {
       keep: OBSERVATIONS_KEPT_IN_FULL,
@@ -426,3 +431,24 @@ export async function runTurn(env: Cloudflare.Env, input: TurnInput): Promise<Tu
 }
 
 export type { GenerationContext }
+
+/** "Using openai:gpt-5.6-luna through AI Gateway "default", with the organization's key." */
+export function describeModel(resolved: {
+  modelId: string
+  route: 'direct' | 'gateway'
+  gatewayId: string | null
+  keySource: string
+}): string {
+  const via = resolved.route === 'gateway' ? ` through AI Gateway "${resolved.gatewayId}"` : ''
+  const key =
+    resolved.keySource === 'gateway-credits'
+      ? 'on Cloudflare credits'
+      : resolved.keySource === 'organization'
+        ? "with the organization's key"
+        : resolved.keySource === 'secret'
+          ? "with the instance's secret"
+          : resolved.keySource === 'database'
+            ? "with the instance's key"
+            : ''
+  return `Using ${resolved.modelId}${via}${key ? `, ${key}` : ''}.`
+}
