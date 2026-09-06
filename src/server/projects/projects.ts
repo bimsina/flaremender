@@ -10,7 +10,6 @@ import {
   instanceSettings,
   intent,
   project,
-  run,
 } from '#/db/schema/app.ts'
 import { createId, slugify } from '#/lib/ids.ts'
 import { DEFAULT_MODEL_ID, parseModelId } from '#/lib/models.ts'
@@ -70,9 +69,11 @@ export const listProjects = createServerFn({ method: 'GET' })
         baseUrl: environment.baseUrl,
         createdAt: project.createdAt,
         updatedAt: project.updatedAt,
+        // Written by hand: Drizzle strips table qualifiers inside a select list, so a
+        // correlated subquery built from column references compares the wrong columns.
         lastRunAt: sql<
           number | null
-        >`(select max(${run.startedAt}) from ${run} where ${run.projectId} = ${project.id})`,
+        >`(select max(r.started_at) from run r where r.project_id = project.id)`,
         intentCount: sql<number>`sum(case when ${intent.id} is not null and ${intent.status} <> 'proposed' then 1 else 0 end)`,
         proposedCount: sql<number>`sum(case when ${intent.status} = 'proposed' then 1 else 0 end)`,
         failingCount: sql<number>`sum(case when ${intent.status} = 'failing' then 1 else 0 end)`,

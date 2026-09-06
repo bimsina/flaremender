@@ -4,8 +4,8 @@
   "compatibility_date": "2026-08-01",
   "compatibility_flags": ["nodejs_compat"],
   "main": "src/server.ts",
-  // Keep vars and secrets set in the dashboard across deploys, so a value changed
-  // there (DISABLE_SIGNUP, say) is not reset to this file's default.
+  // Keep vars set in the dashboard across deploys, so a value changed there
+  // (DISABLE_SIGNUP, say) is not reset to this file's default.
   "keep_vars": true,
   // `database_id` is a placeholder. The Deploy to Cloudflare button provisions a real
   // database and rewrites this value. Deploying by hand? Run `wrangler d1 create
