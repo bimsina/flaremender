@@ -16,7 +16,9 @@
     },
   ],
   // Set to "true" to close public registration. The first account (which becomes the
-  // instance admin) and anyone holding a pending invitation can still sign up.
+  // instance admin) and anyone holding a pending invitation can still sign up. This is
+  // the only place to set it; `.env.example` leaves it out so the Deploy button does not
+  // ask for it as a secret.
   "vars": {
     "DISABLE_SIGNUP": "false",
     // Sender for email notifications. Only used once `send_email` below is enabled.
