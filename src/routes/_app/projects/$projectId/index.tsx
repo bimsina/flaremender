@@ -95,6 +95,12 @@ function isTab(value: unknown): value is Tab {
   return typeof value === 'string' && (TABS as ReadonlyArray<string>).includes(value)
 }
 
+/** The tab a URL names. `tests` is what people type for the Tests tab, whose key is `intents`. */
+function tabFromSearch(value: unknown): Tab | undefined {
+  if (value === 'tests') return 'intents'
+  return isTab(value) ? value : undefined
+}
+
 function oneOf<const Values extends ReadonlyArray<string>>(
   values: Values,
   value: unknown,
@@ -117,7 +123,7 @@ type ProjectSearch = {
 
 export const Route = createFileRoute('/_app/projects/$projectId/')({
   validateSearch: (search: Record<string, unknown>): ProjectSearch => ({
-    ...(isTab(search.tab) ? { tab: search.tab } : {}),
+    ...(tabFromSearch(search.tab) ? { tab: tabFromSearch(search.tab) } : {}),
     ...(typeof search.environmentId === 'string' ? { environmentId: search.environmentId } : {}),
     ...(typeof search.variable === 'string' ? { variable: search.variable } : {}),
     ...(search.editEnvironment === 'edit' ||
@@ -185,7 +191,7 @@ export const Route = createFileRoute('/_app/projects/$projectId/')({
 function ProjectDetail() {
   const { projectId } = Route.useParams()
   const search = Route.useSearch()
-  const tab = search.tab ?? 'overview'
+  const tab = tabFromSearch(search.tab) ?? 'overview'
   const navigate = useNavigate({ from: Route.fullPath })
 
   const { data: project } = useSuspenseQuery(projectQuery(projectId))
