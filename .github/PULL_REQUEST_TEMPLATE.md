@@ -4,11 +4,11 @@
 
 ## How you checked it
 
-<!-- What you ran and what you saw. `pnpm lint && pnpm format && pnpm typecheck && pnpm test` is the minimum. If the change is visible in the UI, a screenshot in both themes helps. -->
+<!-- What you ran and what you saw. `pnpm lint && pnpm format && pnpm typecheck && pnpm test` is the minimum. If the change is visible in the UI, add a screenshot in both themes. -->
 
 ## Checklist
 
 - [ ] No generated file was hand-edited (`src/db/schema/auth.ts`, `src/routeTree.gen.ts`, `harness.generated.js`)
-- [ ] Any new organization-scoped server function goes through `orgMiddleware`
-- [ ] Any new binding handed to the harness is reflected in SECURITY.md
-- [ ] Docs updated if behaviour or setup changed
+- [ ] Every new organization-scoped server function goes through `orgMiddleware`
+- [ ] Every new binding handed to the harness is listed in SECURITY.md
+- [ ] Docs are updated if behaviour or setup changed

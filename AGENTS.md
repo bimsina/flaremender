@@ -1,8 +1,8 @@
 # Working on Flaremender
 
 Guidance for coding agents and new contributors. The human-facing version is
-[CONTRIBUTING.md](CONTRIBUTING.md); the design is in
-[docs/architecture.md](docs/architecture.md). Read both before changing the
+[CONTRIBUTING.md](CONTRIBUTING.md). The design is in
+[docs/architecture.md](docs/architecture.md). Read both before you change the
 engine or the server layer.
 
 ## Before you push
@@ -16,8 +16,9 @@ CI runs exactly these plus `pnpm build`. Do not open a PR that fails any of them
 ## Rules that are not obvious from the code
 
 - **Three files are generated. Never hand-edit them.** `src/db/schema/auth.ts`
-  (`pnpm auth:generate`), `src/routeTree.gen.ts` (`pnpm generate-routes`) and
-  `src/engine/harness/harness.generated.js` (`pnpm harness`).
+  comes from `pnpm auth:generate`, `src/routeTree.gen.ts` from
+  `pnpm generate-routes` and `src/engine/harness/harness.generated.js` from
+  `pnpm harness`.
 - **`auth.config.ts` is not the runtime auth config.** It exists for the Better Auth
   CLI. The runtime config is `src/lib/auth/auth.ts`. Keep their plugin lists in sync.
 - **Tenancy goes through `orgMiddleware`.** Every organization-scoped server
@@ -25,32 +26,32 @@ CI runs exactly these plus `pnpm build`. Do not open a PR that fails any of them
   and re-checks membership. Resources load through an org-joined query. Do not
   add a server function that takes an organization id as an argument.
 - **Untrusted scripts run in a Dynamic Worker** with `globalOutbound: null` and no
-  D1, R2 or AI bindings (`src/engine/runner/loader.ts`). Do not hand the harness a
-  new binding without updating SECURITY.md.
+  D1, R2 or AI bindings. The wiring is in `src/engine/runner/loader.ts`. Do not
+  hand the harness a new binding without updating SECURITY.md.
 - **Redact before you truncate.** The scrubber replaces whole secret values, so
-  clipping a string first defeats it. There is a regression test for this.
-- **Migrations are additive.** Add a migration with `pnpm db:generate`; never run
+  clipping a string first defeats it. A regression test covers this.
+- **Migrations are additive.** Add a migration with `pnpm db:generate`. Never run
   `db:push` against a database that has history.
 - **The harness build has two load-bearing settings** in
-  `scripts/build-harness.mjs`: `keepNames` must stay on, and `./user-script.js`
+  `scripts/build-harness.mjs`. `keepNames` must stay on, and `./user-script.js`
   must stay external.
 - **Kumo theming.** Never use Tailwind's `dark:` variant. Light and dark resolve
   through CSS `light-dark()` keyed on `data-mode`.
 - **`'proposed'` intents are not tests.** Anything that counts, runs or schedules
-  tests must go through `isAdoptedIntent` / `isRunnableIntent` in
+  tests must go through `isAdoptedIntent` or `isRunnableIntent` in
   `src/server/core/test-policy.ts`.
-- **Readiness is separate from outcome.** A draft check or a generation
-  verification passing does not make a test ready, and never counts as a
-  regression pass.
-- **Provider keys resolve organization → Worker secret → instance**, in
-  `src/server/org/provider-keys.ts`. Pass the organization id to `resolveModel`; a
-  call without one silently bills the instance.
+- **Readiness is separate from outcome.** A passing draft check or generation
+  verification does not make a test ready, and never counts as a regression pass.
+- **Provider keys resolve in this order:** the organization's key, then the Worker
+  secret, then the instance key, in `src/server/org/provider-keys.ts`. Pass the
+  organization id to `resolveModel`. A call without one silently bills the
+  instance.
 - **Measure prompt changes.** Anything that touches `src/engine/*/prompts.ts` or
   the tool loops should come with a `pnpm eval` before-and-after in the PR.
 - **Repairs never adopt a version on their own unless the policy is `auto`.**
   `persistRepair` in `src/engine/repair/steps.ts` is the only place a repaired
-  version becomes current; keep it that way, and keep the one-attempt-per-version
-  guard in `repair/trigger.ts`.
+  version becomes current. Keep it that way, and keep the one-attempt-per-version
+  guard in `src/engine/repair/trigger.ts`.
 
 ## Where things live
 
@@ -66,7 +67,7 @@ tests/                  invariants that are expensive to get wrong
 
 ## Style
 
-Prose in docs and UI copy is plain English: no em-dashes, short sentences, say
+Prose in docs and UI copy is plain English: no em dashes, short sentences, say
 what a thing does rather than what it is called. Errors shown to users say what
 failed and what to do next.
 

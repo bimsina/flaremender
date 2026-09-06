@@ -4,12 +4,12 @@
 
 **Give it a URL. Watch it write your test suite.**
 
-Point Flaremender at your app, give it a sign-in and whatever you know, and an agent
-opens the app in a real browser, works out what it does, proposes the tests worth
-having and writes them, one verified step at a time, while you watch the browser it
-is driving. Or type what a test should prove, "Sign in, add a task, check it appears
-in the list", and it writes that one. What you get back is ordinary Playwright.
-Read it, edit it, delete half of it. It is yours.
+Point Flaremender at your app and give it a sign-in. An agent opens the app in a
+real browser, works out what it does, proposes the tests worth having and writes
+them, one verified step at a time. You watch the browser it is driving. Or type what
+a test should prove, "Sign in, add a task, check it appears in the list", and it
+writes that one. What comes back is ordinary Playwright. Read it, edit it, delete
+half of it. It is yours.
 
 Flaremender runs on your own Cloudflare account. Your app's passwords, your scripts
 and your run history stay there.
@@ -25,34 +25,34 @@ and your run history stay there.
 ## What it does
 
 - **Starts from a URL.** Create a project with the app's address, credentials, docs
-  links and any files you have, a README, an API spec, a PDF, screenshots. The agent
+  links and any files you have: a README, an API spec, a PDF, screenshots. The agent
   reads them, explores the app in a real browser and writes the first suite on its
-  own. Every test is verified in a fresh browser before it is kept.
-- **Writes tests from a sentence.** Say what the app should be able to do; the agent
-  drives a live browser and keeps only the steps it has watched work.
-- **Shows you the browser.** Exploration, generation and repair stream what the
-  agent's browser is showing, frame by frame, next to what it is saying.
+  own. It verifies every test in a fresh browser before it keeps the test.
+- **Writes tests from a sentence.** Say what the app should do. The agent drives a
+  live browser and keeps only the steps it has watched work.
+- **Shows you the browser.** Exploration, generation and repair stream the agent's
+  browser frame by frame, next to what the agent is saying.
 - **Runs them.** On demand, on a cron schedule, or from CI through a
   [webhook API](docs/webhooks.md) with idempotency keys and JUnit output.
-- **Works from your assistant.** Flaremender is an [MCP server](docs/mcp.md): connect
-  it to Claude, Cursor or Claude Code with one URL and OAuth, and ask for tests,
-  runs, failures and repairs from wherever you already are.
+- **Works from your assistant.** Flaremender is a Model Context Protocol (MCP)
+  server. Connect it to Claude, Cursor or Claude Code with one URL and OAuth, then
+  ask for tests, runs, failures and repairs from there. See [docs/mcp.md](docs/mcp.md).
 - **Keeps the evidence.** Steps, logs, screenshots and a full Playwright trace per
   run, with the trace viewer built in.
 - **Tells you.** Failures, suite results and repairs go to a signed webhook, Slack,
   Discord or email, per project.
-- **Runs on Cloudflare credits if you want.** Turn on AI Gateway and every model call
-  is logged and cached; a provider with no key runs on prepaid credits, so a fresh
-  instance needs no API key from anyone.
+- **Runs on Cloudflare credits if you want.** Turn on AI Gateway and it logs and
+  caches every model call. A provider with no key runs on prepaid credits, so a
+  fresh instance needs no API key from anyone.
 - **Repairs what breaks.** When a ready test fails, the agent replays the script to
-  the broken step, replaces it, carries the rest through and verifies the result. A
-  policy per organization, project or test says whether that happens at all, and
-  whether the repaired version waits for a person or is adopted on the spot.
+  the broken step, replaces that step, carries the rest through and verifies the
+  result. A policy per organization, project or test says whether that happens at
+  all, and whether the repaired version waits for a person or is adopted on the spot.
 - **Sandboxes what it wrote.** Scripts execute in a Dynamic Worker with no database,
   no object storage and no ambient network.
 - **Traced end to end.** Workers Traces are on out of the box, with a named span for
-  every model call, browser step, notification and MCP tool call, so a slow or
-  failed generation reads as a waterfall in the Cloudflare dashboard.
+  every model call, browser step, notification and MCP tool call. A slow or failed
+  generation reads as a waterfall in the Cloudflare dashboard.
 
 Ask for a test in the project chat, and the assistant answers with cards. Each card
 is a real row, not something that exists only in the conversation.
@@ -73,8 +73,8 @@ export default async function ({ page, expect, secret }) {
 }
 ```
 
-When a test fails, the evidence is already there. Note the second step: the password
-went in through `secret()`, so what was stored is `***`.
+When a test fails, the evidence is already there. The password in the second step
+went in through `secret()`, so the stored value is `***`.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/run-detail-dark.webp">
@@ -86,14 +86,16 @@ went in through `secret()`, so what was stored is `***`.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/bimsina/flaremender)
 
-You need **Workers Paid** ($5/month), because Dynamic Workers sandbox every test
-script and they are not on the free plan. You also need R2 enabled, and a
-`BETTER_AUTH_SECRET` and `ENCRYPTION_KEY` (`openssl rand -hex 32` each).
+You need the Workers Paid plan, $5 a month. Dynamic Workers sandbox every test
+script, and the Free plan does not include them. You also need R2 enabled and two
+secrets, `BETTER_AUTH_SECRET` and `ENCRYPTION_KEY`. Generate each one with
+`openssl rand -hex 32`.
 
 The first account to register becomes the instance admin, so sign up straight after
-deploying, then set `DISABLE_SIGNUP=true` and redeploy.
+deploying. Then set `DISABLE_SIGNUP=true` and redeploy.
 
-Full prerequisites, costs and the manual path: **[docs/deploying.md](docs/deploying.md)**.
+Prerequisites, costs and the manual path are in
+**[docs/deploying.md](docs/deploying.md)**.
 
 ## Run it locally
 
@@ -110,27 +112,27 @@ Dynamic Workers are free locally, so a local instance runs tests without a paid 
 
 ## Status
 
-It works, and it is early. Specifically:
+It works, and it is early.
 
 - **Repairs are off by default and bounded.** The agent gets one automatic attempt
-  per script version, replaces the step that broke rather than rewriting the flow,
-  and a repaired version becomes current only when the policy says `auto` or a
-  person accepts it. Turn it on under Organization → Repairs, or per project or
-  test.
-- **The deploy path has not been exercised end to end yet.** Everything has been
-  built and tested against a local Cloudflare runtime. If the button breaks for you,
-  that is a bug worth an issue.
+  per script version. It replaces the step that broke rather than rewriting the
+  flow. A repaired version becomes current only when the policy says `auto` or a
+  person accepts it. Turn repairs on under **Organization > Repairs**, or per
+  project or test.
+- **Nobody has exercised the deploy path end to end yet.** Everything was built and
+  tested against a local Cloudflare runtime. If the button breaks for you, that is a
+  bug worth an issue.
 - No email verification, no password reset, no usage caps. One organization can
   spend the whole account's budget.
 - Email notifications need Cloudflare Email Service enabled on the account, so they
   are off until you turn them on. Webhooks, Slack and Discord work out of the box.
 - A generated script is marked ready only when a full replay in a fresh browser
   passes. Anything less stays a draft until a person has read it.
-- Generation quality depends heavily on the model. `pnpm eval` measures it against
-  the example apps; see [docs/evals.md](docs/evals.md) before choosing a default.
+- Generation quality depends on the model. `pnpm eval` measures it against the
+  example apps. Read [docs/evals.md](docs/evals.md) before you choose a default.
 
 Flaremender holds the credentials to the apps it tests. Before you deploy it, read
-what protects them and what does not: **[SECURITY.md](SECURITY.md)**.
+what protects them and what does not in **[SECURITY.md](SECURITY.md)**.
 
 ## Docs
 
@@ -147,7 +149,7 @@ what protects them and what does not: **[SECURITY.md](SECURITY.md)**.
 
 ## Stack
 
-TanStack Start on Cloudflare Workers, Cloudflare Kumo and Tailwind v4, D1 via
+TanStack Start on Cloudflare Workers, Cloudflare Kumo and Tailwind v4, D1 through
 Drizzle, Better Auth with the organization, admin and API-key plugins. Tests execute
 in Dynamic Workers with `@cloudflare/playwright`.
 

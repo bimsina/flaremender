@@ -1,7 +1,7 @@
 {
   "name": "flaremender",
   "private": true,
-  "description": "Open-source, Cloudflare-native end-to-end test runner. Describe a test in plain English, generate a Playwright script, run it in a real browser on your own account.",
+  "description": "AI agent that explores your app and writes, runs and repairs Playwright tests. Self-hosted on Cloudflare.",
   "keywords": [
     "ai-agents",
     "browser-rendering",
