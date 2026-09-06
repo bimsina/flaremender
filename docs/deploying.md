@@ -69,6 +69,7 @@ pnpm install
 wrangler login
 
 wrangler d1 create flaremender           # paste the id it prints into wrangler.jsonc
+wrangler kv namespace create OAUTH_KV    # paste this id too, under kv_namespaces
 wrangler r2 bucket create flaremender-artifacts
 
 wrangler secret put BETTER_AUTH_SECRET   # openssl rand -hex 32
@@ -76,6 +77,10 @@ wrangler secret put ENCRYPTION_KEY       # openssl rand -hex 32
 
 pnpm deploy                              # builds, applies remote migrations, deploys
 ```
+
+`wrangler.jsonc` ships with placeholder ids for the D1 database and the KV
+namespace. The Deploy button replaces them for you. By hand, the deploy fails until
+both are replaced with the ids the two `create` commands print.
 
 Open the URL the deploy printed and sign up. The Worker reads its origin from the
 request, so no URL needs to be configured.
