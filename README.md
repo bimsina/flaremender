@@ -119,10 +119,6 @@ It works, and it is early.
   flow. A repaired version becomes current only when the policy says `auto` or a
   person accepts it. Turn repairs on under **Organization > Repairs**, or per
   project or test.
-- **The Deploy button has been exercised once**, on September 6, 2026, on a Workers
-  Paid account: fork, build, migrations, sign-up, exploration, generation, a suite
-  run and the trace viewer all worked. If it breaks for you, that is a bug worth an
-  issue.
 - No email verification, no password reset, no usage caps. One organization can
   spend the whole account's budget.
 - Email notifications need Cloudflare Email Service enabled on the account, so they
