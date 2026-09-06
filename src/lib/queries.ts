@@ -27,7 +27,7 @@ import { listProviderModels } from '#/server/model-catalog.ts'
 import { getProject, listProjects } from '#/server/projects.ts'
 import { getRun, listProjectRuns, listRuns } from '#/server/runs.ts'
 import { getQuickSearchResources } from '#/server/search.ts'
-import { fetchSession, fetchThemePreference } from '#/server/session.ts'
+import { fetchSession, fetchSiteOrigin, fetchThemePreference } from '#/server/session.ts'
 import { getSuiteRun, listSuiteRuns } from '#/server/suites.ts'
 import { getProjectWebhookSettings } from '#/server/webhook-settings.ts'
 
@@ -42,6 +42,13 @@ export const themeQuery = () =>
   queryOptions({
     queryKey: ['theme'] as const,
     queryFn: () => fetchThemePreference(),
+    staleTime: Infinity,
+  })
+
+export const siteOriginQuery = () =>
+  queryOptions({
+    queryKey: ['site-origin'] as const,
+    queryFn: () => fetchSiteOrigin(),
     staleTime: Infinity,
   })
 

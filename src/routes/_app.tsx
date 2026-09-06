@@ -3,7 +3,6 @@ import {
   BookOpenTextIcon,
   DesktopIcon,
   FolderIcon,
-  FlameIcon,
   GaugeIcon,
   GearIcon,
   GithubLogoIcon,
@@ -24,6 +23,7 @@ import {
   useNavigate,
 } from '@tanstack/react-router'
 
+import { Logo } from '#/components/logo.tsx'
 import { MenuRadioItem } from '#/components/menu-radio-item.tsx'
 import { OrgSwitcher } from '#/components/org-switcher.tsx'
 import { PageHeaderControls } from '#/components/page.tsx'
@@ -104,9 +104,9 @@ function AppSidebar({ session }: { session: AppSession }) {
         <Link
           to="/dashboard"
           aria-label="Flaremender home"
-          className="flex size-8.5 shrink-0 items-center justify-center rounded-lg text-kumo-warning hover:bg-kumo-tint group-data-[state=collapsed]/sidebar:hidden"
+          className="flex size-8.5 shrink-0 items-center justify-center rounded-lg hover:bg-kumo-tint group-data-[state=collapsed]/sidebar:hidden"
         >
-          <FlameIcon size={26} weight="fill" />
+          <Logo size={26} />
         </Link>
         <OrgSwitcher session={session} />
       </Sidebar.Header>

@@ -64,3 +64,11 @@ export const fetchThemePreference = createServerFn({ method: 'GET' }).handler(
     return isThemePreference(value) ? value : 'system'
   },
 )
+
+/**
+ * The origin this instance is being served from. Social preview tags need absolute
+ * URLs, and a self-hosted instance has no domain we can bake in at build time.
+ */
+export const fetchSiteOrigin = createServerFn({ method: 'GET' }).handler(
+  async (): Promise<string> => new URL(getRequest().url).origin,
+)

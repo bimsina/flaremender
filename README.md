@@ -1,3 +1,5 @@
+<img src="public/logo.svg" alt="" width="132">
+
 # Flaremender
 
 **Give it a URL. Watch it write your test suite.**

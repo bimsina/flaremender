@@ -1,0 +1,15 @@
+{
+  "name": "Flaremender",
+  "short_name": "Flaremender",
+  "description": "Describe a test in plain English, generate Playwright code, and run it in a real browser.",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#171717",
+  "theme_color": "#f4811f",
+  "icons": [
+    { "src": "/icon.svg", "type": "image/svg+xml", "sizes": "any" },
+    { "src": "/icon-192.png", "type": "image/png", "sizes": "192x192" },
+    { "src": "/icon-512.png", "type": "image/png", "sizes": "512x512" }
+  ]
+}

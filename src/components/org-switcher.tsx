@@ -1,5 +1,5 @@
 import { Button, Combobox, Text } from '@cloudflare/kumo'
-import { CaretUpDownIcon, FlameIcon, PlusIcon } from '@phosphor-icons/react'
+import { CaretUpDownIcon, PlusIcon } from '@phosphor-icons/react'
 import { useRouter } from '@tanstack/react-router'
 import { useState } from 'react'
 
@@ -7,6 +7,7 @@ import { authClient } from '#/lib/auth-client.ts'
 import { useRefreshSession } from '#/lib/use-refresh-session.ts'
 import type { AppSession } from '#/server/session.ts'
 import { CreateOrganizationDialog } from './create-organization-dialog.tsx'
+import { Logo } from './logo.tsx'
 
 export function OrgSwitcher({ session }: { session: AppSession }) {
   const router = useRouter()
@@ -56,11 +57,7 @@ export function OrgSwitcher({ session }: { session: AppSession }) {
               aria-label="Switch organization"
               className="h-8.5 min-w-0 flex-1 justify-between px-2 font-normal group-data-[state=collapsed]/sidebar:w-8.5 group-data-[state=collapsed]/sidebar:flex-none group-data-[state=collapsed]/sidebar:justify-center group-data-[state=collapsed]/sidebar:px-0"
             >
-              <FlameIcon
-                size={26}
-                weight="fill"
-                className="hidden text-kumo-warning group-data-[state=collapsed]/sidebar:block"
-              />
+              <Logo size={24} className="hidden group-data-[state=collapsed]/sidebar:block" />
               <span className="truncate group-data-[state=collapsed]/sidebar:hidden">
                 {active?.name ?? 'No organization'}
               </span>
