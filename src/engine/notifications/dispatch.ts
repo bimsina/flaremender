@@ -21,7 +21,7 @@ import {
   suiteRun,
 } from '#/db/schema/app.ts'
 import { createId } from '#/lib/ids.ts'
-import { decryptSecret } from '#/server/crypto.ts'
+import { decryptSecret } from '#/server/core/crypto.ts'
 import {
   type EventEnvironment,
   type NotificationEvent,

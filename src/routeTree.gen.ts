@@ -10,48 +10,48 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AppRouteImport } from './routes/_app'
-import { Route as AuthRouteImport } from './routes/_auth'
+import { Route as AppRouteRouteImport } from './routes/_app/route'
+import { Route as AuthRouteRouteImport } from './routes/_auth/route'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
-import { Route as AppAdminRouteImport } from './routes/_app.admin'
-import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
-import { Route as AppOrganizationRouteImport } from './routes/_app.organization'
-import { Route as AppSettingsRouteImport } from './routes/_app.settings'
-import { Route as AuthSigninRouteImport } from './routes/_auth.signin'
-import { Route as AuthSignupRouteImport } from './routes/_auth.signup'
-import { Route as AcceptInvitationInvitationIdRouteImport } from './routes/accept-invitation.$invitationId'
-import { Route as AppAdminIndexRouteImport } from './routes/_app.admin.index'
-import { Route as AppAdminOrganizationsRouteImport } from './routes/_app.admin.organizations'
-import { Route as AppAdminSettingsRouteImport } from './routes/_app.admin.settings'
-import { Route as AppProjectsIndexRouteImport } from './routes/_app.projects.index'
-import { Route as AppProjectsNewRouteImport } from './routes/_app.projects.new'
-import { Route as ApiArtifactsSplatRouteImport } from './routes/api/artifacts.$'
+import { Route as AppAdminRouteRouteImport } from './routes/_app/admin/route'
+import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
+import { Route as AppOrganizationRouteImport } from './routes/_app/organization'
+import { Route as AppSettingsRouteImport } from './routes/_app/settings'
+import { Route as AuthSigninRouteImport } from './routes/_auth/signin'
+import { Route as AuthSignupRouteImport } from './routes/_auth/signup'
+import { Route as AcceptInvitationInvitationIdRouteImport } from './routes/accept-invitation/$invitationId'
+import { Route as AppAdminIndexRouteImport } from './routes/_app/admin/index'
+import { Route as AppAdminOrganizationsRouteImport } from './routes/_app/admin/organizations'
+import { Route as AppAdminSettingsRouteImport } from './routes/_app/admin/settings'
+import { Route as AppProjectsIndexRouteImport } from './routes/_app/projects/index'
+import { Route as AppProjectsNewRouteImport } from './routes/_app/projects/new'
+import { Route as ApiArtifactsSplatRouteImport } from './routes/api/artifacts/$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
-import { Route as ApiFilesFileIdRouteImport } from './routes/api.files.$fileId'
-import { Route as AppProjectsProjectIdIndexRouteImport } from './routes/_app.projects.$projectId.index'
-import { Route as ApiProjectsProjectIdFilesRouteImport } from './routes/api.projects.$projectId.files'
-import { Route as ApiReportsKindIdRouteImport } from './routes/api/reports.$kind.$id'
-import { Route as ApiV1ExecutionsExecutionIdRouteImport } from './routes/api.v1.executions.$executionId'
-import { Route as ApiV1JobsJobIdRouteImport } from './routes/api.v1.jobs.$jobId'
-import { Route as AppProjectsProjectIdIntentsIntentIdRouteImport } from './routes/_app.projects.$projectId.intents.$intentId'
-import { Route as AppProjectsProjectIdRunsRunIdRouteImport } from './routes/_app.projects.$projectId.runs.$runId'
-import { Route as ApiV1ExecutionsExecutionIdReportRouteImport } from './routes/api.v1.executions.$executionId.report'
-import { Route as ApiV1ProjectsProjectIdRunsRouteImport } from './routes/api.v1.projects.$projectId.runs'
-import { Route as ApiV1ProjectsProjectIdTestsRouteImport } from './routes/api.v1.projects.$projectId.tests'
-import { Route as AppProjectsProjectIdRunsRunIdTraceRouteImport } from './routes/_app.projects.$projectId.runs.$runId_.trace'
-import { Route as ApiV1ProjectsProjectIdTestsTestIdGenerateRouteImport } from './routes/api.v1.projects.$projectId.tests.$testId.generate'
-import { Route as ApiV1ProjectsProjectIdTestsTestIdRunsRouteImport } from './routes/api.v1.projects.$projectId.tests.$testId.runs'
+import { Route as ApiFilesFileIdRouteImport } from './routes/api/files/$fileId'
+import { Route as AppProjectsProjectIdIndexRouteImport } from './routes/_app/projects/$projectId/index'
+import { Route as ApiProjectsProjectIdFilesRouteImport } from './routes/api/projects/$projectId/files'
+import { Route as ApiReportsKindIdRouteImport } from './routes/api/reports/$kind/$id'
+import { Route as ApiV1ExecutionsExecutionIdRouteImport } from './routes/api/v1/executions/$executionId'
+import { Route as ApiV1JobsJobIdRouteImport } from './routes/api/v1/jobs/$jobId'
+import { Route as AppProjectsProjectIdIntentsIntentIdRouteImport } from './routes/_app/projects/$projectId/intents/$intentId'
+import { Route as AppProjectsProjectIdRunsRunIdRouteImport } from './routes/_app/projects/$projectId/runs/$runId'
+import { Route as ApiV1ExecutionsExecutionIdReportRouteImport } from './routes/api/v1/executions/$executionId/report'
+import { Route as ApiV1ProjectsProjectIdRunsRouteImport } from './routes/api/v1/projects/$projectId/runs'
+import { Route as ApiV1ProjectsProjectIdTestsRouteImport } from './routes/api/v1/projects/$projectId/tests'
+import { Route as AppProjectsProjectIdRunsRunIdTraceRouteImport } from './routes/_app/projects/$projectId/runs/$runId_/trace'
+import { Route as ApiV1ProjectsProjectIdTestsTestIdGenerateRouteImport } from './routes/api/v1/projects/$projectId/tests/$testId/generate'
+import { Route as ApiV1ProjectsProjectIdTestsTestIdRunsRouteImport } from './routes/api/v1/projects/$projectId/tests/$testId/runs'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AppRoute = AppRouteImport.update({
+const AppRouteRoute = AppRouteRouteImport.update({
   id: '/_app',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthRoute = AuthRouteImport.update({
+const AuthRouteRoute = AuthRouteRouteImport.update({
   id: '/_auth',
   getParentRoute: () => rootRouteImport,
 } as any)
@@ -60,35 +60,35 @@ const OnboardingRoute = OnboardingRouteImport.update({
   path: '/onboarding',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AppAdminRoute = AppAdminRouteImport.update({
+const AppAdminRouteRoute = AppAdminRouteRouteImport.update({
   id: '/admin',
   path: '/admin',
-  getParentRoute: () => AppRoute,
+  getParentRoute: () => AppRouteRoute,
 } as any)
 const AppDashboardRoute = AppDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
-  getParentRoute: () => AppRoute,
+  getParentRoute: () => AppRouteRoute,
 } as any)
 const AppOrganizationRoute = AppOrganizationRouteImport.update({
   id: '/organization',
   path: '/organization',
-  getParentRoute: () => AppRoute,
+  getParentRoute: () => AppRouteRoute,
 } as any)
 const AppSettingsRoute = AppSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
-  getParentRoute: () => AppRoute,
+  getParentRoute: () => AppRouteRoute,
 } as any)
 const AuthSigninRoute = AuthSigninRouteImport.update({
   id: '/signin',
   path: '/signin',
-  getParentRoute: () => AuthRoute,
+  getParentRoute: () => AuthRouteRoute,
 } as any)
 const AuthSignupRoute = AuthSignupRouteImport.update({
   id: '/signup',
   path: '/signup',
-  getParentRoute: () => AuthRoute,
+  getParentRoute: () => AuthRouteRoute,
 } as any)
 const AcceptInvitationInvitationIdRoute =
   AcceptInvitationInvitationIdRouteImport.update({
@@ -99,27 +99,27 @@ const AcceptInvitationInvitationIdRoute =
 const AppAdminIndexRoute = AppAdminIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => AppAdminRoute,
+  getParentRoute: () => AppAdminRouteRoute,
 } as any)
 const AppAdminOrganizationsRoute = AppAdminOrganizationsRouteImport.update({
   id: '/organizations',
   path: '/organizations',
-  getParentRoute: () => AppAdminRoute,
+  getParentRoute: () => AppAdminRouteRoute,
 } as any)
 const AppAdminSettingsRoute = AppAdminSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
-  getParentRoute: () => AppAdminRoute,
+  getParentRoute: () => AppAdminRouteRoute,
 } as any)
 const AppProjectsIndexRoute = AppProjectsIndexRouteImport.update({
   id: '/projects/',
   path: '/projects/',
-  getParentRoute: () => AppRoute,
+  getParentRoute: () => AppRouteRoute,
 } as any)
 const AppProjectsNewRoute = AppProjectsNewRouteImport.update({
   id: '/projects/new',
   path: '/projects/new',
-  getParentRoute: () => AppRoute,
+  getParentRoute: () => AppRouteRoute,
 } as any)
 const ApiArtifactsSplatRoute = ApiArtifactsSplatRouteImport.update({
   id: '/api/artifacts/$',
@@ -140,7 +140,7 @@ const AppProjectsProjectIdIndexRoute =
   AppProjectsProjectIdIndexRouteImport.update({
     id: '/projects/$projectId/',
     path: '/projects/$projectId/',
-    getParentRoute: () => AppRoute,
+    getParentRoute: () => AppRouteRoute,
   } as any)
 const ApiProjectsProjectIdFilesRoute =
   ApiProjectsProjectIdFilesRouteImport.update({
@@ -168,13 +168,13 @@ const AppProjectsProjectIdIntentsIntentIdRoute =
   AppProjectsProjectIdIntentsIntentIdRouteImport.update({
     id: '/projects/$projectId/intents/$intentId',
     path: '/projects/$projectId/intents/$intentId',
-    getParentRoute: () => AppRoute,
+    getParentRoute: () => AppRouteRoute,
   } as any)
 const AppProjectsProjectIdRunsRunIdRoute =
   AppProjectsProjectIdRunsRunIdRouteImport.update({
     id: '/projects/$projectId/runs/$runId',
     path: '/projects/$projectId/runs/$runId',
-    getParentRoute: () => AppRoute,
+    getParentRoute: () => AppRouteRoute,
   } as any)
 const ApiV1ExecutionsExecutionIdReportRoute =
   ApiV1ExecutionsExecutionIdReportRouteImport.update({
@@ -198,7 +198,7 @@ const AppProjectsProjectIdRunsRunIdTraceRoute =
   AppProjectsProjectIdRunsRunIdTraceRouteImport.update({
     id: '/projects/$projectId/runs/$runId_/trace',
     path: '/projects/$projectId/runs/$runId/trace',
-    getParentRoute: () => AppRoute,
+    getParentRoute: () => AppRouteRoute,
   } as any)
 const ApiV1ProjectsProjectIdTestsTestIdGenerateRoute =
   ApiV1ProjectsProjectIdTestsTestIdGenerateRouteImport.update({
@@ -216,7 +216,7 @@ const ApiV1ProjectsProjectIdTestsTestIdRunsRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/onboarding': typeof OnboardingRoute
-  '/admin': typeof AppAdminRouteWithChildren
+  '/admin': typeof AppAdminRouteRouteWithChildren
   '/dashboard': typeof AppDashboardRoute
   '/organization': typeof AppOrganizationRoute
   '/settings': typeof AppSettingsRoute
@@ -279,10 +279,10 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/_app': typeof AppRouteWithChildren
-  '/_auth': typeof AuthRouteWithChildren
+  '/_app': typeof AppRouteRouteWithChildren
+  '/_auth': typeof AuthRouteRouteWithChildren
   '/onboarding': typeof OnboardingRoute
-  '/_app/admin': typeof AppAdminRouteWithChildren
+  '/_app/admin': typeof AppAdminRouteRouteWithChildren
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/organization': typeof AppOrganizationRoute
   '/_app/settings': typeof AppSettingsRoute
@@ -413,8 +413,8 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  AppRoute: typeof AppRouteWithChildren
-  AuthRoute: typeof AuthRouteWithChildren
+  AppRouteRoute: typeof AppRouteRouteWithChildren
+  AuthRouteRoute: typeof AuthRouteRouteWithChildren
   OnboardingRoute: typeof OnboardingRoute
   AcceptInvitationInvitationIdRoute: typeof AcceptInvitationInvitationIdRoute
   ApiArtifactsSplatRoute: typeof ApiArtifactsSplatRoute
@@ -441,14 +441,14 @@ declare module '@tanstack/react-router' {
       id: '/_app'
       path: ''
       fullPath: '/'
-      preLoaderRoute: typeof AppRouteImport
+      preLoaderRoute: typeof AppRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_auth': {
       id: '/_auth'
       path: ''
       fullPath: '/'
-      preLoaderRoute: typeof AuthRouteImport
+      preLoaderRoute: typeof AuthRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/onboarding': {
@@ -462,43 +462,43 @@ declare module '@tanstack/react-router' {
       id: '/_app/admin'
       path: '/admin'
       fullPath: '/admin'
-      preLoaderRoute: typeof AppAdminRouteImport
-      parentRoute: typeof AppRoute
+      preLoaderRoute: typeof AppAdminRouteRouteImport
+      parentRoute: typeof AppRouteRoute
     }
     '/_app/dashboard': {
       id: '/_app/dashboard'
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof AppDashboardRouteImport
-      parentRoute: typeof AppRoute
+      parentRoute: typeof AppRouteRoute
     }
     '/_app/organization': {
       id: '/_app/organization'
       path: '/organization'
       fullPath: '/organization'
       preLoaderRoute: typeof AppOrganizationRouteImport
-      parentRoute: typeof AppRoute
+      parentRoute: typeof AppRouteRoute
     }
     '/_app/settings': {
       id: '/_app/settings'
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof AppSettingsRouteImport
-      parentRoute: typeof AppRoute
+      parentRoute: typeof AppRouteRoute
     }
     '/_auth/signin': {
       id: '/_auth/signin'
       path: '/signin'
       fullPath: '/signin'
       preLoaderRoute: typeof AuthSigninRouteImport
-      parentRoute: typeof AuthRoute
+      parentRoute: typeof AuthRouteRoute
     }
     '/_auth/signup': {
       id: '/_auth/signup'
       path: '/signup'
       fullPath: '/signup'
       preLoaderRoute: typeof AuthSignupRouteImport
-      parentRoute: typeof AuthRoute
+      parentRoute: typeof AuthRouteRoute
     }
     '/accept-invitation/$invitationId': {
       id: '/accept-invitation/$invitationId'
@@ -512,35 +512,35 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/admin/'
       preLoaderRoute: typeof AppAdminIndexRouteImport
-      parentRoute: typeof AppAdminRoute
+      parentRoute: typeof AppAdminRouteRoute
     }
     '/_app/admin/organizations': {
       id: '/_app/admin/organizations'
       path: '/organizations'
       fullPath: '/admin/organizations'
       preLoaderRoute: typeof AppAdminOrganizationsRouteImport
-      parentRoute: typeof AppAdminRoute
+      parentRoute: typeof AppAdminRouteRoute
     }
     '/_app/admin/settings': {
       id: '/_app/admin/settings'
       path: '/settings'
       fullPath: '/admin/settings'
       preLoaderRoute: typeof AppAdminSettingsRouteImport
-      parentRoute: typeof AppAdminRoute
+      parentRoute: typeof AppAdminRouteRoute
     }
     '/_app/projects/': {
       id: '/_app/projects/'
       path: '/projects'
       fullPath: '/projects/'
       preLoaderRoute: typeof AppProjectsIndexRouteImport
-      parentRoute: typeof AppRoute
+      parentRoute: typeof AppRouteRoute
     }
     '/_app/projects/new': {
       id: '/_app/projects/new'
       path: '/projects/new'
       fullPath: '/projects/new'
       preLoaderRoute: typeof AppProjectsNewRouteImport
-      parentRoute: typeof AppRoute
+      parentRoute: typeof AppRouteRoute
     }
     '/api/artifacts/$': {
       id: '/api/artifacts/$'
@@ -568,7 +568,7 @@ declare module '@tanstack/react-router' {
       path: '/projects/$projectId'
       fullPath: '/projects/$projectId/'
       preLoaderRoute: typeof AppProjectsProjectIdIndexRouteImport
-      parentRoute: typeof AppRoute
+      parentRoute: typeof AppRouteRoute
     }
     '/api/projects/$projectId/files': {
       id: '/api/projects/$projectId/files'
@@ -603,14 +603,14 @@ declare module '@tanstack/react-router' {
       path: '/projects/$projectId/intents/$intentId'
       fullPath: '/projects/$projectId/intents/$intentId'
       preLoaderRoute: typeof AppProjectsProjectIdIntentsIntentIdRouteImport
-      parentRoute: typeof AppRoute
+      parentRoute: typeof AppRouteRoute
     }
     '/_app/projects/$projectId/runs/$runId': {
       id: '/_app/projects/$projectId/runs/$runId'
       path: '/projects/$projectId/runs/$runId'
       fullPath: '/projects/$projectId/runs/$runId'
       preLoaderRoute: typeof AppProjectsProjectIdRunsRunIdRouteImport
-      parentRoute: typeof AppRoute
+      parentRoute: typeof AppRouteRoute
     }
     '/api/v1/executions/$executionId/report': {
       id: '/api/v1/executions/$executionId/report'
@@ -638,7 +638,7 @@ declare module '@tanstack/react-router' {
       path: '/projects/$projectId/runs/$runId/trace'
       fullPath: '/projects/$projectId/runs/$runId/trace'
       preLoaderRoute: typeof AppProjectsProjectIdRunsRunIdTraceRouteImport
-      parentRoute: typeof AppRoute
+      parentRoute: typeof AppRouteRoute
     }
     '/api/v1/projects/$projectId/tests/$testId/generate': {
       id: '/api/v1/projects/$projectId/tests/$testId/generate'
@@ -657,24 +657,24 @@ declare module '@tanstack/react-router' {
   }
 }
 
-interface AppAdminRouteChildren {
+interface AppAdminRouteRouteChildren {
   AppAdminOrganizationsRoute: typeof AppAdminOrganizationsRoute
   AppAdminSettingsRoute: typeof AppAdminSettingsRoute
   AppAdminIndexRoute: typeof AppAdminIndexRoute
 }
 
-const AppAdminRouteChildren: AppAdminRouteChildren = {
+const AppAdminRouteRouteChildren: AppAdminRouteRouteChildren = {
   AppAdminOrganizationsRoute: AppAdminOrganizationsRoute,
   AppAdminSettingsRoute: AppAdminSettingsRoute,
   AppAdminIndexRoute: AppAdminIndexRoute,
 }
 
-const AppAdminRouteWithChildren = AppAdminRoute._addFileChildren(
-  AppAdminRouteChildren,
+const AppAdminRouteRouteWithChildren = AppAdminRouteRoute._addFileChildren(
+  AppAdminRouteRouteChildren,
 )
 
-interface AppRouteChildren {
-  AppAdminRoute: typeof AppAdminRouteWithChildren
+interface AppRouteRouteChildren {
+  AppAdminRouteRoute: typeof AppAdminRouteRouteWithChildren
   AppDashboardRoute: typeof AppDashboardRoute
   AppOrganizationRoute: typeof AppOrganizationRoute
   AppSettingsRoute: typeof AppSettingsRoute
@@ -686,8 +686,8 @@ interface AppRouteChildren {
   AppProjectsProjectIdRunsRunIdTraceRoute: typeof AppProjectsProjectIdRunsRunIdTraceRoute
 }
 
-const AppRouteChildren: AppRouteChildren = {
-  AppAdminRoute: AppAdminRouteWithChildren,
+const AppRouteRouteChildren: AppRouteRouteChildren = {
+  AppAdminRouteRoute: AppAdminRouteRouteWithChildren,
   AppDashboardRoute: AppDashboardRoute,
   AppOrganizationRoute: AppOrganizationRoute,
   AppSettingsRoute: AppSettingsRoute,
@@ -701,19 +701,23 @@ const AppRouteChildren: AppRouteChildren = {
     AppProjectsProjectIdRunsRunIdTraceRoute,
 }
 
-const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
+const AppRouteRouteWithChildren = AppRouteRoute._addFileChildren(
+  AppRouteRouteChildren,
+)
 
-interface AuthRouteChildren {
+interface AuthRouteRouteChildren {
   AuthSigninRoute: typeof AuthSigninRoute
   AuthSignupRoute: typeof AuthSignupRoute
 }
 
-const AuthRouteChildren: AuthRouteChildren = {
+const AuthRouteRouteChildren: AuthRouteRouteChildren = {
   AuthSigninRoute: AuthSigninRoute,
   AuthSignupRoute: AuthSignupRoute,
 }
 
-const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
+const AuthRouteRouteWithChildren = AuthRouteRoute._addFileChildren(
+  AuthRouteRouteChildren,
+)
 
 interface ApiV1ExecutionsExecutionIdRouteChildren {
   ApiV1ExecutionsExecutionIdReportRoute: typeof ApiV1ExecutionsExecutionIdReportRoute
@@ -750,8 +754,8 @@ const ApiV1ProjectsProjectIdTestsRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  AppRoute: AppRouteWithChildren,
-  AuthRoute: AuthRouteWithChildren,
+  AppRouteRoute: AppRouteRouteWithChildren,
+  AuthRouteRoute: AuthRouteRouteWithChildren,
   OnboardingRoute: OnboardingRoute,
   AcceptInvitationInvitationIdRoute: AcceptInvitationInvitationIdRoute,
   ApiArtifactsSplatRoute: ApiArtifactsSplatRoute,

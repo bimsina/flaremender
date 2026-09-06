@@ -144,7 +144,7 @@ pnpm db:studio       # browse the local database
 ```
 
 `auth.config.ts` exists only for code generation; the runtime configuration is
-`src/lib/auth.ts`. Keep their plugin lists in sync or the generated schema will
+`src/lib/auth/auth.ts`. Keep their plugin lists in sync or the generated schema will
 drift from what the app needs.
 
 Use migrations for an existing database. The baseline also adopts databases

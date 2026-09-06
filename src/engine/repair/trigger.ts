@@ -7,8 +7,8 @@ import { and, eq, inArray } from 'drizzle-orm'
 
 import { createDb } from '#/db/index.ts'
 import { generationJob, intent, project, run } from '#/db/schema/app.ts'
-import { queueRepair } from '#/server/actions.ts'
-import { resolveHealPolicy } from '#/server/heal-policy.ts'
+import { queueRepair } from '#/server/core/actions.ts'
+import { resolveHealPolicy } from '#/server/runs/heal-policy.ts'
 
 export interface RepairDecision {
   queued: boolean

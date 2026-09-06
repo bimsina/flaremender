@@ -40,8 +40,8 @@ import {
   setProjectContextRecord,
   updateEnvironmentRecord,
   updateIntentRecord,
-} from '#/server/actions.ts'
-import { ValidationError, cron, str, url } from '#/server/validate.ts'
+} from '#/server/core/actions.ts'
+import { ValidationError, cron, str, url } from '#/server/core/validate.ts'
 
 const MAX_INTENT_CARDS = 12
 

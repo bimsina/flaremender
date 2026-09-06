@@ -3,7 +3,7 @@ import { test } from 'node:test'
 
 import { assembleScript } from '../src/engine/generation/script.ts'
 import { bodyOf, splitStatements } from '../src/engine/repair/statements.ts'
-import { combineHealPolicy } from '../src/server/heal-policy.ts'
+import { combineHealPolicy } from '../src/server/runs/heal-policy.ts'
 
 test('splitStatements recovers the statements a script was assembled from', () => {
   const fragments = [

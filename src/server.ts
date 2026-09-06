@@ -7,7 +7,7 @@ import handler from '@tanstack/react-start/server-entry'
 import { generationJob, project, run } from '#/db/schema/app.ts'
 import { sweepRetention } from '#/engine/retention.ts'
 import { dispatchSchedules } from '#/engine/schedule-dispatch.ts'
-import { createAuth } from '#/lib/auth.ts'
+import { createAuth } from '#/lib/auth/auth.ts'
 import { AUTHORIZE_PATH, REGISTER_PATH, TOKEN_PATH, handleAuthorize } from '#/mcp/authorize.ts'
 import { MCP_ROUTE, MCP_SCOPES, createFlaremenderMcpServer } from '#/mcp/server.ts'
 

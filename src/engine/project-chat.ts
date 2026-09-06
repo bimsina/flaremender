@@ -20,7 +20,7 @@ import { modelSpanAttributes, resolveModel } from '#/engine/generation/llm.ts'
 import { span } from '#/engine/tracing.ts'
 import { type Scrubber, createScrubber } from '#/engine/runner/scrub.ts'
 import { createId } from '#/lib/ids.ts'
-import { decryptSecret } from '#/server/crypto.ts'
+import { decryptSecret } from '#/server/core/crypto.ts'
 
 const HISTORY_LIMIT = 30
 

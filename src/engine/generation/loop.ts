@@ -28,7 +28,7 @@ import {
   observeInDynamicWorker,
   startGenerationSession,
 } from '#/engine/runner/loader.ts'
-import { decryptSecret } from '#/server/crypto.ts'
+import { decryptSecret } from '#/server/core/crypto.ts'
 
 const MAX_TOOL_STEPS = 4
 

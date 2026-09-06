@@ -4,8 +4,8 @@ import type { Db } from '#/db/index.ts'
 import { createDb } from '#/db/index.ts'
 import { environment, intent, project, run, suiteRun } from '#/db/schema/app.ts'
 import { matchesCron } from '#/lib/cron.ts'
-import { isRunnableIntent } from '#/server/test-policy.ts'
-import { enqueueWork } from '#/server/enqueue.ts'
+import { isRunnableIntent } from '#/server/core/test-policy.ts'
+import { enqueueWork } from '#/server/core/enqueue.ts'
 
 const UNFINISHED = ['queued', 'running'] as const
 

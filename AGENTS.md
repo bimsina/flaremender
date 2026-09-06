@@ -19,7 +19,7 @@ CI runs exactly these plus `pnpm build`. Do not open a PR that fails any of them
   (`pnpm auth:generate`), `src/routeTree.gen.ts` (`pnpm generate-routes`) and
   `src/engine/harness/harness.generated.js` (`pnpm harness`).
 - **`auth.config.ts` is not the runtime auth config.** It exists for the Better Auth
-  CLI. The runtime config is `src/lib/auth.ts`. Keep their plugin lists in sync.
+  CLI. The runtime config is `src/lib/auth/auth.ts`. Keep their plugin lists in sync.
 - **Tenancy goes through `orgMiddleware`.** Every organization-scoped server
   function reads the organization id from the session, never from client input,
   and re-checks membership. Resources load through an org-joined query. Do not
@@ -38,12 +38,12 @@ CI runs exactly these plus `pnpm build`. Do not open a PR that fails any of them
   through CSS `light-dark()` keyed on `data-mode`.
 - **`'proposed'` intents are not tests.** Anything that counts, runs or schedules
   tests must go through `isAdoptedIntent` / `isRunnableIntent` in
-  `src/server/test-policy.ts`.
+  `src/server/core/test-policy.ts`.
 - **Readiness is separate from outcome.** A draft check or a generation
   verification passing does not make a test ready, and never counts as a
   regression pass.
 - **Provider keys resolve organization → Worker secret → instance**, in
-  `src/server/provider-keys.ts`. Pass the organization id to `resolveModel`; a
+  `src/server/org/provider-keys.ts`. Pass the organization id to `resolveModel`; a
   call without one silently bills the instance.
 - **Measure prompt changes.** Anything that touches `src/engine/*/prompts.ts` or
   the tool loops should come with a `pnpm eval` before-and-after in the PR.
@@ -55,9 +55,11 @@ CI runs exactly these plus `pnpm build`. Do not open a PR that fails any of them
 ## Where things live
 
 ```
-src/server/actions.ts   the shared core that dialogs, buttons and chat tools all call
+src/server/             server functions by domain: auth, core, projects, runs, api, org
+src/server/core/actions.ts  the shared core that dialogs, buttons and chat tools all call
 src/engine/             workflows, harness, runner, chat, explore, generation
 src/engine/chat/tools.ts the chat tool belt; wraps actions.ts, never bypasses it
+src/lib/                shared helpers; auth/ and hooks/ are nested, utilities stay flat
 src/lib/cron.ts         the one cron parser behind the editor, badge and dispatcher
 tests/                  invariants that are expensive to get wrong
 ```

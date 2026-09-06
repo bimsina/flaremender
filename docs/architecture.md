@@ -17,15 +17,17 @@ Projects open on an overview: what is ready, what is drafted, and what failed la
 ```
 src/
   db/schema/      app.ts (projects, intents, runs) + auth.ts (generated)
-  lib/            auth client, theme, query options, formatting
-  server/         server functions, split by resource
-    auth.ts       session middleware and the organization tenant boundary
-    actions.ts    the shared core each of them (and the chat) calls
+  lib/            shared client helpers
+    auth/         Better Auth server config and browser client
+    hooks/        React hooks (live feeds, chat, session refresh)
+  server/         server functions by domain
+    auth/         session middleware and the organization tenant boundary
+    core/actions.ts  the shared core each of them (and the chat) calls
+    projects/ runs/ api/ org/
   engine/         the run engine. Workflow, harness, artifacts (see below)
   mcp/            the MCP server's tools and its OAuth consent page
-  components/     shared UI
-  routes/         _auth.* (signed out), _app.* (signed in), api/auth/$,
-                  api/artifacts/$ (org-checked R2 reads)
+  components/     shared UI by domain (layout, ui, project, runs, org)
+  routes/         folder-based: _auth/, _app/, api/, …
 ```
 
 Route groups carry the guards: `_auth` redirects signed-in users away,
@@ -105,7 +107,7 @@ secret: that is a visual leak no string replacement can fix.
 Projects open on Overview, with environment context, ready tests, drafts and
 regression results. Chat remains the primary place to create tests with AI:
 the assistant carries requests out with tools that call the same
-org-scoped functions in `src/server/actions.ts` the dialogs and buttons call, and
+org-scoped functions in `src/server/core/actions.ts` the dialogs and buttons call, and
 answers with **cards**. An intent, a live generation, a run, a suite, an
 environment. Each links to the row it names. Nothing exists only inside
 a conversation.
@@ -114,11 +116,11 @@ a conversation.
 src/engine/
   chat/contract.ts   message parts, cards and the socket's event types
   chat/prompts.ts    the system prompt and the project's standing facts
-  chat/tools.ts      the tool belt, wrapping server/actions.ts
+  chat/tools.ts      the tool belt, wrapping server/core/actions.ts
   project-chat.ts    the ProjectChat Durable Object
 src/server/
-  actions.ts         what the product does, with nobody in particular asking
-  chat.ts            listChatMessages + sendChatMessage
+  core/actions.ts    what the product does, with nobody in particular asking
+  projects/chat.ts   listChatMessages + sendChatMessage
 ```
 
 One `ProjectChat` Durable Object per project, addressed by the project id,
@@ -188,7 +190,7 @@ src/engine/
   batch-workflow.ts     an approved plan, one test at a time
   agent-transcript.ts   pruning stale page trees, shared by both loops
 src/server/
-  explore.ts            explore / approve / dismiss / edit the context
+  projects/explore.ts   explore / approve / dismiss / edit the context
 ```
 
 The explorer is the generator's opposite twin, and deliberately so. A generation
@@ -207,7 +209,7 @@ how an agent breaks somebody's real app.
 
 **`'proposed'` is not a test yet.** A proposed intent is excluded from "run all",
 from the scheduler, and from every count that answers "how many tests does this
-project have". `isAdoptedIntent` in `server/actions.ts` is the one filter all of
+project have". `isAdoptedIntent` in `server/core/actions.ts` is the one filter all of
 them wear. Approving flips it to `'draft'` and generates; dismissing deletes it,
 because a rejected suggestion is not a state worth keeping and the next
 exploration will propose it again if it was a good idea.
@@ -250,7 +252,7 @@ repeatable fixtures, verification commands and the remaining milestone gates.
 
 **Which key a model call uses.** An organization's own provider key (Organization →
 Model providers) wins, then the Worker secret, then the key saved in the admin
-console. `src/server/provider-keys.ts` is the one place that order lives.
+console. `src/server/org/provider-keys.ts` is the one place that order lives.
 
 **AI Gateway.** With a gateway id set (Administration → Settings, or an
 organization's own override), `resolveModel` in `src/engine/generation/llm.ts`
@@ -300,8 +302,8 @@ src/engine/
   repair/trigger.ts     the automatic decision after a run persists
   repair-workflow.ts    load → session → replay → turns → verify → persist
 src/server/
-  heal-policy.ts        test → project → organization, default off
-  repairs.ts            repair a run, accept or dismiss a repair, set the policies
+  runs/heal-policy.ts   test → project → organization, default off
+  runs/repairs.ts       repair a run, accept or dismiss a repair, set the policies
 ```
 
 A **RepairWorkflow** opens a browser session, replays the old script one statement at
@@ -348,7 +350,7 @@ src/engine/notifications/
   format.ts    one event rendered for Slack, Discord and email
   sign.ts      HMAC signature for plain webhooks
   dispatch.ts  fan-out, retries, the delivery log
-src/server/notifications.ts   destinations, deliveries, Send test
+src/server/org/notifications.ts   destinations, deliveries, Send test
 ```
 
 Plain webhooks are signed with a per-destination secret shown once. Email goes
@@ -360,8 +362,8 @@ it, email deliveries are logged as failed with the reason. See
 
 `/mcp` is the same product for an AI assistant: `src/mcp/server.ts` registers a
 dozen tools with the Agents SDK's stateless `createMcpHandler`, each one a thin
-wrapper over the actions in `src/server/actions.ts` and the readers in
-`reports.server.ts`, so the assistant cannot do anything the dashboard cannot.
+wrapper over the actions in `src/server/core/actions.ts` and the readers in
+`src/server/runs/reports.server.ts`, so the assistant cannot do anything the dashboard cannot.
 `@cloudflare/workers-oauth-provider` wraps the whole Worker in `src/server.ts`: it
 owns the token, registration and discovery endpoints, validates bearer tokens on
 `/mcp`, and hands the tools the props the consent page put in the token (who, which

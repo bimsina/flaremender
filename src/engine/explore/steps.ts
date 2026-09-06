@@ -10,7 +10,11 @@ import { buildContextSection } from '#/engine/explore/prompts.ts'
 import { loadCredentialNames, loadCredentials } from '#/engine/generation/loop.ts'
 import { announceRun } from '#/engine/run-steps.ts'
 import { createScrubber } from '#/engine/runner/scrub.ts'
-import { appendProjectContext, createIntentRecord, queueBatchGeneration } from '#/server/actions.ts'
+import {
+  appendProjectContext,
+  createIntentRecord,
+  queueBatchGeneration,
+} from '#/server/core/actions.ts'
 
 export interface LoadedExploration {
   jobId: string

@@ -14,7 +14,7 @@ import { asc, eq } from 'drizzle-orm'
 
 import { createDb } from '#/db/index.ts'
 import { member, organization } from '#/db/schema/auth.ts'
-import { createAuth } from '#/lib/auth.ts'
+import { createAuth } from '#/lib/auth/auth.ts'
 import { MCP_SCOPES, type McpProps, type McpScope, SCOPE_DESCRIPTIONS } from './server.ts'
 
 export const AUTHORIZE_PATH = '/oauth/authorize'

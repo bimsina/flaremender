@@ -16,7 +16,7 @@ import {
   persistRunError,
   releaseRunSession,
 } from '#/engine/run-steps.ts'
-import { isRunnableIntent } from '#/server/test-policy.ts'
+import { isRunnableIntent } from '#/server/core/test-policy.ts'
 
 export interface SuiteWorkflowParams {
   suiteRunId: string

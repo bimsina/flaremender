@@ -12,8 +12,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 
-import { StandaloneShell } from '#/components/standalone-shell.tsx'
-import { authClient } from '#/lib/auth-client.ts'
+import { StandaloneShell } from '#/components/layout/standalone-shell.tsx'
+import { authClient } from '#/lib/auth/auth-client.ts'
 import { slugify } from '#/lib/ids.ts'
 import {
   DEFAULT_MODEL_ID,
@@ -22,8 +22,8 @@ import {
   parseModelId,
 } from '#/lib/models.ts'
 import { instanceSettingsQuery, instanceSetupStatusQuery } from '#/lib/queries.ts'
-import { useRefreshSession } from '#/lib/use-refresh-session.ts'
-import { completeInstanceSetup, setProviderKey } from '#/server/instance.ts'
+import { useRefreshSession } from '#/lib/hooks/use-refresh-session.ts'
+import { completeInstanceSetup, setProviderKey } from '#/server/org/instance.ts'
 
 export const Route = createFileRoute('/onboarding')({
   beforeLoad: async ({ context, location }) => {

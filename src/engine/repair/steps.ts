@@ -21,7 +21,7 @@ import { splitStatements } from '#/engine/repair/statements.ts'
 import type { ExecutedRun, LoadedRun } from '#/engine/run-steps.ts'
 import { announceRun, persistRun } from '#/engine/run-steps.ts'
 import { actInDynamicWorker } from '#/engine/runner/loader.ts'
-import { resolveHealPolicy } from '#/server/heal-policy.ts'
+import { resolveHealPolicy } from '#/server/runs/heal-policy.ts'
 
 export interface LoadedRepair {
   jobId: string

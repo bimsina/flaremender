@@ -22,12 +22,12 @@ import {
   queueRepair,
   queueSuiteRun,
   resolveTargetEnvironment,
-} from '#/server/actions.ts'
-import { AuthError } from '#/server/auth-error.ts'
-import { readJob, readRunReport } from '#/server/reports.server.ts'
-import { assertProject, loadEnvironment, loadRun, loadSuiteRun } from '#/server/scope.ts'
-import { ValidationError } from '#/server/validate.ts'
-import { WebhookApiError, applyRateLimit } from '#/server/webhooks.ts'
+} from '#/server/core/actions.ts'
+import { AuthError } from '#/server/auth/auth-error.ts'
+import { readJob, readRunReport } from '#/server/runs/reports.server.ts'
+import { assertProject, loadEnvironment, loadRun, loadSuiteRun } from '#/server/auth/scope.ts'
+import { ValidationError } from '#/server/core/validate.ts'
+import { WebhookApiError, applyRateLimit } from '#/server/api/webhooks.ts'
 import { span } from '#/engine/tracing.ts'
 
 export const MCP_SCOPES = ['read', 'write'] as const

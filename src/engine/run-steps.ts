@@ -9,7 +9,7 @@ import type { RunEvent, RunOutcome, RunResult } from '#/engine/contract.ts'
 import { artifactPrefix, writeArtifacts } from '#/engine/runner/artifacts.ts'
 import { executeInDynamicWorker, releaseBrowserSession } from '#/engine/runner/loader.ts'
 import { createScrubber } from '#/engine/runner/scrub.ts'
-import { decryptSecret } from '#/server/crypto.ts'
+import { decryptSecret } from '#/server/core/crypto.ts'
 
 export interface LoadedRun {
   intentId: string

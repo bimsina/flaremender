@@ -38,7 +38,7 @@ function openDatabase(): Database.Database {
   throw new Error('No migrated local database. Run `pnpm db:migrate` first.')
 }
 
-// Mirrors src/server/crypto.ts so seeded variables decrypt in the app.
+// Mirrors src/server/core/crypto.ts so seeded variables decrypt in the app.
 async function encryptSecret(plaintext: string, secret: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(secret))
   const key = await crypto.subtle.importKey('raw', digest, { name: 'AES-GCM' }, false, ['encrypt'])

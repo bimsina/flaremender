@@ -17,7 +17,7 @@ import {
   type Provider,
   parseModelId,
 } from '#/lib/models.ts'
-import { resolveProviderKey } from '#/server/providers.ts'
+import { resolveProviderKey } from '#/server/org/providers.ts'
 
 export type ModelOrigin = 'project' | 'instance' | 'fallback'
 

@@ -5,8 +5,8 @@ import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 
 import type { QueryClient } from '@tanstack/react-query'
 
-import { AppLinkProvider } from '#/components/app-link.tsx'
-import { NotFound, RouteError } from '#/components/route-fallbacks.tsx'
+import { AppLinkProvider } from '#/components/layout/app-link.tsx'
+import { NotFound, RouteError } from '#/components/layout/route-fallbacks.tsx'
 import TanStackQueryDevtools from '#/integrations/tanstack-query/devtools.tsx'
 import { sessionQuery, siteOriginQuery, themeQuery } from '#/lib/queries.ts'
 import { ThemeProvider, themeInitScript, type ThemePreference } from '#/lib/theme.tsx'

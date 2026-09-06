@@ -58,7 +58,7 @@ CI runs exactly these, plus `pnpm build`.
   `src/engine/harness/harness.generated.js` (`pnpm harness`). Regenerate them, never
   hand-edit them.
 - **`auth.config.ts` is not the runtime config.** It exists so the Better Auth CLI can
-  generate the schema. The real configuration is `src/lib/auth.ts`. If you add a
+  generate the schema. The real configuration is `src/lib/auth/auth.ts`. If you add a
   plugin, add it to both or the generated schema drifts.
 - **Never use Tailwind's `dark:` variant.** Kumo resolves light and dark through CSS
   `light-dark()` keyed on `data-mode`.

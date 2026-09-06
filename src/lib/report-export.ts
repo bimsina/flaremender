@@ -1,4 +1,4 @@
-import type { readRunReport } from '#/server/reports.server.ts'
+import type { readRunReport } from '#/server/runs/reports.server.ts'
 import { readTranscript } from './transcript.ts'
 
 type Report = Awaited<ReturnType<typeof readRunReport>>

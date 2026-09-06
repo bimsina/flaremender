@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import { providerKey } from '../src/db/schema/app.ts'
-import { pickProviderKey } from '../src/server/provider-keys.ts'
+import { pickProviderKey } from '../src/server/org/provider-keys.ts'
 import { testDatabase } from './database.ts'
 
 const decrypt = async (envelope: string) => envelope.replace(/^enc:/, '')

@@ -1,0 +1,57 @@
+import { AuthError } from '#/server/auth/auth-error.ts'
+export { AuthError } from '#/server/auth/auth-error.ts'
+import { env } from 'cloudflare:workers'
+import { createMiddleware, createServerOnlyFn } from '@tanstack/react-start'
+import { getRequest } from '@tanstack/react-start/server'
+
+import { and, eq } from 'drizzle-orm'
+
+import { member } from '#/db/schema/auth.ts'
+import { createDb } from '#/db/index.ts'
+import { createAuth } from '#/lib/auth/auth.ts'
+
+export const getAuth = createServerOnlyFn(() => createAuth(env.DB, env))
+
+export const getDb = createServerOnlyFn(() => createDb(env.DB))
+
+export const readSession = createServerOnlyFn(() =>
+  getAuth().api.getSession({ headers: getRequest().headers }),
+)
+
+export const authMiddleware = createMiddleware({ type: 'function' }).server(async ({ next }) => {
+  const result = await readSession()
+  if (!result?.user) throw new AuthError('You must be signed in.', 401)
+
+  return next({ context: { db: getDb(), user: result.user, session: result.session } })
+})
+
+/**
+ * Never accept the active organization ID from client input, and never trust the
+ * session's copy of it on its own. Removing a member does not revoke their existing
+ * sessions, so membership is re-read on every organization-scoped call.
+ */
+export const orgMiddleware = createMiddleware({ type: 'function' })
+  .middleware([authMiddleware])
+  .server(async ({ next, context }) => {
+    const organizationId = context.session.activeOrganizationId
+    if (!organizationId) throw new AuthError('Select or create an organization first.', 400)
+
+    const [membership] = await context.db
+      .select({ id: member.id })
+      .from(member)
+      .where(and(eq(member.organizationId, organizationId), eq(member.userId, context.user.id)))
+      .limit(1)
+
+    if (!membership) {
+      throw new AuthError('You are no longer a member of that organization.', 403)
+    }
+
+    return next({ context: { organizationId } })
+  })
+
+export const adminMiddleware = createMiddleware({ type: 'function' })
+  .middleware([authMiddleware])
+  .server(async ({ next, context }) => {
+    if (context.user.role !== 'admin') throw new AuthError('Admins only.', 403)
+    return next({ context: {} })
+  })

@@ -1,4 +1,4 @@
-/** Keep these plugins in sync with createAuth in src/lib/auth.ts. */
+/** Keep these plugins in sync with createAuth in src/lib/auth/auth.ts. */
 import Database from 'better-sqlite3'
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'

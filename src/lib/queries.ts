@@ -2,19 +2,22 @@ import { queryOptions } from '@tanstack/react-query'
 
 import type { RunStatus, RunTrigger } from '#/db/schema/app.ts'
 import type { Provider } from '#/lib/models.ts'
-import { getAdminStats, listAllMemberships, listAllOrganizations } from '#/server/admin.ts'
-import { listChatMessages } from '#/server/chat.ts'
-import { getDailyRunCounts, getOrgOverview } from '#/server/dashboard.ts'
-import { listEnvironments } from '#/server/environments.ts'
+import { getAdminStats, listAllMemberships, listAllOrganizations } from '#/server/org/admin.ts'
+import { listChatMessages } from '#/server/projects/chat.ts'
+import { getDailyRunCounts, getOrgOverview } from '#/server/runs/dashboard.ts'
+import { listEnvironments } from '#/server/projects/environments.ts'
 import {
   getInstanceSettings,
   getInstanceSetupStatus,
   listAllowedModels,
-} from '#/server/instance.ts'
-import { getOrganizationProviderKeys } from '#/server/org-providers.ts'
-import { getOrganizationSettings, getPendingRepair } from '#/server/repairs.ts'
-import { listNotificationDeliveries, listNotificationDestinations } from '#/server/notifications.ts'
-import { listProjectFiles } from '#/server/files.ts'
+} from '#/server/org/instance.ts'
+import { getOrganizationProviderKeys } from '#/server/org/org-providers.ts'
+import { getOrganizationSettings, getPendingRepair } from '#/server/runs/repairs.ts'
+import {
+  listNotificationDeliveries,
+  listNotificationDestinations,
+} from '#/server/org/notifications.ts'
+import { listProjectFiles } from '#/server/projects/files.ts'
 import {
   getJob,
   getIntent,
@@ -22,14 +25,14 @@ import {
   getScriptVersion,
   listIntents,
   listScriptVersions,
-} from '#/server/intents.ts'
-import { listProviderModels } from '#/server/model-catalog.ts'
-import { getProject, listProjects } from '#/server/projects.ts'
-import { getRun, listProjectRuns, listRuns } from '#/server/runs.ts'
-import { getQuickSearchResources } from '#/server/search.ts'
-import { fetchSession, fetchSiteOrigin, fetchThemePreference } from '#/server/session.ts'
-import { getSuiteRun, listSuiteRuns } from '#/server/suites.ts'
-import { getProjectWebhookSettings } from '#/server/webhook-settings.ts'
+} from '#/server/runs/intents.ts'
+import { listProviderModels } from '#/server/org/model-catalog.ts'
+import { getProject, listProjects } from '#/server/projects/projects.ts'
+import { getRun, listProjectRuns, listRuns } from '#/server/runs/runs.ts'
+import { getQuickSearchResources } from '#/server/projects/search.ts'
+import { fetchSession, fetchSiteOrigin, fetchThemePreference } from '#/server/auth/session.ts'
+import { getSuiteRun, listSuiteRuns } from '#/server/runs/suites.ts'
+import { getProjectWebhookSettings } from '#/server/api/webhook-settings.ts'
 
 export const sessionQuery = () =>
   queryOptions({
