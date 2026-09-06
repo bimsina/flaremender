@@ -12,8 +12,8 @@ import {
   SunIcon,
   UserIcon,
 } from '@phosphor-icons/react'
-import { useQueryClient } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Link,
   Outlet,
@@ -29,12 +29,16 @@ import { OrgSwitcher } from '#/components/layout/org-switcher.tsx'
 import { PageHeaderControls } from '#/components/layout/page.tsx'
 import { QuickSearch } from '#/components/layout/quick-search.tsx'
 import { authClient } from '#/lib/auth/auth-client.ts'
+import { projectsQuery } from '#/lib/queries.ts'
 import { type ThemePreference, useTheme } from '#/lib/theme.tsx'
 import type { AppSession } from '#/server/auth/session.ts'
 
 const DOCS_URL = 'https://github.com/bimsina/flaremender#readme'
 const REPO_URL = 'https://github.com/bimsina/flaremender'
 const ISSUES_URL = 'https://github.com/bimsina/flaremender/issues/new'
+
+/** How many projects the sidebar lists under Projects before pointing at the full list. */
+const SIDEBAR_PROJECT_LIMIT = 5
 
 const THEMES: Array<{ value: ThemePreference; label: string; icon: typeof SunIcon }> = [
   { value: 'light', label: 'Light', icon: SunIcon },
@@ -93,6 +97,12 @@ function AppSidebar({ session }: { session: AppSession }) {
   const [accountOpen, setAccountOpen] = useState(true)
   const isActive = (path: string) =>
     location.pathname === path || location.pathname.startsWith(`${path}/`)
+  const activeProjectId = location.pathname.match(/^\/projects\/([^/]+)/)?.[1] ?? null
+  const { data: projects } = useQuery({ ...projectsQuery(), staleTime: 30_000 })
+  const { recentProjects, hasMoreProjects } = useMemo(
+    () => pickSidebarProjects(projects ?? [], activeProjectId),
+    [projects, activeProjectId],
+  )
 
   useEffect(() => {
     setOpenMobile(false)
@@ -129,14 +139,38 @@ function AppSidebar({ session }: { session: AppSession }) {
         <Sidebar.Group>
           <Sidebar.GroupLabel>Build</Sidebar.GroupLabel>
           <Sidebar.Menu>
-            <Sidebar.MenuButton
-              icon={FolderIcon}
-              href="/projects"
-              active={isActive('/projects')}
-              tooltip="Projects"
-            >
-              Projects
-            </Sidebar.MenuButton>
+            <Sidebar.MenuItem>
+              <Sidebar.MenuButton
+                icon={FolderIcon}
+                href="/projects"
+                active={
+                  location.pathname === '/projects' ||
+                  (state === 'collapsed' && isActive('/projects'))
+                }
+                tooltip="Projects"
+              >
+                Projects
+              </Sidebar.MenuButton>
+              {recentProjects.length > 0 ? (
+                <Sidebar.MenuSub className="group-data-[state=collapsed]/sidebar:hidden">
+                  {recentProjects.map((project) => (
+                    <Sidebar.MenuSubButton
+                      key={project.id}
+                      href={`/projects/${project.id}?tab=overview`}
+                      active={project.id === activeProjectId}
+                      title={project.name}
+                    >
+                      <span className="truncate">{project.name}</span>
+                    </Sidebar.MenuSubButton>
+                  ))}
+                  {hasMoreProjects ? (
+                    <Sidebar.MenuSubButton href="/projects" className="text-kumo-subtle">
+                      All projects
+                    </Sidebar.MenuSubButton>
+                  ) : null}
+                </Sidebar.MenuSub>
+              ) : null}
+            </Sidebar.MenuItem>
           </Sidebar.Menu>
         </Sidebar.Group>
         <Sidebar.Group>
@@ -195,6 +229,26 @@ function AppSidebar({ session }: { session: AppSession }) {
       </Sidebar.Footer>
     </Sidebar>
   )
+}
+
+/**
+ * The projects the sidebar shows under Projects: the most recently run first,
+ * capped, with the project the person is looking at always kept in the list.
+ */
+function pickSidebarProjects<T extends { id: string; lastRunAt: number | null; updatedAt: Date }>(
+  projects: Array<T>,
+  activeProjectId: string | null,
+) {
+  const sorted = [...projects].sort(
+    (a, b) =>
+      (b.lastRunAt ?? 0) - (a.lastRunAt ?? 0) || b.updatedAt.getTime() - a.updatedAt.getTime(),
+  )
+  const recentProjects = sorted.slice(0, SIDEBAR_PROJECT_LIMIT)
+  const active = activeProjectId ? sorted.find((project) => project.id === activeProjectId) : null
+  if (active && !recentProjects.includes(active)) {
+    recentProjects[recentProjects.length - 1] = active
+  }
+  return { recentProjects, hasMoreProjects: sorted.length > SIDEBAR_PROJECT_LIMIT }
 }
 
 /** The dashboard's footer bar: a row of quiet links and the copyright. */

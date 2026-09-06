@@ -10,6 +10,7 @@ import {
   instanceSettings,
   intent,
   project,
+  run,
 } from '#/db/schema/app.ts'
 import { createId, slugify } from '#/lib/ids.ts'
 import { DEFAULT_MODEL_ID, parseModelId } from '#/lib/models.ts'
@@ -69,6 +70,9 @@ export const listProjects = createServerFn({ method: 'GET' })
         baseUrl: environment.baseUrl,
         createdAt: project.createdAt,
         updatedAt: project.updatedAt,
+        lastRunAt: sql<
+          number | null
+        >`(select max(${run.startedAt}) from ${run} where ${run.projectId} = ${project.id})`,
         intentCount: sql<number>`sum(case when ${intent.id} is not null and ${intent.status} <> 'proposed' then 1 else 0 end)`,
         proposedCount: sql<number>`sum(case when ${intent.status} = 'proposed' then 1 else 0 end)`,
         failingCount: sql<number>`sum(case when ${intent.status} = 'failing' then 1 else 0 end)`,
@@ -84,6 +88,7 @@ export const listProjects = createServerFn({ method: 'GET' })
     return rows.map(({ environmentId, environmentName, baseUrl, ...row }) => ({
       ...row,
       defaultEnvironment: toDefaultEnvironment({ environmentId, environmentName, baseUrl }),
+      lastRunAt: row.lastRunAt === null ? null : Number(row.lastRunAt),
       intentCount: Number(row.intentCount ?? 0),
       proposedCount: Number(row.proposedCount ?? 0),
       failingCount: Number(row.failingCount ?? 0),
