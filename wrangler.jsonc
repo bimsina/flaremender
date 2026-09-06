@@ -22,13 +22,12 @@
   // instance admin) and anyone holding a pending invitation can still sign up. This is
   // the only place to set it; `.env.example` leaves it out so the Deploy button does not
   // ask for it as a secret.
-  "vars": {
-    "DISABLE_SIGNUP": "false",
-    // Sender for email notifications. Only used once `send_email` below is enabled.
-    "NOTIFY_FROM_ADDRESS": "",
-  },
+  "vars": { "DISABLE_SIGNUP": "false" },
   // Email notifications go through Cloudflare Email Service. Off by default because the
-  // binding needs Email Service set up on the account; see docs/notifications.md.
+  // binding needs Email Service set up on the account; see docs/notifications.md. To turn
+  // it on, uncomment the binding and add `"NOTIFY_FROM_ADDRESS": "..."` to `vars` above.
+  // The Deploy button asks for every var as a required field, which is why the sender
+  // address is not a var until you need it.
   // "send_email": [{ "name": "EMAIL", "remote": true }],
   // Grants and tokens for the MCP server's OAuth flow. Like `database_id`, this id is a
   // placeholder that the Deploy button replaces; by hand, `wrangler kv namespace create

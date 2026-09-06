@@ -47,14 +47,18 @@ Durable Objects and Workers AI binding, and asks for the secrets below. Workflow
 the browser binding and the Worker Loader need no setup. They come up with the
 deploy.
 
-You will be asked for:
+Connect your GitHub or GitLab account first. The form resets when you come back
+from the authorization page, so anything typed before that is lost. Then it asks
+for:
 
-| Secret                                                  | Required | Value                                                                                     |
-| ------------------------------------------------------- | -------- | ----------------------------------------------------------------------------------------- |
-| `BETTER_AUTH_SECRET`                                    | yes      | `openssl rand -hex 32`                                                                    |
-| `ENCRYPTION_KEY`                                        | yes      | `openssl rand -hex 32`. **Set it once.** Changing it makes every stored secret unreadable |
-| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY` | no       | can be added from the admin console later                                                 |
-| `DISABLE_SIGNUP`                                        | no       | `true` closes public registration. Set it once you have created your account              |
+| Field                | Required | Value                                                                                     |
+| -------------------- | -------- | ----------------------------------------------------------------------------------------- |
+| `BETTER_AUTH_SECRET` | yes      | `openssl rand -hex 32`                                                                    |
+| `ENCRYPTION_KEY`     | yes      | `openssl rand -hex 32`. **Set it once.** Changing it makes every stored secret unreadable |
+| `DISABLE_SIGNUP`     | yes      | Leave it `false` until you have created your account, then set it `true` and redeploy     |
+
+Provider keys are not asked for. Add one from the admin console after you sign in,
+or with `wrangler secret put OPENAI_API_KEY` later.
 
 The deployment works out its own origin from each request, so there is nothing to
 set after the first deploy. If you later put it behind a proxy that rewrites the

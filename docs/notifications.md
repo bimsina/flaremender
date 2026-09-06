@@ -104,8 +104,8 @@ Email Service set up:
    a domain is onboarded, Email Service only delivers to
    [verified destination addresses](https://developers.cloudflare.com/email-service/platform/limits/#verified-destination-addresses)
    in your account, which is fine for one team.
-2. In `wrangler.jsonc`, uncomment the `send_email` binding and set
-   `NOTIFY_FROM_ADDRESS` to an address on that domain.
+2. In `wrangler.jsonc`, uncomment the `send_email` binding and add
+   `NOTIFY_FROM_ADDRESS` to `vars`, set to an address on that domain.
 3. Redeploy. Email destinations show as enabled on the project's Notifications card.
 
 Without the binding, you can still create an email destination. Every delivery to
