@@ -19,7 +19,7 @@ and your run history stay there.
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dashboard-dark.webp">
   <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/dashboard.webp">
-  <img alt="The Flaremender dashboard: three projects, a fourteen-day run history and a 92 percent pass rate" src="docs/screenshots/dashboard.webp">
+  <img alt="The Flaremender dashboard: five projects, a fourteen-day run history and a 92 percent pass rate" src="docs/screenshots/dashboard.webp">
 </picture>
 
 ## What it does
