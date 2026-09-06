@@ -1,13 +1,14 @@
 import Database from 'better-sqlite3'
-import { readdirSync } from 'node:fs'
+import { readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { manualScenarios, scenarioScript } from './manual-scenarios.ts'
 
 const directory = '.wrangler/state/v3/d1/miniflare-D1DatabaseObject'
 let database: Database.Database | undefined
-for (const file of readdirSync(directory).filter(
-  (name) => name.endsWith('.sqlite') && name !== 'metadata.sqlite',
-)) {
+// Newest first, so a database left over from an earlier `database_id` is not picked.
+for (const file of readdirSync(directory)
+  .filter((name) => name.endsWith('.sqlite') && name !== 'metadata.sqlite')
+  .sort((a, b) => statSync(join(directory, b)).mtimeMs - statSync(join(directory, a)).mtimeMs)) {
   const candidate = new Database(join(directory, file))
   if (candidate.prepare("SELECT name FROM sqlite_master WHERE name = 'intent'").get()) {
     database = candidate

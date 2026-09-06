@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import Database from 'better-sqlite3'
-import { readdirSync } from 'node:fs'
+import { readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { manualScenarios } from './manual-scenarios.ts'
 
@@ -36,9 +36,10 @@ const login = await request('/api/auth/sign-in/email', {
 assert.equal(login.status, 200, 'Local sign-in failed')
 const directory = '.wrangler/state/v3/d1/miniflare-D1DatabaseObject'
 let db: Database.Database | undefined
-for (const name of readdirSync(directory).filter(
-  (file) => file.endsWith('.sqlite') && file !== 'metadata.sqlite',
-)) {
+// Newest first, so a database left over from an earlier `database_id` is not picked.
+for (const name of readdirSync(directory)
+  .filter((file) => file.endsWith('.sqlite') && file !== 'metadata.sqlite')
+  .sort((a, b) => statSync(join(directory, b)).mtimeMs - statSync(join(directory, a)).mtimeMs)) {
   const candidate = new Database(join(directory, name), { readonly: true })
   if (candidate.prepare("SELECT name FROM sqlite_master WHERE name = 'suite_run'").get()) {
     db = candidate
